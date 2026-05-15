@@ -67,6 +67,7 @@ def backtest_run(
     from trendspec.engine.backtest_engine import BacktestEngine
     from trendspec.strategy.base import get_strategy, create_strategy
     from trendspec.analyzer.report import BacktestReport
+    import trendspec.strategy.examples  # noqa: F401 — triggers @register_strategy decorators
 
     # Parse dates
     try:
@@ -147,6 +148,7 @@ def backtest_list() -> None:
     """
     from trendspec.strategy.base import list_strategies
     from rich.table import Table
+    import trendspec.strategy.examples  # noqa: F401
 
     strategies = list_strategies()
 

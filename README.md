@@ -67,7 +67,7 @@ uv run trendspec ingest status --market us
 ### 回测
 
 ```bash
-uv run trendspec backtest --strategy ma_cross --market us --start 2020-01-01
+uv run trendspec backtest run --strategy ma_cross --market us --start 2020-01-01
 ```
 
 ### 选股

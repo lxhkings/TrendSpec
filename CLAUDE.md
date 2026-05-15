@@ -46,7 +46,7 @@ uv run trendspec ingest sectors --market us
 uv run trendspec ingest status --market us
 
 # 回测 / 选股
-uv run trendspec backtest --strategy ma_cross --market us --start 2020-01-01
+uv run trendspec backtest run --strategy ma_cross --market us --start 2020-01-01
 uv run trendspec screen --strategy ma_cross --market us --date 2024-05-15
 ```
 
