@@ -131,17 +131,19 @@ def ingest_sectors(
     if last_date:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
-            f"WHERE {date_column} > '{last_date}' ORDER BY {date_column}"
+            f"WHERE {date_column} > :last_date ORDER BY {date_column}"
         )
+        params = {"last_date": last_date}
     else:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
             f"ORDER BY {date_column}"
         )
+        params = {}
 
     # Execute query
     with engine.connect() as conn:
-        result = conn.execute(sql)
+        result = conn.execute(sql, params)
         rows = result.fetchall()
         column_names = list(result.keys())
 
