@@ -715,6 +715,112 @@ def lowest_low(df: pl.DataFrame, period: int = 20) -> pl.DataFrame:
 
 
 # =============================================================================
+# Clenow Momentum Indicators
+# =============================================================================
+
+
+@register_indicator("CLENOW_SCORE")
+def clenow_score(df: pl.DataFrame, period: int = 90) -> pl.DataFrame:
+    """
+    Clenow Momentum Score: annualized exponential regression slope × R².
+
+    For each instrument, fits linear regression on ln(close) vs. day-index
+    over a rolling `period`-day window. Annualizes the slope and weights by R²
+    so only smooth, consistent uptrends score high.
+
+    Args:
+        df: DataFrame with OHLCV data
+        period: Regression lookback window in trading days (default: 90)
+
+    Returns:
+        DataFrame with CLENOW_SCORE_{period}, CLENOW_SLOPE_{period},
+        CLENOW_R2_{period} columns added
+    """
+    import numpy as np
+    from scipy import stats
+
+    slope_col = f"CLENOW_SLOPE_{period}"
+    r2_col = f"CLENOW_R2_{period}"
+    score_col = f"CLENOW_SCORE_{period}"
+
+    x = np.arange(period, dtype=float)
+
+    all_groups: list[pl.DataFrame] = []
+    for (_instrument_id,), group in df.sort(["instrument_id", "date"]).group_by(
+        ["instrument_id"], maintain_order=True
+    ):
+        closes = group["close"].to_numpy()
+        n = len(closes)
+
+        slopes: list[float | None] = [None] * n
+        r2s: list[float | None] = [None] * n
+        scores: list[float | None] = [None] * n
+
+        for i in range(period - 1, n):
+            window = closes[i - period + 1 : i + 1]
+            if np.any(window <= 0):
+                continue
+            y = np.log(window)
+            fit = stats.linregress(x, y)
+            annual_slope = (np.exp(fit.slope * 252) - 1) * 100
+            r2 = fit.rvalue ** 2
+            slopes[i] = annual_slope
+            r2s[i] = r2
+            scores[i] = annual_slope * r2
+
+        all_groups.append(
+            group.with_columns([
+                pl.Series(slope_col, slopes, dtype=pl.Float64),
+                pl.Series(r2_col, r2s, dtype=pl.Float64),
+                pl.Series(score_col, scores, dtype=pl.Float64),
+            ])
+        )
+
+    if not all_groups:
+        return df.with_columns([
+            pl.lit(None).cast(pl.Float64).alias(slope_col),
+            pl.lit(None).cast(pl.Float64).alias(r2_col),
+            pl.lit(None).cast(pl.Float64).alias(score_col),
+        ])
+
+    return pl.concat(all_groups).sort(["instrument_id", "date"])
+
+
+@register_indicator("MIN_DAILY_RETURN")
+def min_daily_return(df: pl.DataFrame, period: int = 90) -> pl.DataFrame:
+    """
+    Rolling minimum single-day return over `period` days.
+
+    Used to filter instruments with extreme gap-down events.
+    A value below -0.15 means the stock had a >15% single-day drop
+    somewhere in the lookback window.
+
+    Args:
+        df: DataFrame with OHLCV data
+        period: Rolling window in trading days (default: 90)
+
+    Returns:
+        DataFrame with MIN_DAILY_RETURN_{period} column added
+    """
+    col_name = f"MIN_DAILY_RETURN_{period}"
+
+    df_sorted = df.sort("date")
+
+    df_ret = df_sorted.with_columns(
+        (pl.col("close") / pl.col("close").shift(1) - 1)
+        .over("instrument_id")
+        .alias("_daily_ret")
+    )
+
+    return df_ret.with_columns(
+        pl.col("_daily_ret")
+        .rolling_min(window_size=period)
+        .over("instrument_id")
+        .alias(col_name)
+    ).drop("_daily_ret")
+
+
+# =============================================================================
 # Utility Functions
 # =============================================================================
 

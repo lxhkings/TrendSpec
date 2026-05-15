@@ -655,3 +655,109 @@ def test_backtest_engine_uses_signal_shares(custom_shares, expected_shares) -> N
     assert all(t.shares == expected_shares for t in result.trades), (
         f"Expected {expected_shares} shares per trade, got: {[t.shares for t in result.trades]}"
     )
+
+
+# =============================================================================
+# CLENOW_SCORE and MIN_DAILY_RETURN Indicator Tests
+# =============================================================================
+
+
+def _make_price_df(n_days: int = 150) -> pl.DataFrame:
+    """Synthetic OHLCV data for two instruments over n_days."""
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    rows = []
+    for inst in ["AAA", "BBB"]:
+        price = 100.0
+        for i in range(n_days):
+            price *= 1 + rng.normal(0.001, 0.015)
+            rows.append({
+                "instrument_id": inst,
+                "ticker": inst,
+                "date": date(2023, 1, 1) + timedelta(days=i),
+                "open": price * 0.99,
+                "high": price * 1.01,
+                "low": price * 0.98,
+                "close": price,
+                "volume": 1_000_000,
+                "adj_factor": 1.0,
+            })
+    return pl.DataFrame(rows)
+
+
+class TestClenowScoreIndicator:
+    from trendspec.strategy.indicators import compute_indicator, list_indicators
+
+    def test_registered(self) -> None:
+        from trendspec.strategy.indicators import list_indicators
+        assert "CLENOW_SCORE" in list_indicators()
+
+    def test_columns_added(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(150)
+        result = compute_indicator(df, "CLENOW_SCORE", period=90)
+        assert "CLENOW_SCORE_90" in result.columns
+        assert "CLENOW_SLOPE_90" in result.columns
+        assert "CLENOW_R2_90" in result.columns
+
+    def test_null_before_lookback(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(150)
+        result = compute_indicator(df, "CLENOW_SCORE", period=90)
+        aaa = result.filter(pl.col("instrument_id") == "AAA").sort("date")
+        assert aaa["CLENOW_SCORE_90"][:89].is_null().all()
+
+    def test_r2_bounded(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(150)
+        result = compute_indicator(df, "CLENOW_SCORE", period=90)
+        r2 = result["CLENOW_R2_90"].drop_nulls()
+        assert (r2 >= 0).all() and (r2 <= 1).all()
+
+    def test_uptrend_scores_positive(self) -> None:
+        """Monotonically increasing prices → positive slope → positive score."""
+        from trendspec.strategy.indicators import compute_indicator
+        rows = [
+            {"instrument_id": "UP", "ticker": "UP",
+             "date": date(2023, 1, 1) + timedelta(days=i),
+             "open": 100 + i, "high": 101 + i, "low": 99 + i,
+             "close": 100.0 + i, "volume": 1_000_000, "adj_factor": 1.0}
+            for i in range(120)
+        ]
+        df = pl.DataFrame(rows)
+        result = compute_indicator(df, "CLENOW_SCORE", period=90)
+        last = result.filter(pl.col("instrument_id") == "UP").sort("date").tail(1)
+        assert last["CLENOW_SCORE_90"].item() > 0
+
+
+class TestMinDailyReturnIndicator:
+    def test_registered(self) -> None:
+        from trendspec.strategy.indicators import list_indicators
+        assert "MIN_DAILY_RETURN" in list_indicators()
+
+    def test_column_added(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(150)
+        result = compute_indicator(df, "MIN_DAILY_RETURN", period=90)
+        assert "MIN_DAILY_RETURN_90" in result.columns
+
+    def test_gap_detected(self) -> None:
+        """A 20% single-day drop must appear in MIN_DAILY_RETURN < -0.15."""
+        from trendspec.strategy.indicators import compute_indicator
+        rows = []
+        price = 100.0
+        for i in range(150):
+            if i == 100:
+                price *= 0.80  # 20% gap down
+            rows.append({
+                "instrument_id": "G", "ticker": "G",
+                "date": date(2023, 1, 1) + timedelta(days=i),
+                "open": price, "high": price * 1.01, "low": price * 0.99,
+                "close": price, "volume": 1_000_000, "adj_factor": 1.0,
+            })
+        df = pl.DataFrame(rows)
+        result = compute_indicator(df, "MIN_DAILY_RETURN", period=90)
+        g = result.filter(pl.col("instrument_id") == "G").sort("date")
+        post_gap = g.filter(pl.col("date") >= date(2023, 1, 1) + timedelta(days=101))
+        assert (post_gap["MIN_DAILY_RETURN_90"].drop_nulls() < -0.15).any()
