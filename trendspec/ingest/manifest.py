@@ -122,7 +122,9 @@ class Manifest:
         }
         self._save()
 
-    def update_instrument_date(self, dataset: str, instrument_id: str, last_date: str) -> None:
+    def update_instrument_date(
+        self, dataset: str, instrument_id: str, last_date: str, save: bool = True
+    ) -> None:
         """
         Update last date for a specific instrument (for incremental sync).
 
@@ -130,6 +132,7 @@ class Manifest:
             dataset: Dataset name
             instrument_id: Instrument ID
             last_date: Last synced date (YYYY-MM-DD)
+            save: If True, save manifest to file. Set False for batch updates.
         """
         if dataset not in self.data:
             self.data[dataset] = {
@@ -142,6 +145,34 @@ class Manifest:
             self.data[dataset]["instruments"] = {}
 
         self.data[dataset]["instruments"][instrument_id] = last_date
+        self.data[dataset]["last_sync_time"] = datetime.now(UTC).isoformat()
+        if save:
+            self._save()
+
+    def update_instrument_dates_batch(
+        self, dataset: str, instruments: dict[str, str]
+    ) -> None:
+        """
+        Update last dates for multiple instruments in a single batch.
+
+        More efficient than calling update_instrument_date for each instrument,
+        as it only saves the manifest once after all updates.
+
+        Args:
+            dataset: Dataset name
+            instruments: Dict of {instrument_id: last_date}
+        """
+        if dataset not in self.data:
+            self.data[dataset] = {
+                "market": self.market.value,
+                "dataset": dataset,
+                "instruments": {},
+            }
+
+        if "instruments" not in self.data[dataset]:
+            self.data[dataset]["instruments"] = {}
+
+        self.data[dataset]["instruments"].update(instruments)
         self.data[dataset]["last_sync_time"] = datetime.now(UTC).isoformat()
         self._save()
 

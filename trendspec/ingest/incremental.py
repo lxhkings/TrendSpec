@@ -80,7 +80,10 @@ def build_incremental_where_clause(
     date_column: str = "trade_date",
 ) -> str:
     """
-    Build SQL WHERE clause for incremental pull.
+    Build SQL WHERE clause for incremental pull (DEPRECATED - use parameterized queries).
+
+    NOTE: This function is deprecated. Use sync_instrument_incremental directly
+    which uses parameterized queries to prevent SQL injection.
 
     Args:
         instrument_id: Instrument ID to sync
@@ -88,7 +91,7 @@ def build_incremental_where_clause(
         date_column: SQL column name for date
 
     Returns:
-        SQL WHERE clause string
+        SQL WHERE clause string (for reference only)
     """
     if last_date is None:
         # Full sync - no date filter
@@ -106,7 +109,7 @@ def sync_instrument_incremental(
     last_date: str | None,
 ) -> pl.DataFrame:
     """
-    Sync data for a single instrument incrementally.
+    Sync data for a single instrument incrementally using parameterized queries.
 
     Args:
         engine: SQLAlchemy engine
@@ -120,20 +123,28 @@ def sync_instrument_incremental(
     """
     # Build SQL columns
     sql_columns = list(column_map.values())
-
-    # Build WHERE clause
     date_column = column_map.get("date", "trade_date")
-    where_clause = build_incremental_where_clause(instrument_id, last_date, date_column)
 
-    # Build SQL query
-    sql = text(
-        f"SELECT {', '.join(sql_columns)} FROM {table_name} "
-        f"WHERE {where_clause} ORDER BY {date_column}"
-    )
+    # Build SQL query with parameterized placeholders (prevents SQL injection)
+    if last_date is None:
+        # Full sync - no date filter
+        sql = text(
+            f"SELECT {', '.join(sql_columns)} FROM {table_name} "
+            f"WHERE instrument_id = :instrument_id ORDER BY {date_column}"
+        )
+        params = {"instrument_id": instrument_id}
+    else:
+        # Incremental sync - pull data after last_date
+        sql = text(
+            f"SELECT {', '.join(sql_columns)} FROM {table_name} "
+            f"WHERE instrument_id = :instrument_id AND {date_column} > :last_date "
+            f"ORDER BY {date_column}"
+        )
+        params = {"instrument_id": instrument_id, "last_date": last_date}
 
     # Execute query and convert to DataFrame
     with engine.connect() as conn:
-        result = conn.execute(sql)
+        result = conn.execute(sql, params)
         rows = result.fetchall()
         column_names = list(result.keys())
 
@@ -158,7 +169,7 @@ def sync_batch_incremental(
     batch_size: int = 100,
 ) -> pl.DataFrame:
     """
-    Sync data for multiple instruments in batches.
+    Sync data for multiple instruments in batches using parameterized queries.
 
     Args:
         engine: SQLAlchemy engine
@@ -182,20 +193,28 @@ def sync_batch_incremental(
 
     all_dfs: list[pl.DataFrame] = []
 
-    # Handle new instruments (full sync)
+    # Handle new instruments (full sync) using parameterized batch queries
     if new_instruments:
-        # Batch query for new instruments
+        # Process in batches
         for i in range(0, len(new_instruments), batch_size):
             batch = new_instruments[i:i + batch_size]
-            instrument_list = "','".join(batch)
+
+            # Use parameterized IN clause via bindparams
+            # Create unique parameter names for each instrument in batch
+            param_names = [f"iid_{j}" for j in range(len(batch))]
+            in_clause = ", ".join([f":{pn}" for pn in param_names])
+
             sql = text(
                 f"SELECT {', '.join(sql_columns)} FROM {table_name} "
-                f"WHERE instrument_id IN ('{instrument_list}') "
+                f"WHERE instrument_id IN ({in_clause}) "
                 f"ORDER BY instrument_id, {date_column}"
             )
 
+            # Build params dict
+            params = {pn: batch[j] for j, pn in enumerate(param_names)}
+
             with engine.connect() as conn:
-                result = conn.execute(sql)
+                result = conn.execute(sql, params)
                 rows = result.fetchall()
                 columns = result.keys()
 
@@ -207,7 +226,7 @@ def sync_batch_incremental(
                 df = df.rename(rename_map)
                 all_dfs.append(df)
 
-    # Handle incremental instruments
+    # Handle incremental instruments (uses sync_instrument_incremental with parameterized queries)
     for instrument_id, last_date in incremental_instruments.items():
         df = sync_instrument_incremental(
             engine, table_name, column_map, instrument_id, last_date
@@ -228,7 +247,7 @@ def update_manifest_after_sync(
     df: pl.DataFrame,
 ) -> None:
     """
-    Update manifest with new sync state after data pull.
+    Update manifest with new sync state after data pull using batch update.
 
     Args:
         manifest: Manifest object
@@ -243,7 +262,8 @@ def update_manifest_after_sync(
         pl.col("date").max().alias("last_date")
     )
 
-    # Update manifest for each instrument
+    # Build batch update dict (more efficient than individual updates)
+    instruments: dict[str, str] = {}
     for row in max_dates.iter_rows(named=True):
         instrument_id = row["instrument_id"]
         last_date = row["last_date"]
@@ -254,7 +274,10 @@ def update_manifest_after_sync(
         else:
             last_date_str = str(last_date)
 
-        manifest.update_instrument_date(dataset, instrument_id, last_date_str)
+        instruments[instrument_id] = last_date_str
+
+    # Single batch update instead of individual updates
+    manifest.update_instrument_dates_batch(dataset, instruments)
 
 
 def get_full_date_range(df: pl.DataFrame) -> tuple[str, str]:

@@ -175,24 +175,26 @@ def ingest_us_components(
         else:
             last_date = None
 
-    # Build SQL query
+    # Build SQL query with parameterized date filter (prevents SQL injection)
     sql_columns = list(column_map.values())
     date_column = column_map.get("date", "event_date")
 
     if last_date:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
-            f"WHERE {date_column} > '{last_date}' ORDER BY {date_column}"
+            f"WHERE {date_column} > :last_date ORDER BY {date_column}"
         )
+        params = {"last_date": last_date}
     else:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
             f"ORDER BY {date_column}"
         )
+        params = {}
 
     # Execute query
     with engine.connect() as conn:
-        result = conn.execute(sql)
+        result = conn.execute(sql, params)
         rows = result.fetchall()
         column_names = list(result.keys())
 
@@ -265,24 +267,26 @@ def ingest_us_sectors(
         else:
             last_date = None
 
-    # Build SQL query
+    # Build SQL query with parameterized date filter (prevents SQL injection)
     sql_columns = list(column_map.values())
     date_column = column_map.get("date", "assign_date")
 
     if last_date:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
-            f"WHERE {date_column} > '{last_date}' ORDER BY {date_column}"
+            f"WHERE {date_column} > :last_date ORDER BY {date_column}"
         )
+        params = {"last_date": last_date}
     else:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
             f"ORDER BY {date_column}"
         )
+        params = {}
 
     # Execute query
     with engine.connect() as conn:
-        result = conn.execute(sql)
+        result = conn.execute(sql, params)
         rows = result.fetchall()
         column_names = list(result.keys())
 

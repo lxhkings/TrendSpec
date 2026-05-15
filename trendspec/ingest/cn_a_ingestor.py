@@ -143,8 +143,6 @@ def ingest_cn_a_components(
     Returns:
         Summary dict with row_count, date_range, instrument_count
     """
-    from sqlalchemy import text
-
     dataset = "components"
     table_name = get_table_name(Market.CN_A, dataset)
     column_map = CN_A_COMPONENTS_MAP
@@ -159,24 +157,26 @@ def ingest_cn_a_components(
         else:
             last_date = None
 
-    # Build SQL query
+    # Build SQL query with parameterized date filter (prevents SQL injection)
     sql_columns = list(column_map.values())
     date_column = column_map.get("date", "event_date")
 
     if last_date:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
-            f"WHERE {date_column} > '{last_date}' ORDER BY {date_column}"
+            f"WHERE {date_column} > :last_date ORDER BY {date_column}"
         )
+        params = {"last_date": last_date}
     else:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
             f"ORDER BY {date_column}"
         )
+        params = {}
 
     # Execute query
     with engine.connect() as conn:
-        result = conn.execute(sql)
+        result = conn.execute(sql, params)
         rows = result.fetchall()
         column_names = list(result.keys())
 
@@ -234,8 +234,6 @@ def ingest_cn_a_sectors(
     Returns:
         Summary dict with row_count, date_range, instrument_count
     """
-    from sqlalchemy import text
-
     dataset = "sectors"
     table_name = get_table_name(Market.CN_A, dataset)
     column_map = CN_A_SECTORS_MAP
@@ -250,24 +248,26 @@ def ingest_cn_a_sectors(
         else:
             last_date = None
 
-    # Build SQL query
+    # Build SQL query with parameterized date filter (prevents SQL injection)
     sql_columns = list(column_map.values())
     date_column = column_map.get("date", "assign_date")
 
     if last_date:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
-            f"WHERE {date_column} > '{last_date}' ORDER BY {date_column}"
+            f"WHERE {date_column} > :last_date ORDER BY {date_column}"
         )
+        params = {"last_date": last_date}
     else:
         sql = text(
             f"SELECT {', '.join(sql_columns)} FROM {table_name} "
             f"ORDER BY {date_column}"
         )
+        params = {}
 
     # Execute query
     with engine.connect() as conn:
-        result = conn.execute(sql)
+        result = conn.execute(sql, params)
         rows = result.fetchall()
         column_names = list(result.keys())
 
