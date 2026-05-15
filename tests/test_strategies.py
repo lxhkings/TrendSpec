@@ -761,3 +761,82 @@ class TestMinDailyReturnIndicator:
         g = result.filter(pl.col("instrument_id") == "G").sort("date")
         post_gap = g.filter(pl.col("date") >= date(2023, 1, 1) + timedelta(days=101))
         assert (post_gap["MIN_DAILY_RETURN_90"].drop_nulls() < -0.15).any()
+
+
+# =============================================================================
+# ClenowMomentumStrategy Tests
+# =============================================================================
+
+
+class TestClenowMomentumStrategyInit:
+    def test_strategy_registration(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        assert get_strategy("clenow_momentum") is ClenowMomentumStrategy
+
+    def test_default_params(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        strategy = ClenowMomentumStrategy()
+        assert strategy.get_param("sma_period", 200) == 200
+        assert strategy.get_param("atr_period", 20) == 20
+        assert strategy.get_param("score_period", 90) == 90
+        assert strategy.get_param("gap_period", 90) == 90
+        assert strategy.get_param("risk_factor", 0.001) == 0.001
+        assert strategy.get_param("rebalance_weekday", 2) == 2
+        assert strategy.get_param("top_pct", 0.8) == 0.8
+
+    def test_invalid_top_pct(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="top_pct"):
+            ClenowMomentumStrategy(params={"top_pct": 1.5})
+
+    def test_invalid_risk_factor(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="risk_factor"):
+            ClenowMomentumStrategy(params={"risk_factor": -0.001})
+
+    def test_invalid_rebalance_weekday(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="rebalance_weekday"):
+            ClenowMomentumStrategy(params={"rebalance_weekday": 7})
+
+    def test_in_list_strategies(self) -> None:
+        import trendspec.strategy.examples  # noqa: F401 — trigger registration
+        assert "clenow_momentum" in list_strategies()
+
+
+class TestClenowMomentumStrategySignals:
+    """Integration: init() precomputes indicators without error."""
+
+    def _make_trending_df(self, n_days: int = 300) -> pl.DataFrame:
+        import numpy as np
+        rng = np.random.default_rng(0)
+        rows = []
+        for inst, trend in [("UP1", 0.002), ("UP2", 0.0015), ("DOWN", -0.003)]:
+            price = 100.0
+            for i in range(n_days):
+                price = max(1.0, price * (1 + trend + rng.normal(0, 0.005)))
+                rows.append({
+                    "instrument_id": inst, "ticker": inst,
+                    "date": date(2022, 1, 1) + timedelta(days=i),
+                    "open": price * 0.995, "high": price * 1.005,
+                    "low": price * 0.990, "close": price,
+                    "volume": 1_000_000, "adj_factor": 1.0,
+                })
+        return pl.DataFrame(rows)
+
+    def test_init_precomputes_indicators(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        from trendspec.strategy.context import StrategyContext
+
+        df = self._make_trending_df(300)
+        strategy = ClenowMomentumStrategy(params={
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+        })
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+
+        cache_keys = list(ctx._indicator_cache.keys())
+        assert any("CLENOW_SCORE" in k for k in cache_keys)
+        assert any("MIN_DAILY_RETURN" in k for k in cache_keys)
+        assert any("ATR" in k for k in cache_keys)
+        assert any("MA" in k for k in cache_keys)

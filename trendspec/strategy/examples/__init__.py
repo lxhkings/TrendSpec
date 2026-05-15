@@ -19,11 +19,13 @@ Example usage:
     >>> # Run via backtest or screening engine
 """
 
+from trendspec.strategy.examples.clenow_momentum import ClenowMomentumStrategy
 from trendspec.strategy.examples.ma_cross import MACrossStrategy
 from trendspec.strategy.examples.rsi_reversal import RSIReversalStrategy
 from trendspec.strategy.examples.sector_momentum import SectorMomentumStrategy
 
 __all__ = [
+    "ClenowMomentumStrategy",
     "MACrossStrategy",
     "RSIReversalStrategy",
     "SectorMomentumStrategy",
