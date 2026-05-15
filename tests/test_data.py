@@ -1,8 +1,6 @@
 """Tests for TrendSpec data module - markets and schema."""
 
-import os
 from datetime import date, datetime
-from unittest.mock import patch
 
 import polars as pl
 import pytest
@@ -12,18 +10,18 @@ from trendspec.data import (
     OHLC_COLUMNS,
     PRIMARY_KEY,
     REQUIRED_COLUMNS,
+    AdjustmentMode,
     Market,
     validate_dataframe_schema,
 )
 from trendspec.data.markets import (
+    _MARKET_METADATA,
     CommissionRule,
     MarketMetadata,
     PriceLimitRule,
     TradingHours,
-    _MARKET_METADATA,
 )
 from trendspec.data.schema import (
-    AdjustmentMode,
     _is_compatible_type,
     get_primary_key_schema,
     get_schema,
@@ -226,7 +224,7 @@ class TestSchemaConstants:
 
     def test_ohlc_columns(self) -> None:
         """OHLC columns should be correct."""
-        assert OHLC_COLUMNS == {"open", "high", "low", "close"}
+        assert {"open", "high", "low", "close"} == OHLC_COLUMNS
 
     def test_column_types(self) -> None:
         """Column types should map to Polars dtypes."""

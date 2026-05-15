@@ -10,6 +10,7 @@ from trendspec.data.schema import (
     OHLC_COLUMNS,
     PRIMARY_KEY,
     REQUIRED_COLUMNS,
+    AdjustmentMode,
     validate_dataframe_schema,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "COLUMN_TYPES",
     "PRIMARY_KEY",
     "OHLC_COLUMNS",
+    "AdjustmentMode",
     "validate_dataframe_schema",
 ]
