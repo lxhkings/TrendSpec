@@ -82,6 +82,26 @@ class TestDatabaseSettings:
             assert url.startswith("mysql+pymysql://")
             assert "testuser:testpass@localhost:3306/testdb" in url
 
+    def test_connection_url_encodes_special_characters(self) -> None:
+        """Connection URL should URL-encode special characters in credentials."""
+        with patch.dict(
+            os.environ,
+            {
+                "DB_HOST": "localhost",
+                "DB_USER": "test@user",  # @ in username
+                "DB_PASSWORD": "p@ss:word/123?test",  # @, :, /, ? in password
+                "DB_NAME": "testdb",
+            },
+            clear=False,
+        ):
+            settings = DatabaseSettings()
+            url = settings.connection_url
+            # Verify credentials are URL-encoded
+            assert "test%40user" in url  # @ encoded as %40
+            assert "p%40ss%3Aword%2F123%3Ftest" in url  # @ : / ? all encoded
+            # Verify the actual @ separator between credentials and host is present
+            assert "@localhost:3306/testdb" in url
+
 
 class TestBacktestSettings:
     """Tests for backtest settings."""

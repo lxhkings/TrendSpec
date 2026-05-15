@@ -7,6 +7,7 @@ No hardcoded credentials allowed.
 """
 
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -43,8 +44,11 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def connection_url(self) -> str:
-        """Build SQLAlchemy connection URL."""
-        return f"mysql+pymysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}?charset={self.charset}"
+        """Build SQLAlchemy connection URL with URL-encoded credentials."""
+        return (
+            f"mysql+pymysql://{quote_plus(self.user)}:{quote_plus(self.password)}"
+            f"@{self.host}:{self.port}/{self.name}?charset={self.charset}"
+        )
 
 
 class DataLakeSettings(BaseSettings):
