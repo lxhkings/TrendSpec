@@ -9,7 +9,7 @@ Key components:
 - RiskPipeline: Serial pipeline for running rules
 
 Design principles:
-- Serial pipeline: Rules run in priority order
+- Serial pipelines: Rules run in priority order
 - First rejection wins: Signal dropped at first rejection
 - Logging: All checks logged for analysis
 - Modifiable signals: Rules can modify signals
@@ -51,6 +51,14 @@ from trendspec.risk.pipeline import (
     default_pipeline,
 )
 
+# New risk modules
+from trendspec.risk.position_limit import MaxSinglePositionSize, MaxPositionsCount
+from trendspec.risk.drawdown_halt import DrawdownHaltRule, DrawdownState
+from trendspec.risk.liquidity import MinLiquidityRule
+from trendspec.risk.price_limit import PriceLimitRule
+from trendspec.risk.sector_limit import SectorConcentrationLimit
+from trendspec.risk.sector_neutral import SectorNeutralRule, SectorWeights
+
 __all__ = [
     # Result types
     "Allow",
@@ -60,7 +68,7 @@ __all__ = [
     "Portfolio",
     # Base classes
     "RiskRule",
-    # Built-in rules
+    # Built-in rules (base.py)
     "MaxPositionSize",
     "MaxPositions",
     "MinCapital",
@@ -68,6 +76,21 @@ __all__ = [
     "LiquidityFilter",
     "DuplicatePosition",
     "UniverseMembership",
+    # New rules (position_limit.py)
+    "MaxSinglePositionSize",
+    "MaxPositionsCount",
+    # New rules (drawdown_halt.py)
+    "DrawdownHaltRule",
+    "DrawdownState",
+    # New rules (liquidity.py)
+    "MinLiquidityRule",
+    # New rules (price_limit.py)
+    "PriceLimitRule",
+    # New rules (sector_limit.py)
+    "SectorConcentrationLimit",
+    # New rules (sector_neutral.py)
+    "SectorNeutralRule",
+    "SectorWeights",
     # Registry
     "register_rule",
     "get_rule",

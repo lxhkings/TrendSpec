@@ -43,6 +43,37 @@ from trendspec.factors.registry import (
     register,
 )
 
+# Price factors
+from trendspec.factors.price import (
+    MomentumFactor as PriceMomentumFactor,
+    MomentumRankFactor,
+    VolatilityFactor as PriceVolatilityFactor,
+    VolatilityRankFactor,
+)
+
+# Volume factors
+from trendspec.factors.volume import (
+    TurnoverFactor,
+    VolumeRatioFactor,
+)
+
+# Technical factors
+from trendspec.factors.technical import (
+    MABiasFactor,
+)
+
+# Sector factors
+from trendspec.factors.sector import (
+    SectorMomentumFactor,
+    SectorRelativeStrengthFactor,
+)
+
+# Cross-sectional factors
+from trendspec.factors.cross_sectional import (
+    RankWithinSectorFactor,
+    DemeanBySectorFactor,
+)
+
 __all__ = [
     # Base classes
     "Factor",
@@ -58,4 +89,20 @@ __all__ = [
     "list_factors",
     "factor_info",
     "clear_registry",
+    # Price factors
+    "PriceMomentumFactor",
+    "MomentumRankFactor",
+    "PriceVolatilityFactor",
+    "VolatilityRankFactor",
+    # Volume factors
+    "TurnoverFactor",
+    "VolumeRatioFactor",
+    # Technical factors
+    "MABiasFactor",
+    # Sector factors
+    "SectorMomentumFactor",
+    "SectorRelativeStrengthFactor",
+    # Cross-sectional factors
+    "RankWithinSectorFactor",
+    "DemeanBySectorFactor",
 ]

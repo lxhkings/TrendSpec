@@ -7,6 +7,7 @@ Tests:
 - RiskRule base class
 - RiskPipeline
 - Built-in risk rules
+- New risk rules (position limit, drawdown halt, liquidity, price limit, sector)
 """
 
 from datetime import date
@@ -33,6 +34,13 @@ from trendspec.risk import (
     get_rule,
     list_rules,
 )
+# New risk rule imports
+from trendspec.risk.position_limit import MaxSinglePositionSize, MaxPositionsCount
+from trendspec.risk.drawdown_halt import DrawdownHaltRule, DrawdownState
+from trendspec.risk.liquidity import MinLiquidityRule
+from trendspec.risk.price_limit import PriceLimitRule
+from trendspec.risk.sector_limit import SectorConcentrationLimit
+from trendspec.risk.sector_neutral import SectorNeutralRule, SectorWeights
 from trendspec.strategy import Signal, StrategyContext, BaseStrategy
 from trendspec.data.markets import Market
 
@@ -473,3 +481,370 @@ class TestRuleRegistry:
         assert rule is not None
         assert rule.name == "max_positions"
         assert rule.params.get("max_positions") == 5
+
+
+# =============================================================================
+# Position Limit Rule Tests
+# =============================================================================
+
+
+class TestPositionLimitRules:
+    """Tests for new position limit rules."""
+
+    @pytest.fixture
+    def signal(self) -> Signal:
+        """Create a sample signal."""
+        return Signal("BUY", "600000", "SH600000", 10.5)
+
+    @pytest.fixture
+    def portfolio(self) -> Portfolio:
+        """Create a sample portfolio."""
+        return Portfolio(cash=10000.0, equity=10000.0)
+
+    @pytest.fixture
+    def context(self) -> StrategyContext:
+        """Create a sample context."""
+        class DummyStrategy(BaseStrategy):
+            name = "dummy"
+            def init(self, ctx) -> None:
+                pass
+            def next(self, ctx) -> None:
+                pass
+
+        strategy = DummyStrategy(params={"order_size": 100})
+        data = pl.DataFrame({
+            "instrument_id": ["SH600000"],
+            "date": [date(2024, 1, 15)],
+            "ticker": ["600000"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.8],
+            "close": [10.5],
+            "volume": [1000000],
+            "adj_factor": [1.0],
+        })
+        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
+        return ctx
+
+    def test_max_single_position_size_allow(self, signal: Signal, portfolio: Portfolio, context: StrategyContext) -> None:
+        """Test MaxSinglePositionSize allows when under limit."""
+        rule = MaxSinglePositionSize(max_pct=0.15)  # 15% max, order is ~10.5% of 10k
+        result = rule.check(signal, portfolio, context)
+        assert result.is_allowed()
+
+    def test_max_single_position_size_reject(self, signal: Signal, context: StrategyContext) -> None:
+        """Test MaxSinglePositionSize rejects when over limit."""
+        portfolio = Portfolio(cash=1000.0, equity=1000.0)
+        rule = MaxSinglePositionSize(max_pct=0.10)  # 10% max
+        # Order size 100 * price 10.5 = 1050, which is > 10% of 1000
+        result = rule.check(signal, portfolio, context)
+        assert result.is_rejected()
+
+    def test_max_positions_count_allow(self, signal: Signal, portfolio: Portfolio, context: StrategyContext) -> None:
+        """Test MaxPositionsCount allows when under limit."""
+        rule = MaxPositionsCount(max_positions=10)
+        result = rule.check(signal, portfolio, context)
+        assert result.is_allowed()
+
+    def test_max_positions_count_reject(self, signal: Signal, context: StrategyContext) -> None:
+        """Test MaxPositionsCount rejects when at limit."""
+        portfolio = Portfolio(
+            positions={f"SH{i:06d}": 100.0 for i in range(10)},
+            cash=1000.0,
+            equity=10000.0,
+        )
+        rule = MaxPositionsCount(max_positions=10)
+        result = rule.check(signal, portfolio, context)
+        assert result.is_rejected()
+
+    def test_max_positions_count_allows_existing_position(self, context: StrategyContext) -> None:
+        """Test MaxPositionsCount allows adding to existing position."""
+        signal = Signal("BUY", "600000", "SH600000", 10.5)
+        portfolio = Portfolio(
+            positions={"SH600000": 100.0},  # Existing position
+            cash=1000.0,
+            equity=10000.0,
+        )
+        rule = MaxPositionsCount(max_positions=1)
+        # Should allow since we're not adding a new position
+        result = rule.check(signal, portfolio, context)
+        assert result.is_allowed()
+
+
+# =============================================================================
+# Drawdown Halt Rule Tests
+# =============================================================================
+
+
+class TestDrawdownHaltRule:
+    """Tests for drawdown halt rule."""
+
+    @pytest.fixture
+    def signal(self) -> Signal:
+        """Create a sample signal."""
+        return Signal("BUY", "600000", "SH600000", 10.5)
+
+    @pytest.fixture
+    def context(self) -> StrategyContext:
+        """Create a sample context."""
+        class DummyStrategy(BaseStrategy):
+            name = "dummy"
+            def init(self, ctx) -> None:
+                pass
+            def next(self, ctx) -> None:
+                pass
+
+        strategy = DummyStrategy(params={"order_size": 100})
+        data = pl.DataFrame({
+            "instrument_id": ["SH600000"],
+            "date": [date(2024, 1, 15)],
+            "ticker": ["600000"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.8],
+            "close": [10.5],
+            "volume": [1000000],
+            "adj_factor": [1.0],
+        })
+        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
+        return ctx
+
+    def test_drawdown_halt_init(self) -> None:
+        """Test DrawdownHaltRule initialization."""
+        rule = DrawdownHaltRule(halt_threshold=0.10, recovery_threshold=0.05)
+        assert rule.params["halt_threshold"] == 0.10
+        assert rule.params["recovery_threshold"] == 0.05
+        assert not rule.is_halted()
+
+    def test_drawdown_halt_invalid_thresholds(self) -> None:
+        """Test DrawdownHaltRule rejects invalid thresholds."""
+        with pytest.raises(ValueError):
+            DrawdownHaltRule(halt_threshold=0.05, recovery_threshold=0.10)
+
+    def test_drawdown_halt_allows_when_ok(self, signal: Signal, context: StrategyContext) -> None:
+        """Test DrawdownHaltRule allows when drawdown is low."""
+        portfolio = Portfolio(cash=10000.0, equity=10000.0)
+        rule = DrawdownHaltRule(halt_threshold=0.10, recovery_threshold=0.05)
+        rule._state.peak_equity = 10000.0  # Set peak
+        result = rule.check(signal, portfolio, context)
+        assert result.is_allowed()
+
+    def test_drawdown_halt_rejects_when_halted(self, signal: Signal, context: StrategyContext) -> None:
+        """Test DrawdownHaltRule rejects when drawdown exceeds threshold."""
+        portfolio = Portfolio(cash=9000.0, equity=9000.0)  # 10% below peak
+        rule = DrawdownHaltRule(halt_threshold=0.05, recovery_threshold=0.02)
+        rule._state.peak_equity = 10000.0  # Set peak
+        result = rule.check(signal, portfolio, context)
+        assert result.is_rejected()
+
+    def test_drawdown_halt_allows_sell_even_when_halted(self, context: StrategyContext) -> None:
+        """Test DrawdownHaltRule allows sell signals when halted."""
+        sell_signal = Signal("SELL", "600000", "SH600000", 10.5)
+        portfolio = Portfolio(cash=9000.0, equity=9000.0)
+        rule = DrawdownHaltRule(halt_threshold=0.05, recovery_threshold=0.02, halt_buy_only=True)
+        rule._state.peak_equity = 10000.0
+        result = rule.check(sell_signal, portfolio, context)
+        assert result.is_allowed()
+
+    def test_drawdown_reset(self) -> None:
+        """Test DrawdownHaltRule reset."""
+        rule = DrawdownHaltRule()
+        rule._state.peak_equity = 10000.0
+        rule._state.halted = True
+        rule.reset()
+        assert rule._state.peak_equity == 0.0
+        assert not rule._state.halted
+
+
+# =============================================================================
+# Min Liquidity Rule Tests
+# =============================================================================
+
+
+class TestMinLiquidityRule:
+    """Tests for minimum liquidity rule."""
+
+    @pytest.fixture
+    def signal(self) -> Signal:
+        """Create a sample signal."""
+        return Signal("BUY", "600000", "SH600000", 10.5)
+
+    @pytest.fixture
+    def portfolio(self) -> Portfolio:
+        """Create a sample portfolio."""
+        return Portfolio(cash=10000.0, equity=10000.0)
+
+    @pytest.fixture
+    def context(self) -> StrategyContext:
+        """Create a sample context."""
+        class DummyStrategy(BaseStrategy):
+            name = "dummy"
+            def init(self, ctx) -> None:
+                pass
+            def next(self, ctx) -> None:
+                pass
+
+        strategy = DummyStrategy(params={"order_size": 100})
+        data = pl.DataFrame({
+            "instrument_id": ["SH600000"],
+            "date": [date(2024, 1, 15)],
+            "ticker": ["600000"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.8],
+            "close": [10.5],
+            "volume": [500000],  # 500K volume
+            "adj_factor": [1.0],
+        })
+        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
+        return ctx
+
+    def test_min_liquidity_allow(self, signal: Signal, portfolio: Portfolio, context: StrategyContext) -> None:
+        """Test MinLiquidityRule allows when volume sufficient."""
+        rule = MinLiquidityRule(min_volume=100000)
+        result = rule.check(signal, portfolio, context)
+        assert result.is_allowed()
+
+    def test_min_liquidity_reject(self, signal: Signal, portfolio: Portfolio, context: StrategyContext) -> None:
+        """Test MinLiquidityRule rejects when volume insufficient."""
+        rule = MinLiquidityRule(min_volume=1000000)  # 1M min
+        result = rule.check(signal, portfolio, context)
+        assert result.is_rejected()
+
+
+# =============================================================================
+# Price Limit Rule Tests
+# =============================================================================
+
+
+class TestPriceLimitRule:
+    """Tests for price limit rule."""
+
+    @pytest.fixture
+    def signal(self) -> Signal:
+        """Create a sample signal."""
+        return Signal("BUY", "600000", "SH600000", 11.0)  # Assume at 涨停
+
+    @pytest.fixture
+    def portfolio(self) -> Portfolio:
+        """Create a sample portfolio."""
+        return Portfolio(cash=10000.0, equity=10000.0)
+
+    @pytest.fixture
+    def context(self) -> StrategyContext:
+        """Create a sample context."""
+        class DummyStrategy(BaseStrategy):
+            name = "dummy"
+            def init(self, ctx) -> None:
+                pass
+            def next(self, ctx) -> None:
+                pass
+
+        strategy = DummyStrategy(params={"order_size": 100})
+        data = pl.DataFrame({
+            "instrument_id": ["SH600000"],
+            "date": [date(2024, 1, 15)],
+            "ticker": ["600000"],
+            "open": [10.0],
+            "high": [11.0],
+            "low": [10.0],
+            "close": [11.0],
+            "volume": [1000000],
+            "adj_factor": [1.0],
+        })
+        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
+        return ctx
+
+    def test_price_limit_rule_init(self) -> None:
+        """Test PriceLimitRule initialization."""
+        rule = PriceLimitRule(market=Market.CN_A, limit_pct=0.10)
+        assert rule.params["market"] == Market.CN_A
+        assert rule.params["limit_pct"] == 0.10
+
+    def test_price_limit_us_market(self, signal: Signal, portfolio: Portfolio, context: StrategyContext) -> None:
+        """Test PriceLimitRule allows US signals (no daily limits)."""
+        rule = PriceLimitRule(market=Market.US)
+        result = rule.check(signal, portfolio, context)
+        assert result.is_allowed()
+
+
+# =============================================================================
+# Sector Limit Rule Tests
+# =============================================================================
+
+
+class TestSectorLimitRules:
+    """Tests for sector limit rules."""
+
+    @pytest.fixture
+    def signal(self) -> Signal:
+        """Create a sample signal."""
+        return Signal("BUY", "600000", "SH600000", 10.5)
+
+    @pytest.fixture
+    def portfolio(self) -> Portfolio:
+        """Create a sample portfolio."""
+        return Portfolio(cash=10000.0, equity=10000.0)
+
+    @pytest.fixture
+    def context(self) -> StrategyContext:
+        """Create a sample context."""
+        class DummyStrategy(BaseStrategy):
+            name = "dummy"
+            def init(self, ctx) -> None:
+                pass
+            def next(self, ctx) -> None:
+                pass
+
+        strategy = DummyStrategy(params={"order_size": 100})
+        data = pl.DataFrame({
+            "instrument_id": ["SH600000"],
+            "date": [date(2024, 1, 15)],
+            "ticker": ["600000"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.8],
+            "close": [10.5],
+            "volume": [1000000],
+            "adj_factor": [1.0],
+        })
+        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
+        return ctx
+
+    def test_sector_concentration_limit_init(self) -> None:
+        """Test SectorConcentrationLimit initialization."""
+        rule = SectorConcentrationLimit(max_sector_pct=0.30, market=Market.CN_A)
+        assert rule.params["max_sector_pct"] == 0.30
+        assert rule.params["market"] == Market.CN_A
+
+    def test_sector_concentration_limit_allow_sell(self, portfolio: Portfolio, context: StrategyContext) -> None:
+        """Test SectorConcentrationLimit always allows sell signals."""
+        sell_signal = Signal("SELL", "600000", "SH600000", 10.5)
+        rule = SectorConcentrationLimit(max_sector_pct=0.30)
+        result = rule.check(sell_signal, portfolio, context)
+        assert result.is_allowed()
+
+    def test_sector_neutral_rule_init(self) -> None:
+        """Test SectorNeutralRule initialization."""
+        rule = SectorNeutralRule(max_deviation=0.05, market=Market.CN_A)
+        assert rule.params["max_deviation"] == 0.05
+        assert rule.params["market"] == Market.CN_A
+
+    def test_sector_neutral_rule_allow_sell(self, portfolio: Portfolio, context: StrategyContext) -> None:
+        """Test SectorNeutralRule always allows sell signals."""
+        sell_signal = Signal("SELL", "600000", "SH600000", 10.5)
+        rule = SectorNeutralRule(max_deviation=0.05)
+        result = rule.check(sell_signal, portfolio, context)
+        assert result.is_allowed()
+
+    def test_sector_weights_creation(self) -> None:
+        """Test SectorWeights dataclass."""
+        weights = SectorWeights(weights={"tech": 0.3, "finance": 0.2}, total=0.5)
+        assert weights.weights["tech"] == 0.3
+        assert weights.weights["finance"] == 0.2
+        assert weights.total == 0.5
