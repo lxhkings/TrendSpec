@@ -325,9 +325,14 @@ class BacktestEngine(BaseEngine):
         if signals:
             allowed_signals = self._process_signals(signals, trading_day)
 
-            # Submit orders to broker
+            # Submit orders to broker (use signal.shares if set, else order_size)
             for signal in allowed_signals:
-                self._broker.submit(signal, shares=ctx.get_param("order_size", 100))
+                order_shares = (
+                    int(signal.shares)
+                    if signal.shares is not None
+                    else ctx.get_param("order_size", 100)
+                )
+                self._broker.submit(signal, shares=order_shares)
 
         # Execute orders at next day's open (T+1)
         # For simplicity, execute at current close for now

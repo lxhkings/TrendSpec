@@ -594,3 +594,64 @@ def test_signal_shares_not_in_repr() -> None:
     """Signal.shares is excluded from repr (like timestamp)."""
     sig = Signal(direction="BUY", ticker="AAPL", instrument_id="AAPL", price=150.0, shares=10.0)
     assert "shares" not in repr(sig)
+
+
+# =============================================================================
+# BacktestEngine signal.shares Tests
+# =============================================================================
+
+
+@pytest.mark.parametrize("custom_shares,expected_shares", [(7, 7), (None, 100)])
+def test_backtest_engine_uses_signal_shares(custom_shares, expected_shares) -> None:
+    """Engine uses signal.shares when set; falls back to order_size=100 otherwise."""
+    from unittest.mock import MagicMock, patch
+    import polars as pl
+    from datetime import date
+    from trendspec.risk.pipeline import RiskPipeline
+
+    day_data = pl.DataFrame({
+        "instrument_id": ["AAPL"],
+        "ticker": ["AAPL"],
+        "date": [date(2024, 1, 2)],
+        "open": [180.0], "high": [185.0], "low": [178.0],
+        "close": [182.0], "volume": [50_000_000], "adj_factor": [1.0],
+    })
+
+    @register_strategy("_test_signal_shares")
+    class SharesTestStrategy(BaseStrategy):
+        name = "_test_signal_shares"
+
+        def init(self, ctx: StrategyContext) -> None:
+            pass
+
+        def next(self, ctx: StrategyContext) -> None:
+            if not ctx.has_position(ctx.instrument_id):
+                sig = ctx.signal("BUY", ctx.instrument_id, ctx.close)
+                if custom_shares is not None:
+                    sig.shares = float(custom_shares)
+
+    config = EngineConfig(
+        market=Market.US,
+        start_date=date(2024, 1, 2),
+        end_date=date(2024, 1, 3),
+        initial_capital=100_000.0,
+        order_size=100,
+        costs_model="none",
+        root="/tmp/nonexistent",
+        risk_pipeline=RiskPipeline([]),  # no rules → all signals pass
+    )
+
+    engine = BacktestEngine(config)
+    engine._data = day_data
+    engine._universe = MagicMock(tickers=lambda d: ["AAPL"])
+
+    with (
+        patch.object(engine, "load_data"),
+        patch.object(engine, "load_universe"),
+    ):
+        result = engine.run(SharesTestStrategy)
+
+    assert len(result.trades) >= 1, "Expected at least one trade"
+    assert all(t.shares == expected_shares for t in result.trades), (
+        f"Expected {expected_shares} shares per trade, got: {[t.shares for t in result.trades]}"
+    )
