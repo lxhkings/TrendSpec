@@ -79,7 +79,7 @@ def backtest_run(
 
     # Get market
     try:
-        market_enum = Market(market)
+        market_enum = Market(market.upper())
     except ValueError:
         console.print(f"[red]不支持的市场: {market}[/red]")
         raise typer.Exit(1)
