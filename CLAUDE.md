@@ -12,7 +12,7 @@ uv sync
 uv run pytest
 
 # 运行单个测试文件
-uv run pytest tests/test_metrics.py
+uv run pytest tests/test_stocks_db_ingestor.py
 
 # 运行单个测试函数
 uv run pytest tests/test_metrics.py::test_calculate_basic_metrics -v
@@ -22,63 +22,109 @@ uv run ruff check .
 
 # 代码格式化
 uv run ruff format .
+```
 
-# CLI 入口
-uv run trendspec --help
-uv run trendspec ingest --market cn_a --dataset daily
-uv run trendspec backtest --strategy ma_cross --market cn_a --start 2020-01-01
-uv run trendspec screen --strategy ma_cross --market cn_a --date 2024-05-15
+## 数据摄入（CLI）
+
+数据源：群辉 NAS MariaDB（`stocks` 数据库，192.168.8.9）
+
+```bash
+# 美股日线数据（全量）
+uv run trendspec ingest daily --market us --full
+
+# 美股日线数据（增量）
+uv run trendspec ingest daily --market us
+
+# A 股日线
+uv run trendspec ingest daily --market cn
+
+# 成分变动 / 行业
+uv run trendspec ingest components --market us
+uv run trendspec ingest sectors --market us
+
+# 查看同步状态
+uv run trendspec ingest status --market us
+
+# 回测 / 选股
+uv run trendspec backtest --strategy ma_cross --market us --start 2020-01-01
+uv run trendspec screen --strategy ma_cross --market us --date 2024-05-15
 ```
 
 ## 环境配置
 
-复制 `.env.example` 到 `.env`，配置以下变量：
+复制 `.env.example` 到 `.env`：
 
 ```
-DB_HOST=...
-DB_USER=...      # 不能是 root，必须是只读账户
+DB_HOST=192.168.8.9
+DB_PORT=3306
+DB_USER=root
 DB_PASSWORD=...
+DB_NAME=stocks
 DATA_LAKE_ROOT=./data_lake
+ALLOW_ROOT_DB_USER=true   # root 账户开发专用绕过
 ```
+
+`ALLOW_ROOT_DB_USER=true` 必须在 `.env` 中设置才能使用 root 账户（`os.getenv` 读不到 `.env`，已用 pydantic model_validator 修复）。
 
 ## 架构概览
 
 ### 核心数据流
 
 ```
-MariaDB → Ingest → data_lake (Parquet) → Engine → Strategy → RiskPipeline → Broker → Portfolio → Analyzer
+群辉 MariaDB (stocks DB) → stocks_db_ingestor → data_lake (Parquet) → Engine → Strategy → RiskPipeline → Broker → Portfolio → Analyzer
 ```
 
-**数据摄入（ingest/）**：从 MariaDB 读取原始数据，写入本地 Parquet 缓存（data_lake）。增量同步由 manifest 管理，状态记录在 `data_lake/_manifest/<market>.json`。
+### 数据源 Schema（群辉现有表）
 
-**数据存储（data_lake/）**：Parquet 格式按市场/数据集分区，结构为 `data_lake/<market>/<dataset>/`。主键为 `(instrument_id, date)`，**不是 ticker**，因为 ticker 可变。
+```
+prices(ticker, date, open, high, low, close, volume)          -- 1645 万行，2010-2026
+stocks(ticker, exchange, gics_sector, gics_industry, is_active)
+constituent_changes(index_id, ticker, change_type, change_date) -- CSI800/HSI/SP500
+```
 
-**引擎（engine/）**：`BacktestEngine` 运行回测，`ScreeningEngine` 运行选股。两者共用同一个策略接口（dual-mode 设计）。
+exchange 分布：US = NYSE/Nasdaq/CBOE，CN = SSE/SH/SZSE/SZ，HK = HKEX/HK
 
-**策略（strategy/）**：用户继承 `BaseStrategy`，实现 `init(ctx)` 和 `next(ctx)`。`init` 用 Polars 向量化预计算指标，`next` 在每个交易日调用一次。
+**价格已调整**：US = Yahoo Finance 复权价，CN = Tushare 后复权价，两者 `adj_factor=1.0`。
 
-**风控（risk/）**：`RiskPipeline` 串行执行一组 `RiskRule`，第一个拒绝即丢弃信号。内置规则：仓位限制、行业限制、回撤熔断、流动性过滤。
+### 自定义 Ingestor（`trendspec/ingest/stocks_db_ingestor.py`）
 
-**因子（factors/）**：按类别分组（price/、volume/、technical/、sector/、cross_sectional/），继承 `BaseFactor`，通过 Polars 表达式向量化计算。
+读取群辉现有 schema，转换为 TrendSpec 标准 Parquet：
 
-### PIT（Point-in-Time）原则
+- `ingest_us_daily` / `ingest_cn_daily`：JOIN prices + stocks，按 exchange 过滤，CN 推导 `SH{ticker}` / `SZ{ticker}` 格式的 `instrument_id`
+- `ingest_us_components` / `ingest_cn_components`：SP500/CSI800 成分变动 ADDED→IPO、REMOVED→DELIST；无成分变动记录的 ticker 用 `MIN(date)` 作 IPO 日期
+- `ingest_us_sectors` / `ingest_cn_sectors`：GICS 行业静态快照，`assign_date=2000-01-01`（无历史变更）
 
-**所有 Universe API 必须接受日期参数**，避免生存者偏差。Universe 跟踪 IPO/退市/停牌事件，确保历史窗口包含当时已退市股票。`instrument_id` 是不可变主键（如 `SH600000`），ticker 仅作展示用途。
+注：CN 行业使用 GICS（非申万），来自群辉数据库现有字段。
 
-### 关键设计约束
+### data_lake 分区结构
 
-- **instrument_id 不可变**：公司改名、ticker 复用均不影响 `instrument_id`
-- **双模式策略**：同一 `next()` 方法在回测（历史遍历）和选股（最新日期）中均可运行
-- **向量化优先**：`init()` 中用 Polars 预计算所有指标；`next()` 只做查值，不做计算
-- **deferred import in CLI**：CLI 命令函数内部导入重模块，保证 `--help` 响应速度
+```
+data_lake/<market>/<dataset>/instrument_id=<id>/<year>.parquet
+```
+
+market = `us` 或 `cn`（旧代码中曾用 `cn_a`，已统一改为 `cn`）。
+
+主键 `(instrument_id, date)`，**不是 ticker**（ticker 可变，instrument_id 不可变）。
+
+### 引擎与策略
+
+`BacktestEngine`（历史遍历）和 `ScreeningEngine`（最新日期）共用同一策略接口（dual-mode）。策略继承 `BaseStrategy`，实现 `init(ctx)`（向量化预计算）和 `next(ctx)`（每日信号生成）。
+
+### 风控
+
+`RiskPipeline` 串行执行 `RiskRule` 列表，第一个拒绝即丢弃信号。内置规则：仓位限制、行业限制、回撤熔断、流动性过滤。
 
 ### 设置系统
 
-`Settings` 类通过 pydantic-settings 从 `.env` 加载，使用 `Settings.get()` 获取单例。下级设置组：`settings.db`、`settings.data_lake`、`settings.backtest`、`settings.risk`。
+`trendspec/config/settings.py`：pydantic-settings，`.env` 文件加载。`Settings.get()` 返回 `@lru_cache` 单例。`DatabaseSettings` 用 `@model_validator(mode="after")` 校验 root 用户（而非 `@field_validator`，因为 `.env` 值不在 `os.environ` 中）。
+
+### PIT（Point-in-Time）原则
+
+Universe API 必须接受日期参数。`instrument_id` 不可变，跟踪 IPO/退市/停牌事件，确保历史回测包含当时已退市股票，避免生存者偏差。
 
 ## 编写新策略
 
-继承 `BaseStrategy`，实现两个方法（参考 `trendspec/strategy/examples/`）：
+参考 `trendspec/strategy/examples/`：
 
 ```python
 from trendspec.strategy import BaseStrategy, StrategyContext
@@ -98,4 +144,7 @@ class MyStrategy(BaseStrategy):
 
 ## 测试规范
 
-测试使用 SQLite 内存数据库模拟 MariaDB，使用临时目录模拟 data_lake。共享 fixtures 在 `tests/conftest.py`。测试数据包含真实 PIT 场景（退市股票、行业重分类、除权复权），不使用 mock 验证数据模型层行为。
+- 数据库：SQLite 内存库模拟 MariaDB，`conftest.py` 中有基础 fixtures
+- `stocks_db_ingestor` 测试：`tests/test_stocks_db_ingestor.py`，含 US + CN 场景共 13 个测试
+- PIT 场景：退市股票、行业重分类、除权复权均有覆盖
+- 不使用 mock 验证数据模型层行为
