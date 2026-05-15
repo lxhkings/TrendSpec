@@ -114,7 +114,7 @@ class ScreeningEngine(BaseEngine):
 
     Example:
         >>> config = EngineConfig(
-        ...     market=Market.CN_A,
+        ...     market=Market.CN,
         ...     start_date=date(2024, 12, 15),
         ...     end_date=date(2024, 12, 15),
         ... )
@@ -360,7 +360,7 @@ def screen(
         ScreeningResult with signals
 
     Example:
-        >>> result = screen(Market.CN_A, MyStrategy, date(2024, 12, 15))
+        >>> result = screen(Market.CN, MyStrategy, date(2024, 12, 15))
         >>> len(result.buy_signals)
         5
     """

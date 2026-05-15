@@ -54,7 +54,7 @@ class BacktestReport:
         initial_capital: float,
         strategy_name: str = "unknown",
         date_range: tuple[Any, Any] | None = None,
-        market: str = "CN_A",
+        market: str = "CN",
         position_costs: dict[str, float] | None = None,
         risk_free_rate: float = 0.03,
     ) -> None:

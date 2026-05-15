@@ -40,11 +40,11 @@ class DemeanBySectorFactor(Factor):
 
     Parameters:
         factor_name: Name of the factor to demean (must be registered)
-        market: Market for sector lookup (default: Market.CN_A)
+        market: Market for sector lookup (default: Market.CN)
         method: How to compute sector average - "mean" or "median" (default: "mean")
 
     Example:
-        >>> factor = DemeanBySectorFactor(factor_name="momentum", market=Market.CN_A)
+        >>> factor = DemeanBySectorFactor(factor_name="momentum", market=Market.CN)
         >>> result = factor.compute_full(df)
         >>> # Result contains demean_momentum column
         >>> # Values are stock momentum minus sector average momentum
@@ -57,7 +57,7 @@ class DemeanBySectorFactor(Factor):
     def __init__(
         self,
         factor_name: str = "momentum",
-        market: Market = Market.CN_A,
+        market: Market = Market.CN,
         method: str = "mean",
         root: str | None = None,
     ) -> None:
@@ -102,7 +102,7 @@ class DemeanBySectorFactor(Factor):
             FactorResult with computed demeaned values
         """
         factor_name = self.params.get("factor_name", "momentum")
-        market = self.params.get("market", Market.CN_A)
+        market = self.params.get("market", Market.CN)
         method = self.params.get("method", "mean")
         root = self.params.get("root")
         col_name = f"demean_{factor_name}"

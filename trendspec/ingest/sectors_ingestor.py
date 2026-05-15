@@ -229,7 +229,7 @@ def get_sector_name(market: Market, sector_code: str) -> str | None:
     Returns:
         Sector name or None if not found
     """
-    if market == Market.CN_A:
+    if market == Market.CN:
         return SHENWAN_L1_SECTORS.get(sector_code)
     elif market == Market.US:
         return GICS_SECTORS_11.get(sector_code)
@@ -247,7 +247,7 @@ def get_all_sectors(market: Market) -> dict[str, str]:
     Returns:
         Dict mapping sector code to sector name
     """
-    if market == Market.CN_A:
+    if market == Market.CN:
         return SHENWAN_L1_SECTORS
     elif market == Market.US:
         return GICS_SECTORS_11

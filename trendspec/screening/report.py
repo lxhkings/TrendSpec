@@ -33,7 +33,7 @@ class ScreeningReport:
         ...     signals=signals,
         ...     screening_date=date(2024, 5, 15),
         ...     strategy_name="ma_cross",
-        ...     market="CN_A",
+        ...     market="CN",
         ... )
         >>> report.output()
         >>> report.export()
@@ -44,7 +44,7 @@ class ScreeningReport:
         signals: list[Any],
         screening_date: date,
         strategy_name: str = "unknown",
-        market: str = "CN_A",
+        market: str = "CN",
         universe_size: int = 0,
     ) -> None:
         """

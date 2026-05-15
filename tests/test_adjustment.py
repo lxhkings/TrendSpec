@@ -85,10 +85,10 @@ class TestAdjustmentFactorCorrectness:
         })
 
         combined_df = pl.concat([daily_df, post_dividend_df])
-        write_parquet(combined_df, Market.CN_A, "daily", temp_root)
+        write_parquet(combined_df, Market.CN, "daily", temp_root)
 
         # Test forward adjustment
-        df_forward = bars(Market.CN_A, adjustment_mode="forward", root=temp_root)
+        df_forward = bars(Market.CN, adjustment_mode="forward", root=temp_root)
 
         if not df_forward.is_empty():
             # Manual calculation for Jan 10 forward adjustment:
@@ -138,10 +138,10 @@ class TestAdjustmentFactorCorrectness:
             "adj_factor": [1.0, 1.0, 1.0, 0.5, 0.5, 0.5],  # Split factor
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         # Test forward adjustment
-        df_forward = bars(Market.CN_A, adjustment_mode="forward", root=temp_root)
+        df_forward = bars(Market.CN, adjustment_mode="forward", root=temp_root)
 
         if not df_forward.is_empty():
             # Manual calculation for Feb 28 forward adjustment:
@@ -188,9 +188,9 @@ class TestAdjustmentFactorCorrectness:
             "adj_factor": [1.0, 1.0, 0.95, 0.95, 0.475, 0.475],  # Combined factor
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df_forward = bars(Market.CN_A, adjustment_mode="forward", root=temp_root)
+        df_forward = bars(Market.CN, adjustment_mode="forward", root=temp_root)
 
         if not df_forward.is_empty():
             # Verify adjustment ratio is correct
@@ -243,9 +243,9 @@ class TestForwardAdjustment:
             "adj_factor": [1.0, 1.0, 1.0, 0.95],  # Dividend on Jan 4
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df_forward = bars(Market.CN_A, adjustment_mode="forward", root=temp_root)
+        df_forward = bars(Market.CN, adjustment_mode="forward", root=temp_root)
 
         if not df_forward.is_empty():
             # Historical prices (Jan 1-3) should be adjusted upward
@@ -283,9 +283,9 @@ class TestForwardAdjustment:
             "adj_factor": [1.0, 1.0, 1.0, 0.5],  # Split on Jan 4
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df_forward = bars(Market.CN_A, adjustment_mode="forward", root=temp_root)
+        df_forward = bars(Market.CN, adjustment_mode="forward", root=temp_root)
 
         if not df_forward.is_empty():
             # Verify that returns between adjusted prices are correct
@@ -346,9 +346,9 @@ class TestBackwardAdjustment:
             "adj_factor": [1.0, 1.0, 1.0, 0.95],  # Dividend on Jan 4
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df_backward = bars(Market.CN_A, adjustment_mode="backward", root=temp_root)
+        df_backward = bars(Market.CN, adjustment_mode="backward", root=temp_root)
 
         if not df_backward.is_empty():
             # Current prices (Jan 4) should be adjusted downward
@@ -393,9 +393,9 @@ class TestBackwardAdjustment:
             "adj_factor": [1.0, 1.0, 0.5, 0.5],  # Split on March 1
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df_backward = bars(Market.CN_A, adjustment_mode="backward", root=temp_root)
+        df_backward = bars(Market.CN, adjustment_mode="backward", root=temp_root)
 
         if not df_backward.is_empty():
             # Post-split prices (Mar 1-2) should be adjusted downward
@@ -442,9 +442,9 @@ class TestRawAdjustment:
             "adj_factor": [1.0, 1.0, 1.0, 0.95],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df_raw = bars(Market.CN_A, adjustment_mode="raw", root=temp_root)
+        df_raw = bars(Market.CN, adjustment_mode="raw", root=temp_root)
 
         if not df_raw.is_empty():
             # Raw prices should be exactly as stored
@@ -480,9 +480,9 @@ class TestRawAdjustment:
             "adj_factor": [1.0, 1.0, 0.5, 0.5],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df_raw = bars(Market.CN_A, adjustment_mode="raw", root=temp_root)
+        df_raw = bars(Market.CN, adjustment_mode="raw", root=temp_root)
 
         if not df_raw.is_empty():
             # Volume should be preserved (doubled after split in raw data)
@@ -514,10 +514,10 @@ class TestAdjustmentModeValidation:
             "adj_factor": [1.0],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         with pytest.raises(ValueError, match="Invalid adjustment mode"):
-            bars(Market.CN_A, adjustment_mode="invalid", root=temp_root)
+            bars(Market.CN, adjustment_mode="invalid", root=temp_root)
 
     def test_adjustment_modes_defined(self) -> None:
         """Adjustment modes should be properly defined."""
@@ -543,10 +543,10 @@ class TestAdjustmentModeValidation:
             "volume": [1000000],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         # Raw mode should work (no adjustment needed anyway)
-        df_raw = bars(Market.CN_A, adjustment_mode="raw", root=temp_root)
+        df_raw = bars(Market.CN, adjustment_mode="raw", root=temp_root)
         if not df_raw.is_empty():
             assert "close" in df_raw.columns
 
@@ -568,12 +568,12 @@ class TestAdjustmentModeValidation:
             "adj_factor": [1.0],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         # All modes should work with single day
-        df_forward = bars(Market.CN_A, adjustment_mode="forward", root=temp_root)
-        df_backward = bars(Market.CN_A, adjustment_mode="backward", root=temp_root)
-        df_raw = bars(Market.CN_A, adjustment_mode="raw", root=temp_root)
+        df_forward = bars(Market.CN, adjustment_mode="forward", root=temp_root)
+        df_backward = bars(Market.CN, adjustment_mode="backward", root=temp_root)
+        df_raw = bars(Market.CN, adjustment_mode="raw", root=temp_root)
 
         if not df_forward.is_empty():
             assert df_forward["close"].item() == 10.2, "Single day forward should equal raw"
@@ -609,9 +609,9 @@ class TestMultiInstrumentAdjustment:
             "adj_factor": [1.0, 0.95, 1.0, 0.90],  # Different factors
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df_forward = bars(Market.CN_A, adjustment_mode="forward", root=temp_root)
+        df_forward = bars(Market.CN, adjustment_mode="forward", root=temp_root)
 
         if not df_forward.is_empty():
             # Each instrument should be adjusted independently
@@ -664,10 +664,10 @@ class TestBarsForInstrumentAdjustment:
             "adj_factor": [1.0, 1.0, 1.0, 0.95],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         df_forward = bars_for_instrument(
-            Market.CN_A, "SH600000", adjustment_mode="forward", root=temp_root
+            Market.CN, "SH600000", adjustment_mode="forward", root=temp_root
         )
 
         if not df_forward.is_empty():
@@ -694,10 +694,10 @@ class TestBarsForInstrumentAdjustment:
             "adj_factor": [1.0, 1.0, 1.0, 0.95],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         df_backward = bars_for_instrument(
-            Market.CN_A, "SH600000", adjustment_mode="backward", root=temp_root
+            Market.CN, "SH600000", adjustment_mode="backward", root=temp_root
         )
 
         if not df_backward.is_empty():
@@ -723,10 +723,10 @@ class TestBarsForInstrumentAdjustment:
             "adj_factor": [1.0, 1.0, 1.0, 0.95],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         df_raw = bars_for_instrument(
-            Market.CN_A, "SH600000", adjustment_mode="raw", root=temp_root
+            Market.CN, "SH600000", adjustment_mode="raw", root=temp_root
         )
 
         if not df_raw.is_empty():

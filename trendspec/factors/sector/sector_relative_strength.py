@@ -43,11 +43,11 @@ class SectorRelativeStrengthFactor(Factor):
 
     Parameters:
         period: Number of days to compute returns over (default: 10)
-        market: Market for sector lookup (default: Market.CN_A)
+        market: Market for sector lookup (default: Market.CN)
         aggregation: How to aggregate sector returns - "mean" or "median" (default: "mean")
 
     Example:
-        >>> factor = SectorRelativeStrengthFactor(period=20, market=Market.CN_A)
+        >>> factor = SectorRelativeStrengthFactor(period=20, market=Market.CN)
         >>> result = factor.compute_full(df)
         >>> # Result contains sector_relative_strength_20 column
         >>> # Positive: stock outperforming its sector
@@ -61,7 +61,7 @@ class SectorRelativeStrengthFactor(Factor):
     def __init__(
         self,
         period: int = 10,
-        market: Market = Market.CN_A,
+        market: Market = Market.CN,
         aggregation: str = "mean",
         root: str | None = None,
     ) -> None:
@@ -111,7 +111,7 @@ class SectorRelativeStrengthFactor(Factor):
             FactorResult with computed relative strength values
         """
         period = self.params.get("period", 10)
-        market = self.params.get("market", Market.CN_A)
+        market = self.params.get("market", Market.CN)
         aggregation = self.params.get("aggregation", "mean")
         root = self.params.get("root")
         col_name = f"sector_relative_strength_{period}"

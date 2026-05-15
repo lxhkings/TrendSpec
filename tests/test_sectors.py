@@ -69,7 +69,7 @@ def us_sectors_df() -> pl.DataFrame:
 @pytest.fixture
 def populated_cn_a_sectors(temp_root: str, cn_a_sectors_df: pl.DataFrame) -> str:
     """Populate data_lake with CN_A sectors."""
-    write_parquet(cn_a_sectors_df, Market.CN_A, "sectors", temp_root)
+    write_parquet(cn_a_sectors_df, Market.CN, "sectors", temp_root)
     return temp_root
 
 
@@ -118,13 +118,13 @@ class TestSectorIndex:
     def test_sector_index_empty(self, temp_root: str) -> None:
         """Empty data_lake should create empty index."""
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
         assert index.instrument_count() == 0
 
     def test_sector_index_with_data(self, populated_cn_a_sectors: str) -> None:
         """Index should load sector assignments."""
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, populated_cn_a_sectors)
+        index = SectorIndex(Market.CN, populated_cn_a_sectors)
 
         if index.instrument_count() > 0:
             assert index.instrument_count() >= 1
@@ -132,7 +132,7 @@ class TestSectorIndex:
     def test_sector_pit_lookup(self, populated_cn_a_sectors: str) -> None:
         """PIT sector lookup should return correct sector at date."""
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, populated_cn_a_sectors)
+        index = SectorIndex(Market.CN, populated_cn_a_sectors)
 
         if index.instrument_count() > 0:
             # SH600000 changed from sector "10" to "15" in 2024
@@ -149,7 +149,7 @@ class TestSectorIndex:
     def test_sector_not_found(self, populated_cn_a_sectors: str) -> None:
         """Unknown instrument should return None."""
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, populated_cn_a_sectors)
+        index = SectorIndex(Market.CN, populated_cn_a_sectors)
 
         sector = index.sector("UNKNOWN", date(2024, 1, 1))
         assert sector is None
@@ -157,7 +157,7 @@ class TestSectorIndex:
     def test_sector_before_assignment(self, populated_cn_a_sectors: str) -> None:
         """Date before first assignment should return None."""
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, populated_cn_a_sectors)
+        index = SectorIndex(Market.CN, populated_cn_a_sectors)
 
         # SH600000 first assigned in 2020
         sector = index.sector("SH600000", date(2019, 1, 1))
@@ -167,7 +167,7 @@ class TestSectorIndex:
     def test_sector_universe(self, populated_cn_a_sectors: str) -> None:
         """Sector universe should return instruments in sector at date."""
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, populated_cn_a_sectors)
+        index = SectorIndex(Market.CN, populated_cn_a_sectors)
 
         if index.instrument_count() > 0:
             # Get banking sector at 2024
@@ -192,13 +192,13 @@ class TestSectorFunctions:
         """sector() function should work."""
         clear_sector_cache()
 
-        s = sector(Market.CN_A, "SH600000", date(2024, 6, 1), populated_cn_a_sectors)
+        s = sector(Market.CN, "SH600000", date(2024, 6, 1), populated_cn_a_sectors)
         # Should return a sector or None
         assert s is None or isinstance(s, str)
 
     def test_sector_name_function(self) -> None:
         """sector_name() should return sector name."""
-        name = sector_name(Market.CN_A, "15")
+        name = sector_name(Market.CN, "15")
         assert name == "银行"
 
         name = sector_name(Market.US, "45")
@@ -206,7 +206,7 @@ class TestSectorFunctions:
 
     def test_sector_name_unknown(self) -> None:
         """Unknown sector code should return None."""
-        name = sector_name(Market.CN_A, "99")
+        name = sector_name(Market.CN, "99")
         assert name is None
 
     def test_sector_universe_function(self, populated_cn_a_sectors: str) -> None:
@@ -214,13 +214,13 @@ class TestSectorFunctions:
         clear_sector_cache()
 
         instruments = sector_universe(
-            Market.CN_A, "15", date(2024, 6, 1), populated_cn_a_sectors
+            Market.CN, "15", date(2024, 6, 1), populated_cn_a_sectors
         )
         assert isinstance(instruments, list)
 
     def test_get_all_sectors_cn(self) -> None:
         """get_all_sectors should return Shenwan sectors."""
-        sectors = get_all_sectors(Market.CN_A)
+        sectors = get_all_sectors(Market.CN)
         assert len(sectors) == 28
 
     def test_get_all_sectors_us(self) -> None:
@@ -232,17 +232,17 @@ class TestSectorFunctions:
         """get_sector_index should cache indices."""
         clear_sector_cache()
 
-        index1 = get_sector_index(Market.CN_A, populated_cn_a_sectors)
-        index2 = get_sector_index(Market.CN_A, populated_cn_a_sectors)
+        index1 = get_sector_index(Market.CN, populated_cn_a_sectors)
+        index2 = get_sector_index(Market.CN, populated_cn_a_sectors)
 
         # Should return same instance due to caching
         assert index1 is index2
 
     def test_clear_sector_cache(self, populated_cn_a_sectors: str) -> None:
         """clear_sector_cache should clear the cache."""
-        index1 = get_sector_index(Market.CN_A, populated_cn_a_sectors)
+        index1 = get_sector_index(Market.CN, populated_cn_a_sectors)
         clear_sector_cache()
-        index2 = get_sector_index(Market.CN_A, populated_cn_a_sectors)
+        index2 = get_sector_index(Market.CN, populated_cn_a_sectors)
 
         # Should return different instance after clear
         # (Though this is hard to verify without checking cache stats)

@@ -39,11 +39,11 @@ class SectorMomentumFactor(Factor):
 
     Parameters:
         period: Number of days to compute momentum over (default: 10)
-        market: Market for sector lookup (default: Market.CN_A)
+        market: Market for sector lookup (default: Market.CN)
         aggregation: How to aggregate stock returns - "mean" or "median" (default: "mean")
 
     Example:
-        >>> factor = SectorMomentumFactor(period=10, market=Market.CN_A)
+        >>> factor = SectorMomentumFactor(period=10, market=Market.CN)
         >>> result = factor.compute_full(df)
         >>> # Result contains sector_momentum_10 column
         >>> # Each stock has the momentum of its sector at that date
@@ -56,7 +56,7 @@ class SectorMomentumFactor(Factor):
     def __init__(
         self,
         period: int = 10,
-        market: Market = Market.CN_A,
+        market: Market = Market.CN,
         aggregation: str = "mean",
         root: str | None = None,
     ) -> None:
@@ -106,7 +106,7 @@ class SectorMomentumFactor(Factor):
             FactorResult with computed sector momentum values
         """
         period = self.params.get("period", 10)
-        market = self.params.get("market", Market.CN_A)
+        market = self.params.get("market", Market.CN)
         aggregation = self.params.get("aggregation", "mean")
         root = self.params.get("root")
         col_name = f"sector_momentum_{period}"

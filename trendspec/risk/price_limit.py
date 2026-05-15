@@ -37,14 +37,14 @@ class PriceLimitRule(RiskRule):
         priority: Rule priority (60)
 
     Parameters:
-        market: Market for limit rules (default: Market.CN_A)
+        market: Market for limit rules (default: Market.CN)
         limit_pct: Limit percentage for detection (default: 0.10 for 10%)
         check_limit_up: Check for limit up (涨停) (default: True)
         check_limit_down: Check for limit down (跌停) (default: True)
         tolerance: Tolerance for limit detection (default: 0.001)
 
     Example:
-        >>> rule = PriceLimitRule(market=Market.CN_A, limit_pct=0.10)
+        >>> rule = PriceLimitRule(market=Market.CN, limit_pct=0.10)
         >>> # Rejects signals for stocks at 涨停 or 跌停
     """
 
@@ -53,7 +53,7 @@ class PriceLimitRule(RiskRule):
 
     def __init__(
         self,
-        market: Market = Market.CN_A,
+        market: Market = Market.CN,
         limit_pct: float = 0.10,
         check_limit_up: bool = True,
         check_limit_down: bool = True,
@@ -70,7 +70,7 @@ class PriceLimitRule(RiskRule):
             tolerance: Tolerance for limit detection (to handle rounding)
         """
         # Adjust limit percentage based on market
-        if market == Market.CN_A:
+        if market == Market.CN:
             # A-shares: 10% for most, 20% for ChiNext/STAR Market
             # Default to 10%, user can override for specific stocks
             pass
@@ -104,7 +104,7 @@ class PriceLimitRule(RiskRule):
         Returns:
             Allow or Reject result
         """
-        market = self.params.get("market", Market.CN_A)
+        market = self.params.get("market", Market.CN)
         limit_pct = self.params.get("limit_pct", 0.10)
         check_limit_up = self.params.get("check_limit_up", True)
         check_limit_down = self.params.get("check_limit_down", True)

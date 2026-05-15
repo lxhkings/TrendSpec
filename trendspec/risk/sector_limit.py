@@ -35,11 +35,11 @@ class SectorConcentrationLimit(RiskRule):
 
     Parameters:
         max_sector_pct: Maximum sector weight (default: 0.30 = 30%)
-        market: Market for sector lookup (default: Market.CN_A)
+        market: Market for sector lookup (default: Market.CN)
         count_existing_position: Count existing positions in sector (default: True)
 
     Example:
-        >>> rule = SectorConcentrationLimit(max_sector_pct=0.25, market=Market.CN_A)
+        >>> rule = SectorConcentrationLimit(max_sector_pct=0.25, market=Market.CN)
         >>> # Rejects signals that would cause sector weight > 25%
     """
 
@@ -49,7 +49,7 @@ class SectorConcentrationLimit(RiskRule):
     def __init__(
         self,
         max_sector_pct: float = 0.30,
-        market: Market = Market.CN_A,
+        market: Market = Market.CN,
         count_existing_position: bool = True,
         root: str | None = None,
     ) -> None:
@@ -91,7 +91,7 @@ class SectorConcentrationLimit(RiskRule):
             return Allow(self.name)
 
         max_sector_pct = self.params.get("max_sector_pct", 0.30)
-        market = self.params.get("market", Market.CN_A)
+        market = self.params.get("market", Market.CN)
         count_existing = self.params.get("count_existing_position", True)
         root = self.params.get("root")
 

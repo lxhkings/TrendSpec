@@ -518,14 +518,14 @@ class TestSectorFactors:
 
     def test_sector_momentum_factor(self, sample_data: pl.DataFrame) -> None:
         """Test sector momentum factor."""
-        factor = SectorMomentumFactor(period=5, market=Market.CN_A)
+        factor = SectorMomentumFactor(period=5, market=Market.CN)
         result = factor.compute_full(sample_data)
         assert "sector_momentum_5" in result.values.columns
         # Note: Sector momentum requires sector index, may return None without data
 
     def test_sector_relative_strength_factor(self, sample_data: pl.DataFrame) -> None:
         """Test sector relative strength factor."""
-        factor = SectorRelativeStrengthFactor(period=5, market=Market.CN_A)
+        factor = SectorRelativeStrengthFactor(period=5, market=Market.CN)
         result = factor.compute_full(sample_data)
         assert "sector_relative_strength_5" in result.values.columns
 
@@ -555,12 +555,12 @@ class TestCrossSectionalFactors:
 
     def test_rank_within_sector_factor(self, sample_data: pl.DataFrame) -> None:
         """Test rank within sector factor."""
-        factor = RankWithinSectorFactor(factor_name="momentum", market=Market.CN_A)
+        factor = RankWithinSectorFactor(factor_name="momentum", market=Market.CN)
         result = factor.compute_full(sample_data)
         assert "rank_within_sector_momentum" in result.values.columns
 
     def test_demean_by_sector_factor(self, sample_data: pl.DataFrame) -> None:
         """Test demean by sector factor."""
-        factor = DemeanBySectorFactor(factor_name="momentum", market=Market.CN_A)
+        factor = DemeanBySectorFactor(factor_name="momentum", market=Market.CN)
         result = factor.compute_full(sample_data)
         assert "demean_momentum" in result.values.columns

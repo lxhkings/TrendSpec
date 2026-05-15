@@ -19,7 +19,7 @@ from trendspec.data.universe import (
     Universe,
     get_universe,
 )
-from trendspec.data.universe.cn_a import IPO_EVENT, DELIST_EVENT, HALT_EVENT
+from trendspec.data.universe.cn import IPO_EVENT, DELIST_EVENT, HALT_EVENT
 from trendspec.ingest.writer import write_parquet
 
 
@@ -96,8 +96,8 @@ def populated_cn_a_universe(
     cn_a_components_df: pl.DataFrame,
 ) -> str:
     """Populate data_lake for CN_A universe."""
-    write_parquet(cn_a_daily_df, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_df, Market.CN_A, "components", temp_root)
+    write_parquet(cn_a_daily_df, Market.CN, "daily", temp_root)
+    write_parquet(cn_a_components_df, Market.CN, "components", temp_root)
     return temp_root
 
 
@@ -108,8 +108,8 @@ def populated_cn_a_with_delist(
     cn_a_components_with_delist: pl.DataFrame,
 ) -> str:
     """Populate data_lake with delisting event."""
-    write_parquet(cn_a_daily_df, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_with_delist, Market.CN_A, "components", temp_root)
+    write_parquet(cn_a_daily_df, Market.CN, "daily", temp_root)
+    write_parquet(cn_a_components_with_delist, Market.CN, "components", temp_root)
     return temp_root
 
 
@@ -120,8 +120,8 @@ def populated_cn_a_with_halt(
     cn_a_components_with_halt: pl.DataFrame,
 ) -> str:
     """Populate data_lake with halt event."""
-    write_parquet(cn_a_daily_df, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_with_halt, Market.CN_A, "components", temp_root)
+    write_parquet(cn_a_daily_df, Market.CN, "daily", temp_root)
+    write_parquet(cn_a_components_with_halt, Market.CN, "components", temp_root)
     return temp_root
 
 
@@ -300,7 +300,7 @@ class TestGetUniverse:
 
     def test_get_universe_cn_a(self, temp_root: str) -> None:
         """get_universe should return CNAUniverse for CN_A."""
-        universe = get_universe("CN_A", temp_root)
+        universe = get_universe("CN", temp_root)
         assert isinstance(universe, CNAUniverse)
 
     def test_get_universe_us(self, temp_root: str) -> None:

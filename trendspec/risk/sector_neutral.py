@@ -50,7 +50,7 @@ class SectorNeutralRule(RiskRule):
 
     Parameters:
         max_deviation: Maximum sector deviation from benchmark (default: 0.05 = 5%)
-        market: Market for sector lookup (default: Market.CN_A)
+        market: Market for sector lookup (default: Market.CN)
         benchmark_weights: Benchmark sector weights (dict, optional)
         auto_calculate_benchmark: Auto-calculate benchmark from universe (default: False)
 
@@ -70,7 +70,7 @@ class SectorNeutralRule(RiskRule):
     def __init__(
         self,
         max_deviation: float = 0.05,
-        market: Market = Market.CN_A,
+        market: Market = Market.CN,
         benchmark_weights: dict[str, float] | None = None,
         auto_calculate_benchmark: bool = False,
         root: str | None = None,
@@ -209,7 +209,7 @@ class SectorNeutralRule(RiskRule):
             return Allow(self.name)
 
         max_deviation = self.params.get("max_deviation", 0.05)
-        market = self.params.get("market", Market.CN_A)
+        market = self.params.get("market", Market.CN)
         root = self.params.get("root")
 
         # Get sector index

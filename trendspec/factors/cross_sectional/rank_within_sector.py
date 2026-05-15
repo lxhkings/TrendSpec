@@ -40,11 +40,11 @@ class RankWithinSectorFactor(Factor):
 
     Parameters:
         factor_name: Name of the factor to rank (must be registered)
-        market: Market for sector lookup (default: Market.CN_A)
+        market: Market for sector lookup (default: Market.CN)
         ascending: Rank in ascending order (default: False, higher factor = higher rank)
 
     Example:
-        >>> factor = RankWithinSectorFactor(factor_name="momentum", market=Market.CN_A)
+        >>> factor = RankWithinSectorFactor(factor_name="momentum", market=Market.CN)
         >>> result = factor.compute_full(df)
         >>> # Result contains rank_within_sector_momentum column
         >>> # Values are percentile (0-1) within each sector
@@ -57,7 +57,7 @@ class RankWithinSectorFactor(Factor):
     def __init__(
         self,
         factor_name: str = "momentum",
-        market: Market = Market.CN_A,
+        market: Market = Market.CN,
         ascending: bool = False,
         root: str | None = None,
     ) -> None:
@@ -103,7 +103,7 @@ class RankWithinSectorFactor(Factor):
             FactorResult with computed rank values
         """
         factor_name = self.params.get("factor_name", "momentum")
-        market = self.params.get("market", Market.CN_A)
+        market = self.params.get("market", Market.CN)
         ascending = self.params.get("ascending", False)
         root = self.params.get("root")
         col_name = f"rank_within_sector_{factor_name}"

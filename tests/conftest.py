@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, text
 from trendspec.config.settings import Settings
 from trendspec.data.markets import Market
 from trendspec.data.sectors import clear_sector_cache
-from trendspec.data.universe.cn_a import IPO_EVENT, DELIST_EVENT, HALT_EVENT, RESUME_EVENT
+from trendspec.data.universe.cn import IPO_EVENT, DELIST_EVENT, HALT_EVENT, RESUME_EVENT
 from trendspec.ingest.writer import write_parquet
 
 
@@ -77,7 +77,7 @@ def sqlite_engine():
     with engine.connect() as conn:
         # Daily OHLCV table
         conn.execute(text("""
-            CREATE TABLE cn_a_daily (
+            CREATE TABLE cn_daily (
                 instrument_id TEXT,
                 trade_date DATE,
                 ticker TEXT,
@@ -92,7 +92,7 @@ def sqlite_engine():
 
         # Component events table (IPO, delist, halt)
         conn.execute(text("""
-            CREATE TABLE cn_a_components (
+            CREATE TABLE cn_components (
                 instrument_id TEXT,
                 event_date DATE,
                 event_type TEXT,
@@ -102,7 +102,7 @@ def sqlite_engine():
 
         # Sector assignments table
         conn.execute(text("""
-            CREATE TABLE cn_a_sectors (
+            CREATE TABLE cn_sectors (
                 instrument_id TEXT,
                 assign_date DATE,
                 sector_code TEXT,
@@ -155,12 +155,12 @@ def insert_sqlite_data(engine, table_name: str, data: list[tuple]) -> None:
     """
     with engine.connect() as conn:
         # Column names for each table
-        if table_name == "cn_a_daily":
+        if table_name == "cn_daily":
             columns = ["instrument_id", "trade_date", "ticker", "open_price",
                        "high_price", "low_price", "close_price", "volume", "adj_factor"]
-        elif table_name == "cn_a_components":
+        elif table_name == "cn_components":
             columns = ["instrument_id", "event_date", "event_type", "event_details"]
-        elif table_name == "cn_a_sectors":
+        elif table_name == "cn_sectors":
             columns = ["instrument_id", "assign_date", "sector_code", "sector_name"]
         elif table_name == "us_daily":
             columns = ["instrument_id", "trade_date", "ticker", "open_price",
@@ -189,7 +189,7 @@ def insert_sqlite_data(engine, table_name: str, data: list[tuple]) -> None:
 
 
 @pytest.fixture
-def cn_a_daily_basic() -> pl.DataFrame:
+def cn_daily_basic() -> pl.DataFrame:
     """Basic CN_A daily OHLCV data for 3 instruments."""
     return pl.DataFrame({
         "instrument_id": [
@@ -217,7 +217,7 @@ def cn_a_daily_basic() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_daily_with_adjustment() -> pl.DataFrame:
+def cn_daily_with_adjustment() -> pl.DataFrame:
     """
     CN_A daily data with corporate action (dividend/split) requiring adjustment.
 
@@ -246,7 +246,7 @@ def cn_a_daily_with_adjustment() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_daily_with_split() -> pl.DataFrame:
+def cn_daily_with_split() -> pl.DataFrame:
     """
     CN_A daily data with stock split requiring adjustment.
 
@@ -277,7 +277,7 @@ def cn_a_daily_with_split() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_components_basic() -> pl.DataFrame:
+def cn_components_basic() -> pl.DataFrame:
     """Basic CN_A component events for 3 instruments."""
     return pl.DataFrame({
         "instrument_id": ["SH600000", "SZ000001", "SH600631"],
@@ -288,7 +288,7 @@ def cn_a_components_basic() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_components_with_delist() -> pl.DataFrame:
+def cn_components_with_delist() -> pl.DataFrame:
     """
     CN_A component events with delisting - critical for survivorship bias tests.
 
@@ -329,7 +329,7 @@ def cn_a_components_with_delist() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_components_with_halt() -> pl.DataFrame:
+def cn_components_with_halt() -> pl.DataFrame:
     """
     CN_A component events with trading halt.
 
@@ -364,7 +364,7 @@ def cn_a_components_with_halt() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_components_with_ipos() -> pl.DataFrame:
+def cn_components_with_ipos() -> pl.DataFrame:
     """
     CN_A component events with IPO timeline for survivorship bias tests.
 
@@ -407,7 +407,7 @@ def us_components_basic() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_sectors_basic() -> pl.DataFrame:
+def cn_sectors_basic() -> pl.DataFrame:
     """Basic CN_A sector assignments (Shenwan Level 1)."""
     return pl.DataFrame({
         "instrument_id": ["SH600000", "SZ000001", "SH600036"],
@@ -418,7 +418,7 @@ def cn_a_sectors_basic() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_sectors_with_reclassification() -> pl.DataFrame:
+def cn_sectors_with_reclassification() -> pl.DataFrame:
     """
     CN_A sector assignments with reclassification - critical for PIT sector tests.
 
@@ -456,7 +456,7 @@ def cn_a_sectors_with_reclassification() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_sectors_multiple_changes() -> pl.DataFrame:
+def cn_sectors_multiple_changes() -> pl.DataFrame:
     """
     CN_A sector assignments with multiple reclassifications.
 
@@ -587,7 +587,7 @@ def cn_a_code_reuse() -> pl.DataFrame:
 
 
 @pytest.fixture
-def cn_a_components_code_reuse() -> pl.DataFrame:
+def cn_components_code_reuse() -> pl.DataFrame:
     """
     CN_A component events for ticker code reuse scenario.
 
@@ -610,31 +610,31 @@ def cn_a_components_code_reuse() -> pl.DataFrame:
 @pytest.fixture
 def populated_cn_a_basic(
     temp_root: str,
-    cn_a_daily_basic: pl.DataFrame,
-    cn_a_components_basic: pl.DataFrame,
-    cn_a_sectors_basic: pl.DataFrame,
+    cn_daily_basic: pl.DataFrame,
+    cn_components_basic: pl.DataFrame,
+    cn_sectors_basic: pl.DataFrame,
 ) -> str:
     """Populate data_lake with basic CN_A data."""
-    write_parquet(cn_a_daily_basic, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_basic, Market.CN_A, "components", temp_root)
-    write_parquet(cn_a_sectors_basic, Market.CN_A, "sectors", temp_root)
+    write_parquet(cn_daily_basic, Market.CN, "daily", temp_root)
+    write_parquet(cn_components_basic, Market.CN, "components", temp_root)
+    write_parquet(cn_sectors_basic, Market.CN, "sectors", temp_root)
     return temp_root
 
 
 @pytest.fixture
 def populated_cn_a_with_delist(
     temp_root: str,
-    cn_a_daily_with_delist: pl.DataFrame,
-    cn_a_components_with_delist: pl.DataFrame,
+    cn_daily_with_delist: pl.DataFrame,
+    cn_components_with_delist: pl.DataFrame,
 ) -> str:
     """Populate data_lake with delisting scenario."""
-    write_parquet(cn_a_daily_with_delist, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_with_delist, Market.CN_A, "components", temp_root)
+    write_parquet(cn_daily_with_delist, Market.CN, "daily", temp_root)
+    write_parquet(cn_components_with_delist, Market.CN, "components", temp_root)
     return temp_root
 
 
 @pytest.fixture
-def cn_a_daily_with_delist() -> pl.DataFrame:
+def cn_daily_with_delist() -> pl.DataFrame:
     """CN_A daily data extending through delisting date."""
     return pl.DataFrame({
         "instrument_id": [
@@ -667,17 +667,17 @@ def cn_a_daily_with_delist() -> pl.DataFrame:
 @pytest.fixture
 def populated_cn_a_with_halt(
     temp_root: str,
-    cn_a_daily_with_halt: pl.DataFrame,
-    cn_a_components_with_halt: pl.DataFrame,
+    cn_daily_with_halt: pl.DataFrame,
+    cn_components_with_halt: pl.DataFrame,
 ) -> str:
     """Populate data_lake with halt scenario."""
-    write_parquet(cn_a_daily_with_halt, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_with_halt, Market.CN_A, "components", temp_root)
+    write_parquet(cn_daily_with_halt, Market.CN, "daily", temp_root)
+    write_parquet(cn_components_with_halt, Market.CN, "components", temp_root)
     return temp_root
 
 
 @pytest.fixture
-def cn_a_daily_with_halt() -> pl.DataFrame:
+def cn_daily_with_halt() -> pl.DataFrame:
     """CN_A daily data with halt period."""
     return pl.DataFrame({
         "instrument_id": ["SH600000"] * 5 + ["SZ000001"] * 2,
@@ -702,14 +702,14 @@ def cn_a_daily_with_halt() -> pl.DataFrame:
 @pytest.fixture
 def populated_cn_a_with_reclassification(
     temp_root: str,
-    cn_a_daily_basic: pl.DataFrame,
-    cn_a_components_basic: pl.DataFrame,
-    cn_a_sectors_with_reclassification: pl.DataFrame,
+    cn_daily_basic: pl.DataFrame,
+    cn_components_basic: pl.DataFrame,
+    cn_sectors_with_reclassification: pl.DataFrame,
 ) -> str:
     """Populate data_lake with sector reclassification scenario."""
-    write_parquet(cn_a_daily_basic, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_basic, Market.CN_A, "components", temp_root)
-    write_parquet(cn_a_sectors_with_reclassification, Market.CN_A, "sectors", temp_root)
+    write_parquet(cn_daily_basic, Market.CN, "daily", temp_root)
+    write_parquet(cn_components_basic, Market.CN, "components", temp_root)
+    write_parquet(cn_sectors_with_reclassification, Market.CN, "sectors", temp_root)
     return temp_root
 
 
@@ -750,24 +750,24 @@ def us_daily_basic() -> pl.DataFrame:
 @pytest.fixture
 def populated_cn_a_with_adjustment(
     temp_root: str,
-    cn_a_daily_with_adjustment: pl.DataFrame,
-    cn_a_components_basic: pl.DataFrame,
+    cn_daily_with_adjustment: pl.DataFrame,
+    cn_components_basic: pl.DataFrame,
 ) -> str:
     """Populate data_lake with adjustment factor scenario."""
-    write_parquet(cn_a_daily_with_adjustment, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_basic, Market.CN_A, "components", temp_root)
+    write_parquet(cn_daily_with_adjustment, Market.CN, "daily", temp_root)
+    write_parquet(cn_components_basic, Market.CN, "components", temp_root)
     return temp_root
 
 
 @pytest.fixture
 def populated_cn_a_with_split(
     temp_root: str,
-    cn_a_daily_with_split: pl.DataFrame,
-    cn_a_components_basic: pl.DataFrame,
+    cn_daily_with_split: pl.DataFrame,
+    cn_components_basic: pl.DataFrame,
 ) -> str:
     """Populate data_lake with stock split scenario."""
-    write_parquet(cn_a_daily_with_split, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_basic, Market.CN_A, "components", temp_root)
+    write_parquet(cn_daily_with_split, Market.CN, "daily", temp_root)
+    write_parquet(cn_components_basic, Market.CN, "components", temp_root)
     return temp_root
 
 
@@ -776,11 +776,11 @@ def populated_cn_a_with_identity(
     temp_root: str,
     cn_a_ticker_rename: pl.DataFrame,
     cn_a_code_reuse: pl.DataFrame,
-    cn_a_components_code_reuse: pl.DataFrame,
+    cn_components_code_reuse: pl.DataFrame,
 ) -> str:
     """Populate data_lake with instrument identity scenarios."""
     # Combine rename and reuse daily data
     combined_daily = pl.concat([cn_a_ticker_rename, cn_a_code_reuse])
-    write_parquet(combined_daily, Market.CN_A, "daily", temp_root)
-    write_parquet(cn_a_components_code_reuse, Market.CN_A, "components", temp_root)
+    write_parquet(combined_daily, Market.CN, "daily", temp_root)
+    write_parquet(cn_components_code_reuse, Market.CN, "components", temp_root)
     return temp_root

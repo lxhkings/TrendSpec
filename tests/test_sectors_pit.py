@@ -60,10 +60,10 @@ class TestPITSectorLookup:
             "sector_name": ["农林牧渔", "银行"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Before reclassification: should return sector "10"
         sector_before = index.sector("SH600000", date(2023, 12, 31))
@@ -93,10 +93,10 @@ class TestPITSectorLookup:
             "sector_name": ["农林牧渔", "银行"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # On exact reclassification date: should return NEW sector
         sector_on_date = index.sector("SH600000", date(2024, 1, 15))
@@ -118,10 +118,10 @@ class TestPITSectorLookup:
             "sector_name": ["银行"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Before first assignment: should return None
         sector_before = index.sector("SH600000", date(2019, 1, 1))
@@ -146,10 +146,10 @@ class TestPITSectorLookup:
             "sector_name": ["化工", "电子", "计算机"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Test each period
         assert index.sector("SH600001", date(2019, 1, 1)) == "03", "2019: 化工"
@@ -261,10 +261,10 @@ class TestPITSectorUniverse:
             "sector_name": ["农林牧渔", "银行", "银行", "银行"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Banking sector in 2023: should NOT include SH600000 (still in Agriculture)
         banking_2023 = index.sector_universe("15", date(2023, 1, 1))
@@ -287,10 +287,10 @@ class TestPITSectorUniverse:
             "sector_name": ["银行"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Non-existent sector code
         result = index.sector_universe("99", date(2024, 1, 1))
@@ -307,9 +307,9 @@ class TestSectorNames:
 
     def test_shenwan_sector_names(self) -> None:
         """Shenwan Level 1 sector names should be correct."""
-        assert sector_name(Market.CN_A, "15") == "银行"
-        assert sector_name(Market.CN_A, "11") == "医药生物"
-        assert sector_name(Market.CN_A, "01") == "农林牧渔"
+        assert sector_name(Market.CN, "15") == "银行"
+        assert sector_name(Market.CN, "11") == "医药生物"
+        assert sector_name(Market.CN, "01") == "农林牧渔"
 
     def test_gics_sector_names(self) -> None:
         """GICS sector names should be correct."""
@@ -319,7 +319,7 @@ class TestSectorNames:
 
     def test_unknown_sector_code(self) -> None:
         """Unknown sector code should return None."""
-        assert sector_name(Market.CN_A, "99") is None
+        assert sector_name(Market.CN, "99") is None
         assert sector_name(Market.US, "99") is None
 
 
@@ -359,10 +359,10 @@ class TestSectorIndexBinarySearch:
             "sector_name": ["Sector"] * len(dates_list),
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Verify correct sector at each period
         # Test random points
@@ -393,10 +393,10 @@ class TestSectorIndexBinarySearch:
             "sector_name": ["Sector"] * num_instruments,
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Lookup should work for all instruments
         for i in range(10):  # Test subset
@@ -422,15 +422,15 @@ class TestSectorConvenienceFunctions:
             "sector_name": ["农林牧渔", "银行"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
 
         # Test sector function
-        result_before = sector(Market.CN_A, "SH600000", date(2023, 1, 1), temp_root)
+        result_before = sector(Market.CN, "SH600000", date(2023, 1, 1), temp_root)
         assert result_before == "10"
 
-        result_after = sector(Market.CN_A, "SH600000", date(2024, 3, 1), temp_root)
+        result_after = sector(Market.CN, "SH600000", date(2024, 3, 1), temp_root)
         assert result_after == "15"
 
     def test_sector_universe_function(self, temp_root: str) -> None:
@@ -442,11 +442,11 @@ class TestSectorConvenienceFunctions:
             "sector_name": ["银行", "银行", "农林牧渔"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
 
-        banking = sector_universe(Market.CN_A, "15", date(2022, 1, 1), temp_root)
+        banking = sector_universe(Market.CN, "15", date(2022, 1, 1), temp_root)
         assert "SH600000" in banking
         assert "SH600001" in banking
         assert "SH600002" not in banking
@@ -463,7 +463,7 @@ class TestSectorEdgeCases:
     def test_empty_sector_index(self, temp_root: str) -> None:
         """Empty sector data should return None for all lookups."""
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         assert index.instrument_count() == 0
         assert index.sector("SH600000", date(2024, 1, 1)) is None
@@ -477,10 +477,10 @@ class TestSectorEdgeCases:
             "sector_name": ["银行"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Unknown instrument
         assert index.sector("UNKNOWN", date(2024, 1, 1)) is None
@@ -498,10 +498,10 @@ class TestSectorEdgeCases:
             "sector_name": ["农林牧渔", "银行"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         # Future date: should return most recent sector
         sector_future = index.sector("SH600000", date(2030, 1, 1))
@@ -516,10 +516,10 @@ class TestSectorEdgeCases:
             "sector_name": ["银行", "银行", "农林牧渔"],
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
 
         clear_sector_cache()
-        index = SectorIndex(Market.CN_A, temp_root)
+        index = SectorIndex(Market.CN, temp_root)
 
         all_sectors = index.all_sectors_at_date(date(2022, 1, 1))
 

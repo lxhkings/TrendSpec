@@ -37,7 +37,7 @@ from trendspec.strategy.signal import Signal
 def screening_config(temp_root) -> EngineConfig:
     """Create screening engine configuration."""
     return EngineConfig(
-        market=Market.CN_A,
+        market=Market.CN,
         start_date=date(2024, 1, 2),
         end_date=date(2024, 1, 2),
         initial_capital=100000.0,
@@ -112,7 +112,7 @@ class TestScreeningEngine:
         """Test screening engine initialization."""
         engine = ScreeningEngine(screening_config)
 
-        assert engine.config.market == Market.CN_A
+        assert engine.config.market == Market.CN
         assert engine._target_date == date(2024, 1, 2)
 
     def test_get_trading_days(self, screening_config):
@@ -172,7 +172,7 @@ class TestScreeningEngine:
     def test_no_portfolio_updates(self, temp_root):
         """Test that screening doesn't have portfolio tracking."""
         config = EngineConfig(
-            market=Market.CN_A,
+            market=Market.CN,
             start_date=date(2024, 1, 2),
             end_date=date(2024, 1, 2),
             root=temp_root,
@@ -235,11 +235,11 @@ class TestScreeningConfig:
     def test_config_init(self):
         """Test screening config initialization."""
         config = ScreeningConfig(
-            market=Market.CN_A,
+            market=Market.CN,
             target_date=date(2024, 1, 2),
         )
 
-        assert config.market == Market.CN_A
+        assert config.market == Market.CN
         assert config.target_date == date(2024, 1, 2)
         assert config.include_sell_signals == False
 
@@ -312,7 +312,7 @@ class TestScreenFunction:
             def init(self, ctx): pass
             def next(self, ctx): pass
 
-        result = screen(Market.CN_A, TestStrategy, date(2024, 1, 2))
+        result = screen(Market.CN, TestStrategy, date(2024, 1, 2))
 
         assert result.screening_date == date(2024, 1, 2)
 
@@ -430,7 +430,7 @@ class TestScreeningEdgeCases:
     def test_empty_universe(self, temp_root):
         """Test screening with empty universe."""
         config = EngineConfig(
-            market=Market.CN_A,
+            market=Market.CN,
             start_date=date(2024, 1, 2),
             end_date=date(2024, 1, 2),
             root=temp_root,
@@ -474,7 +474,7 @@ class TestScreeningDateHandling:
     def test_target_date_is_start_date(self, temp_root):
         """Test that target date is set from start_date."""
         config = EngineConfig(
-            market=Market.CN_A,
+            market=Market.CN,
             start_date=date(2024, 1, 2),
             end_date=date(2024, 1, 2),
             root=temp_root,
@@ -486,7 +486,7 @@ class TestScreeningDateHandling:
     def test_non_trading_day_handling(self, temp_root):
         """Test handling of non-trading day."""
         config = EngineConfig(
-            market=Market.CN_A,
+            market=Market.CN,
             start_date=date(2024, 1, 1),  # New Year's Day
             end_date=date(2024, 1, 1),
             root=temp_root,

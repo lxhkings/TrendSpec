@@ -25,7 +25,7 @@ from trendspec.data.markets import Market
 from trendspec.data.parquet_loader import bars, read_components
 from trendspec.data.sectors import sector
 from trendspec.data.universe import CNAUniverse, USUniverse, get_universe
-from trendspec.data.universe.cn_a import IPO_EVENT, DELIST_EVENT, HALT_EVENT, RESUME_EVENT
+from trendspec.data.universe.cn import IPO_EVENT, DELIST_EVENT, HALT_EVENT, RESUME_EVENT
 from trendspec.ingest.writer import write_parquet
 
 
@@ -80,8 +80,8 @@ class TestSurvivorshipBiasPrevention:
             "adj_factor": [1.0, 1.0, 1.0, 1.0],
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -129,8 +129,8 @@ class TestSurvivorshipBiasPrevention:
             "event_details": ["IPO", "Delisted", "IPO"],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -185,8 +185,8 @@ class TestSurvivorshipBiasPrevention:
             "adj_factor": [1.0] * 4,
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -237,8 +237,8 @@ class TestIPOFiltering:
             "adj_factor": [1.0] * 3,
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -297,8 +297,8 @@ class TestIPOFiltering:
             "adj_factor": [1.0] * 7,
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -343,8 +343,8 @@ class TestIPOFiltering:
             "adj_factor": [1.0],
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -407,8 +407,8 @@ class TestHaltFiltering:
         # Filter out rows with null prices (halted days)
         daily_df = daily_df.filter(pl.col("close").is_not_null())
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -453,8 +453,8 @@ class TestHaltFiltering:
             "adj_factor": [1.0],
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -512,8 +512,8 @@ class TestDelistDayEdgeCases:
             "adj_factor": [1.0],
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -594,8 +594,8 @@ class TestUniverseCount:
             "adj_factor": [1.0] * 12,
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -779,7 +779,7 @@ class TestPITDesignRules:
             "event_details": ["IPO", "Delist", "IPO"],
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -800,7 +800,7 @@ class TestGetUniverse:
 
     def test_get_universe_cn_a(self, temp_root: str) -> None:
         """get_universe should return CNAUniverse for CN_A."""
-        universe = get_universe("CN_A", temp_root)
+        universe = get_universe("CN", temp_root)
         assert isinstance(universe, CNAUniverse)
 
     def test_get_universe_us(self, temp_root: str) -> None:
@@ -848,8 +848,8 @@ class TestUniverseIntegration:
             "event_details": ["IPO", "IPO", "IPO", "Delist"],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -888,8 +888,8 @@ class TestUniverseIntegration:
             "event_details": ["IPO", "IPO", "Delist"],
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -898,7 +898,7 @@ class TestUniverseIntegration:
 
         # Get bars for that universe
         df = bars(
-            Market.CN_A,
+            Market.CN,
             start_date=date(2015, 1, 1),
             end_date=date(2015, 12, 31),
             instrument_ids=universe_2015,

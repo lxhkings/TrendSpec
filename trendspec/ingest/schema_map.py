@@ -29,7 +29,7 @@ from trendspec.data.markets import Market
 # CN_A (China A-shares) Schema Mapping
 # =============================================================================
 
-CN_A_DAILY_MAP: Final[dict[str, str]] = {
+CN_DAILY_MAP: Final[dict[str, str]] = {
     "instrument_id": "instrument_id",  # SH/SZ prefix + 6-digit code
     "date": "trade_date",
     "ticker": "ticker",  # Chinese name or 6-digit code
@@ -41,14 +41,14 @@ CN_A_DAILY_MAP: Final[dict[str, str]] = {
     "adj_factor": "adj_factor",
 }
 
-CN_A_COMPONENTS_MAP: Final[dict[str, str]] = {
+CN_COMPONENTS_MAP: Final[dict[str, str]] = {
     "date": "event_date",
     "instrument_id": "instrument_id",
     "event": "event_type",  # IPO, DELIST, HALT, RESUME
     "details": "event_details",  # Additional info (nullable)
 }
 
-CN_A_SECTORS_MAP: Final[dict[str, str]] = {
+CN_SECTORS_MAP: Final[dict[str, str]] = {
     "date": "assign_date",
     "instrument_id": "instrument_id",
     "sector": "sector_code",  # Shenwan Level 1 sector code
@@ -109,9 +109,9 @@ def get_column_map(market: Market, dataset: str) -> dict[str, str]:
     mapping_key = f"{market.value}_{dataset.upper()}_MAP"
 
     mappings = {
-        "CN_A_DAILY_MAP": CN_A_DAILY_MAP,
-        "CN_A_COMPONENTS_MAP": CN_A_COMPONENTS_MAP,
-        "CN_A_SECTORS_MAP": CN_A_SECTORS_MAP,
+        "CN_DAILY_MAP": CN_DAILY_MAP,
+        "CN_COMPONENTS_MAP": CN_COMPONENTS_MAP,
+        "CN_SECTORS_MAP": CN_SECTORS_MAP,
         "US_DAILY_MAP": US_DAILY_MAP,
         "US_COMPONENTS_MAP": US_COMPONENTS_MAP,
         "US_SECTORS_MAP": US_SECTORS_MAP,

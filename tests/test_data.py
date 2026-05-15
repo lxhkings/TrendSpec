@@ -33,14 +33,14 @@ class TestMarketEnum:
 
     def test_market_values(self) -> None:
         """Market enum should have expected values."""
-        assert Market.CN_A.value == "CN_A"
+        assert Market.CN.value == "CN"
         assert Market.US.value == "US"
         assert Market.HK.value == "HK"
 
     def test_market_is_strenum(self) -> None:
         """Market should be a StrEnum for easy serialization."""
-        assert isinstance(Market.CN_A, str)
-        assert Market.CN_A == "CN_A"
+        assert isinstance(Market.CN, str)
+        assert Market.CN == "CN"
 
     def test_all_markets_have_metadata(self) -> None:
         """All market enum values should have metadata."""
@@ -56,11 +56,11 @@ class TestMarketMetadataCN:
     @pytest.fixture
     def cn_market(self) -> Market:
         """Return CN_A market."""
-        return Market.CN_A
+        return Market.CN
 
     def test_path(self, cn_market: Market) -> None:
-        """CN_A path should be cn_a."""
-        assert cn_market.path == "cn_a"
+        """CN path should be cn."""
+        assert cn_market.path == "cn"
 
     def test_price_precision(self, cn_market: Market) -> None:
         """CN_A should have 2 decimal places for price."""
@@ -107,7 +107,7 @@ class TestMarketMetadataCN:
     def test_data_path(self, cn_market: Market) -> None:
         """data_path should construct correct path."""
         path = cn_market.data_path("/data/lake")
-        assert path == "/data/lake/cn_a"
+        assert path == "/data/lake/cn"
 
     def test_is_trading_day_weekend(self, cn_market: Market) -> None:
         """Weekend should not be trading day."""

@@ -485,11 +485,11 @@ def get_costs_model(market: Market) -> CostsModel:
         CostsModel instance for the market
 
     Example:
-        >>> costs = get_costs_model(Market.CN_A)
+        >>> costs = get_costs_model(Market.CN)
         >>> costs.calculate("BUY", 10000)
         5.0
     """
-    if market == Market.CN_A:
+    if market == Market.CN:
         return CNACostsModel()
     elif market == Market.US:
         return USCostsModel()

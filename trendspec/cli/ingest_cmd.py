@@ -5,9 +5,9 @@ Ingest command for TrendSpec CLI.
 Import market data from MariaDB to Parquet data lake.
 
 Commands:
-    trendspec ingest --market cn_a --dataset daily --since 2020-01-01
-    trendspec ingest --market cn_a --dataset components --since 2020-01-01
-    trendspec ingest --market cn_a --dataset sectors --since 2020-01-01
+    trendspec ingest --market cn --dataset daily --since 2020-01-01
+    trendspec ingest --market cn --dataset components --since 2020-01-01
+    trendspec ingest --market cn --dataset sectors --since 2020-01-01
     trendspec ingest --market us --dataset daily --since 2020-01-01
     trendspec ingest --status
 """
@@ -26,10 +26,10 @@ console = Console()
 @app.command("daily")
 def ingest_daily(
     market: str = typer.Option(
-        "cn_a",
+        "cn",
         "--market",
         "-m",
-        help="市场代码 (cn_a, us)",
+        help="市场代码 (cn, us)",
     ),
     since: str = typer.Option(
         "2020-01-01",
@@ -50,11 +50,11 @@ def ingest_daily(
     从MariaDB导入OHLCV日线数据到Parquet数据湖.
 
     示例:
-        trendspec ingest daily --market cn_a --since 2020-01-01
+        trendspec ingest daily --market cn --since 2020-01-01
         trendspec ingest daily --market us --since 2020-01-01
     """
     from trendspec.data.markets import Market
-    from trendspec.ingest.cn_a_ingestor import CNAIngestor
+    from trendspec.ingest.cn_ingestor import CNAIngestor
     from trendspec.ingest.us_ingestor import USIngestor
     from trendspec.config.settings import get_settings
 
@@ -74,7 +74,7 @@ def ingest_daily(
     console.print(f"[cyan]导入 {market} 日线数据，起始日期: {since_date}[/cyan]")
 
     try:
-        if market_enum == Market.CN_A:
+        if market_enum == Market.CN:
             ingestor = CNAIngestor(
                 db_url=settings.db.connection_url,
                 root=settings.data_lake.data_lake_root,
@@ -106,10 +106,10 @@ def ingest_daily(
 @app.command("components")
 def ingest_components(
     market: str = typer.Option(
-        "cn_a",
+        "cn",
         "--market",
         "-m",
-        help="市场代码 (cn_a)",
+        help="市场代码 (cn)",
     ),
     since: str = typer.Option(
         "2020-01-01",
@@ -124,7 +124,7 @@ def ingest_components(
     从MariaDB导入指数成分股变更数据到Parquet数据湖.
 
     示例:
-        trendspec ingest components --market cn_a --since 2020-01-01
+        trendspec ingest components --market cn --since 2020-01-01
     """
     from trendspec.data.markets import Market
     from trendspec.ingest.components_ingestor import ComponentsIngestor
@@ -158,10 +158,10 @@ def ingest_components(
 @app.command("sectors")
 def ingest_sectors(
     market: str = typer.Option(
-        "cn_a",
+        "cn",
         "--market",
         "-m",
-        help="市场代码 (cn_a)",
+        help="市场代码 (cn)",
     ),
     since: str = typer.Option(
         "2020-01-01",
@@ -176,7 +176,7 @@ def ingest_sectors(
     从MariaDB导入板块分类数据到Parquet数据湖.
 
     示例:
-        trendspec ingest sectors --market cn_a --since 2020-01-01
+        trendspec ingest sectors --market cn --since 2020-01-01
     """
     from trendspec.data.markets import Market
     from trendspec.ingest.sectors_ingestor import SectorsIngestor
@@ -244,10 +244,10 @@ def ingest_status() -> None:
 @app.command("all")
 def ingest_all(
     market: str = typer.Option(
-        "cn_a",
+        "cn",
         "--market",
         "-m",
-        help="市场代码 (cn_a, us)",
+        help="市场代码 (cn, us)",
     ),
     since: str = typer.Option(
         "2020-01-01",
@@ -262,14 +262,14 @@ def ingest_all(
     一次性导入日线、成分股、板块数据.
 
     示例:
-        trendspec ingest all --market cn_a --since 2020-01-01
+        trendspec ingest all --market cn --since 2020-01-01
     """
     console.print("[cyan]导入所有数据集...[/cyan]")
 
     # Run each ingest command
     ingest_daily(market=market, since=since, incremental=False)
 
-    if market == "cn_a":
+    if market == "cn":
         ingest_components(market=market, since=since)
         ingest_sectors(market=market, since=since)
 

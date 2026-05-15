@@ -21,9 +21,9 @@ Design principles:
 from trendspec.ingest.manifest import Manifest, read_manifest, write_manifest
 from trendspec.ingest.mariadb_client import get_engine
 from trendspec.ingest.schema_map import (
-    CN_A_COMPONENTS_MAP,
-    CN_A_DAILY_MAP,
-    CN_A_SECTORS_MAP,
+    CN_COMPONENTS_MAP,
+    CN_DAILY_MAP,
+    CN_SECTORS_MAP,
     US_COMPONENTS_MAP,
     US_DAILY_MAP,
     US_SECTORS_MAP,
@@ -36,9 +36,9 @@ __all__ = [
     "Manifest",
     "read_manifest",
     "write_manifest",
-    "CN_A_DAILY_MAP",
-    "CN_A_COMPONENTS_MAP",
-    "CN_A_SECTORS_MAP",
+    "CN_DAILY_MAP",
+    "CN_COMPONENTS_MAP",
+    "CN_SECTORS_MAP",
     "US_DAILY_MAP",
     "US_COMPONENTS_MAP",
     "US_SECTORS_MAP",

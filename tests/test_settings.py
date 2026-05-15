@@ -32,9 +32,11 @@ class TestDatabaseSettings:
     def test_database_settings_requires_password(self) -> None:
         """Database password should be required."""
         with patch.dict(
-            os.environ, {"DB_HOST": "localhost", "DB_USER": "testuser"}, clear=False
+            os.environ,
+            {"DB_HOST": "localhost", "DB_USER": "testuser"},
+            clear=True,  # clear env + ignore .env so DB_PASSWORD is truly absent
         ), pytest.raises(ValidationError):
-            DatabaseSettings()
+            DatabaseSettings(_env_file=None)
 
     def test_database_settings_rejects_root_user(self) -> None:
         """Root user should be rejected for security."""

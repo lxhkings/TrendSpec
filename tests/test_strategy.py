@@ -135,9 +135,9 @@ class TestStrategyContext:
                 pass
 
         strategy = DummyStrategy()
-        ctx = StrategyContext(Market.CN_A, strategy)
+        ctx = StrategyContext(Market.CN, strategy)
 
-        assert ctx.market == Market.CN_A
+        assert ctx.market == Market.CN
         assert ctx.strategy == strategy
 
     def test_context_bar_update(self) -> None:
@@ -162,7 +162,7 @@ class TestStrategyContext:
             "adj_factor": [1.0],
         })
 
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
 
         assert ctx.date == date(2024, 1, 15)
@@ -194,7 +194,7 @@ class TestStrategyContext:
             "adj_factor": [1.0],
         })
 
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
 
         sig = ctx.signal("BUY")
@@ -214,7 +214,7 @@ class TestStrategyContext:
                 pass
 
         strategy = DummyStrategy()
-        ctx = StrategyContext(Market.CN_A, strategy)
+        ctx = StrategyContext(Market.CN, strategy)
 
         ctx.update_positions({"SH600000": 100.0, "SZ000001": 50.0}, 10000.0)
 
@@ -470,7 +470,7 @@ class TestStrategyLifecycle:
                     ctx.signal("BUY", ctx.instrument_id, ctx.close, trigger_value=ma_val)
 
         strategy = TestStrategy()
-        ctx = StrategyContext(Market.CN_A, strategy, data=sample_data)
+        ctx = StrategyContext(Market.CN, strategy, data=sample_data)
 
         # Run init
         strategy.init(ctx)

@@ -23,9 +23,9 @@ from trendspec.ingest.incremental import (
 )
 from trendspec.ingest.manifest import Manifest
 from trendspec.ingest.schema_map import (
-    CN_A_COMPONENTS_MAP,
-    CN_A_DAILY_MAP,
-    CN_A_SECTORS_MAP,
+    CN_COMPONENTS_MAP,
+    CN_DAILY_MAP,
+    CN_SECTORS_MAP,
     get_table_name,
 )
 from trendspec.ingest.writer import write_parquet
@@ -35,7 +35,7 @@ from trendspec.ingest.writer import write_parquet
 # =============================================================================
 
 
-def get_cn_a_instrument_list(engine: Engine) -> list[str]:
+def get_cn_instrument_list(engine: Engine) -> list[str]:
     """
     Get list of all A-share instrument_ids from database.
 
@@ -48,7 +48,7 @@ def get_cn_a_instrument_list(engine: Engine) -> list[str]:
         List of instrument_ids (e.g., ["SH600000", "SZ000001", ...])
     """
     # Query distinct instrument_ids from daily table
-    table_name = get_table_name(Market.CN_A, "daily")
+    table_name = get_table_name(Market.CN, "daily")
     sql = text(f"SELECT DISTINCT instrument_id FROM {table_name} ORDER BY instrument_id")
 
     with engine.connect() as conn:
@@ -56,7 +56,7 @@ def get_cn_a_instrument_list(engine: Engine) -> list[str]:
         return [row[0] for row in result.fetchall()]
 
 
-def ingest_cn_a_daily(
+def ingest_cn_daily(
     engine: Engine,
     manifest: Manifest,
     root: str,
@@ -76,11 +76,11 @@ def ingest_cn_a_daily(
     """
 
     dataset = "daily"
-    table_name = get_table_name(Market.CN_A, dataset)
-    column_map = CN_A_DAILY_MAP
+    table_name = get_table_name(Market.CN, dataset)
+    column_map = CN_DAILY_MAP
 
     # Get instrument list
-    all_instruments = get_cn_a_instrument_list(engine)
+    all_instruments = get_cn_instrument_list(engine)
 
     if full_sync:
         # Full sync - pull all data without date filter
@@ -97,7 +97,7 @@ def ingest_cn_a_daily(
         return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
 
     # Write to Parquet
-    write_parquet(df, Market.CN_A, dataset, root)
+    write_parquet(df, Market.CN, dataset, root)
 
     # Update manifest
     update_manifest_after_sync(manifest, dataset, df)
@@ -122,7 +122,7 @@ def ingest_cn_a_daily(
 # =============================================================================
 
 
-def ingest_cn_a_components(
+def ingest_cn_components(
     engine: Engine,
     manifest: Manifest,
     root: str,
@@ -144,8 +144,8 @@ def ingest_cn_a_components(
         Summary dict with row_count, date_range, instrument_count
     """
     dataset = "components"
-    table_name = get_table_name(Market.CN_A, dataset)
-    column_map = CN_A_COMPONENTS_MAP
+    table_name = get_table_name(Market.CN, dataset)
+    column_map = CN_COMPONENTS_MAP
 
     # Get date range for sync
     if full_sync:
@@ -191,7 +191,7 @@ def ingest_cn_a_components(
     df = df.rename(rename_map)
 
     # Write to Parquet
-    write_parquet(df, Market.CN_A, dataset, root)
+    write_parquet(df, Market.CN, dataset, root)
 
     # Get summary
     date_range = get_full_date_range(df)
@@ -213,7 +213,7 @@ def ingest_cn_a_components(
 # =============================================================================
 
 
-def ingest_cn_a_sectors(
+def ingest_cn_sectors(
     engine: Engine,
     manifest: Manifest,
     root: str,
@@ -235,8 +235,8 @@ def ingest_cn_a_sectors(
         Summary dict with row_count, date_range, instrument_count
     """
     dataset = "sectors"
-    table_name = get_table_name(Market.CN_A, dataset)
-    column_map = CN_A_SECTORS_MAP
+    table_name = get_table_name(Market.CN, dataset)
+    column_map = CN_SECTORS_MAP
 
     # Get date range for sync
     if full_sync:
@@ -282,7 +282,7 @@ def ingest_cn_a_sectors(
     df = df.rename(rename_map)
 
     # Write to Parquet
-    write_parquet(df, Market.CN_A, dataset, root)
+    write_parquet(df, Market.CN, dataset, root)
 
     # Get summary
     date_range = get_full_date_range(df)
@@ -304,7 +304,7 @@ def ingest_cn_a_sectors(
 # =============================================================================
 
 
-def ingest_cn_a_full(
+def ingest_cn_full(
     engine: Engine,
     root: str,
     full_sync: bool = False,
@@ -320,12 +320,12 @@ def ingest_cn_a_full(
     Returns:
         Summary dict with results for each dataset
     """
-    manifest = Manifest(Market.CN_A, root)
+    manifest = Manifest(Market.CN, root)
 
     results = {
-        "daily": ingest_cn_a_daily(engine, manifest, root, full_sync),
-        "components": ingest_cn_a_components(engine, manifest, root, full_sync),
-        "sectors": ingest_cn_a_sectors(engine, manifest, root, full_sync),
+        "daily": ingest_cn_daily(engine, manifest, root, full_sync),
+        "components": ingest_cn_components(engine, manifest, root, full_sync),
+        "sectors": ingest_cn_sectors(engine, manifest, root, full_sync),
     }
 
     return results

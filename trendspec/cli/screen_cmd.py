@@ -4,7 +4,7 @@ Screen command for TrendSpec CLI.
 Run screening with strategy and output Chinese signal table.
 
 Command:
-    trendspec screen --strategy ma_cross --market cn_a --date 2024-05-15
+    trendspec screen --strategy ma_cross --market cn --date 2024-05-15
 """
 
 from datetime import date
@@ -26,10 +26,10 @@ def screen_run(
         help="策略名称",
     ),
     market: str = typer.Option(
-        "cn_a",
+        "cn",
         "--market",
         "-m",
-        help="市场代码 (cn_a, us)",
+        help="市场代码 (cn, us)",
     ),
     date_str: Optional[str] = typer.Option(
         None,
@@ -50,8 +50,8 @@ def screen_run(
     加载策略类，运行选股引擎，输出买入/卖出信号.
 
     示例:
-        trendspec screen run --strategy ma_cross --market cn_a --date 2024-05-15
-        trendspec screen run --strategy ma_cross --market cn_a  # 使用今日日期
+        trendspec screen run --strategy ma_cross --market cn --date 2024-05-15
+        trendspec screen run --strategy ma_cross --market cn  # 使用今日日期
     """
     from trendspec.data.markets import Market
     from trendspec.engine.base_engine import EngineConfig

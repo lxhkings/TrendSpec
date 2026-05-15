@@ -4,7 +4,7 @@ Backtest command for TrendSpec CLI.
 Run backtest with strategy and output Chinese report.
 
 Command:
-    trendspec backtest --strategy ma_cross --market cn_a --start 2020-01-01 --end 2024-12-31
+    trendspec backtest --strategy ma_cross --market cn --start 2020-01-01 --end 2024-12-31
 """
 
 from datetime import date
@@ -26,10 +26,10 @@ def backtest_run(
         help="策略名称",
     ),
     market: str = typer.Option(
-        "cn_a",
+        "cn",
         "--market",
         "-m",
-        help="市场代码 (cn_a, us)",
+        help="市场代码 (cn, us)",
     ),
     start: str = typer.Option(
         "2020-01-01",
@@ -60,7 +60,7 @@ def backtest_run(
     加载策略类，运行回测引擎，输出绩效报告.
 
     示例:
-        trendspec backtest run --strategy ma_cross --market cn_a --start 2020-01-01 --end 2024-12-31
+        trendspec backtest run --strategy ma_cross --market cn --start 2020-01-01 --end 2024-12-31
     """
     from trendspec.data.markets import Market
     from trendspec.engine.base_engine import EngineConfig

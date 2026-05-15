@@ -11,7 +11,7 @@ Supported markets:
 """
 
 from trendspec.data.universe.base import Universe
-from trendspec.data.universe.cn_a import CNAUniverse
+from trendspec.data.universe.cn import CNAUniverse
 from trendspec.data.universe.hk import HKUniverse
 from trendspec.data.universe.us import USUniverse
 
@@ -31,7 +31,7 @@ def get_universe(market: str, root: str | None = None) -> Universe:
     Factory function to create the appropriate universe class.
 
     Args:
-        market: Market code ("CN_A", "US", "HK")
+        market: Market code ("CN", "US", "HK")
         root: Root directory for data_lake
 
     Returns:
@@ -40,7 +40,7 @@ def get_universe(market: str, root: str | None = None) -> Universe:
     Raises:
         ValueError: If market is not recognized
     """
-    if market == "CN_A":
+    if market == "CN":
         return CNAUniverse(root)
     elif market == "US":
         return USUniverse(root)

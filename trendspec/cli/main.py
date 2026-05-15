@@ -37,9 +37,9 @@ def main(
     TrendSpec CLI - 量化回测与选股系统.
 
     用法:
-        trendspec ingest --market cn_a --dataset daily
-        trendspec backtest --strategy ma_cross --market cn_a --start 2020-01-01
-        trendspec screen --strategy ma_cross --market cn_a --date 2024-05-15
+        trendspec ingest --market cn --dataset daily
+        trendspec backtest --strategy ma_cross --market cn --start 2020-01-01
+        trendspec screen --strategy ma_cross --market cn --date 2024-05-15
     """
     if version:
         from trendspec import __version__

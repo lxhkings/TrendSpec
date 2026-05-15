@@ -22,7 +22,7 @@ from trendspec.data.markets import Market
 from trendspec.data.parquet_loader import bars, bars_for_instrument, get_instrument_ids
 from trendspec.data.schema import PRIMARY_KEY, REQUIRED_COLUMNS, validate_dataframe_schema
 from trendspec.data.universe import CNAUniverse
-from trendspec.data.universe.cn_a import IPO_EVENT, DELIST_EVENT
+from trendspec.data.universe.cn import IPO_EVENT, DELIST_EVENT
 from trendspec.ingest.writer import write_parquet, read_partition
 
 
@@ -112,10 +112,10 @@ class TestTickerRename:
             "adj_factor": [1.0] * 6,
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         # Verify data integrity
-        df = bars_for_instrument(Market.CN_A, "SH600000", root=temp_root)
+        df = bars_for_instrument(Market.CN, "SH600000", root=temp_root)
 
         if not df.is_empty():
             # Should have 6 rows - all for same instrument_id
@@ -155,9 +155,9 @@ class TestTickerRename:
             "adj_factor": [1.0] * 6,
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df = bars_for_instrument(Market.CN_A, "SH600000", adjustment_mode="raw", root=temp_root)
+        df = bars_for_instrument(Market.CN, "SH600000", adjustment_mode="raw", root=temp_root)
 
         if not df.is_empty():
             df = df.sort("date")
@@ -206,8 +206,8 @@ class TestTickerRename:
             "adj_factor": [1.0] * 6,
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -278,12 +278,12 @@ class TestDelistCodeReuse:
             "adj_factor": [1.0] * 6,
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         # Verify old and new are separate
-        df_old = bars_for_instrument(Market.CN_A, "SH_OLD001", root=temp_root)
-        df_new = bars_for_instrument(Market.CN_A, "SH_NEW001", root=temp_root)
+        df_old = bars_for_instrument(Market.CN, "SH_OLD001", root=temp_root)
+        df_new = bars_for_instrument(Market.CN, "SH_NEW001", root=temp_root)
 
         if not df_old.is_empty() and not df_new.is_empty():
             # Should have different data
@@ -333,8 +333,8 @@ class TestDelistCodeReuse:
             "adj_factor": [1.0, 1.0],
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -378,11 +378,11 @@ class TestDelistCodeReuse:
             "adj_factor": [1.0] * 4,
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         # Query by instrument_id should return correct subset
-        df_old = bars_for_instrument(Market.CN_A, "SH_OLD001", root=temp_root)
-        df_new = bars_for_instrument(Market.CN_A, "SH_NEW001", root=temp_root)
+        df_old = bars_for_instrument(Market.CN, "SH_OLD001", root=temp_root)
+        df_new = bars_for_instrument(Market.CN, "SH_NEW001", root=temp_root)
 
         if not df_old.is_empty():
             # Old company data should only have 2014-2015 dates
@@ -450,9 +450,9 @@ class TestHistoricalJoinContinuity:
             "adj_factor": [1.0] * 10,
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df = bars_for_instrument(Market.CN_A, "SH600000", root=temp_root)
+        df = bars_for_instrument(Market.CN, "SH600000", root=temp_root)
 
         if not df.is_empty():
             df = df.sort("date")
@@ -499,9 +499,9 @@ class TestHistoricalJoinContinuity:
             "adj_factor": [1.0, 1.0, 0.9, 0.9, 0.9, 0.9],  # Dividend at rename
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        df = bars_for_instrument(Market.CN_A, "SH600000", adjustment_mode="raw", root=temp_root)
+        df = bars_for_instrument(Market.CN, "SH600000", adjustment_mode="raw", root=temp_root)
 
         if not df.is_empty():
             # adj_factor should be tracked correctly across ticker change
@@ -615,11 +615,11 @@ class TestPartitionByInstrumentId:
             "adj_factor": [1.0] * 4,
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         # Check partition directories exist
         import os
-        daily_path = os.path.join(temp_root, "cn_a", "daily")
+        daily_path = os.path.join(temp_root, "cn", "daily")
 
         assert os.path.exists(os.path.join(daily_path, "instrument_id=SH600000")), (
             "SH600000 partition should exist"
@@ -646,10 +646,10 @@ class TestPartitionByInstrumentId:
             "adj_factor": [1.0] * 4,
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         # Read specific partition
-        partition_df = read_partition(temp_root, Market.CN_A, "daily", "SH600000")
+        partition_df = read_partition(temp_root, Market.CN, "daily", "SH600000")
 
         assert not partition_df.is_empty(), "Partition should have data"
         assert partition_df["instrument_id"].unique().to_list() == ["SH600000"], (
@@ -684,9 +684,9 @@ class TestGetInstrumentIds:
             "adj_factor": [1.0] * 3,
         })
 
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        ids = get_instrument_ids(Market.CN_A, temp_root)
+        ids = get_instrument_ids(Market.CN, temp_root)
 
         assert len(ids) >= 3, "Should have at least 3 instrument_ids"
         assert "SH600000" in ids, "SH600000 should be in list"
@@ -695,7 +695,7 @@ class TestGetInstrumentIds:
 
     def test_get_instrument_ids_empty(self, temp_root: str) -> None:
         """get_instrument_ids should return empty list for empty data_lake."""
-        ids = get_instrument_ids(Market.CN_A, temp_root)
+        ids = get_instrument_ids(Market.CN, temp_root)
         assert ids == [], "Empty data_lake should return empty list"
 
 
@@ -732,8 +732,8 @@ class TestInstrumentIdentityIntegration:
             "adj_factor": [1.0] * 2,
         })
 
-        write_parquet(components_df, Market.CN_A, "components", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(components_df, Market.CN, "components", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         universe = CNAUniverse(temp_root)
 
@@ -770,16 +770,16 @@ class TestInstrumentIdentityIntegration:
             "adj_factor": [1.0] * 2,
         })
 
-        write_parquet(sectors_df, Market.CN_A, "sectors", temp_root)
-        write_parquet(daily_df, Market.CN_A, "daily", temp_root)
+        write_parquet(sectors_df, Market.CN, "sectors", temp_root)
+        write_parquet(daily_df, Market.CN, "daily", temp_root)
 
         from trendspec.data.sectors import sector, clear_sector_cache
 
         clear_sector_cache()
 
         # Sector should be tracked by instrument_id
-        sector_2020 = sector(Market.CN_A, "SH600000", date(2020, 1, 1), temp_root)
-        sector_2024 = sector(Market.CN_A, "SH600000", date(2024, 2, 1), temp_root)
+        sector_2020 = sector(Market.CN, "SH600000", date(2020, 1, 1), temp_root)
+        sector_2024 = sector(Market.CN, "SH600000", date(2024, 2, 1), temp_root)
 
         assert sector_2020 == "10", "Sector should be '10' in 2020"
         assert sector_2024 == "15", "Sector should be '15' in 2024"

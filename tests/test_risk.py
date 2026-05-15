@@ -160,7 +160,7 @@ class TestRiskRules:
             "volume": [1000000],
             "adj_factor": [1.0],
         })
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
         return ctx
 
@@ -243,7 +243,7 @@ class TestRiskRules:
             "volume": [50000],  # Low volume
             "adj_factor": [1.0],
         })
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
 
         rule = LiquidityFilter(min_volume=100000)
@@ -307,7 +307,7 @@ class TestRiskPipeline:
             "volume": [1000000],
             "adj_factor": [1.0],
         })
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
         return ctx
 
@@ -523,7 +523,7 @@ class TestPositionLimitRules:
             "volume": [1000000],
             "adj_factor": [1.0],
         })
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
         return ctx
 
@@ -607,7 +607,7 @@ class TestDrawdownHaltRule:
             "volume": [1000000],
             "adj_factor": [1.0],
         })
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
         return ctx
 
@@ -698,7 +698,7 @@ class TestMinLiquidityRule:
             "volume": [500000],  # 500K volume
             "adj_factor": [1.0],
         })
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
         return ctx
 
@@ -755,14 +755,14 @@ class TestPriceLimitRule:
             "volume": [1000000],
             "adj_factor": [1.0],
         })
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
         return ctx
 
     def test_price_limit_rule_init(self) -> None:
         """Test PriceLimitRule initialization."""
-        rule = PriceLimitRule(market=Market.CN_A, limit_pct=0.10)
-        assert rule.params["market"] == Market.CN_A
+        rule = PriceLimitRule(market=Market.CN, limit_pct=0.10)
+        assert rule.params["market"] == Market.CN
         assert rule.params["limit_pct"] == 0.10
 
     def test_price_limit_us_market(self, signal: Signal, portfolio: Portfolio, context: StrategyContext) -> None:
@@ -812,15 +812,15 @@ class TestSectorLimitRules:
             "volume": [1000000],
             "adj_factor": [1.0],
         })
-        ctx = StrategyContext(Market.CN_A, strategy, data=data)
+        ctx = StrategyContext(Market.CN, strategy, data=data)
         ctx.update_bar(date(2024, 1, 15), "SH600000", "600000", data)
         return ctx
 
     def test_sector_concentration_limit_init(self) -> None:
         """Test SectorConcentrationLimit initialization."""
-        rule = SectorConcentrationLimit(max_sector_pct=0.30, market=Market.CN_A)
+        rule = SectorConcentrationLimit(max_sector_pct=0.30, market=Market.CN)
         assert rule.params["max_sector_pct"] == 0.30
-        assert rule.params["market"] == Market.CN_A
+        assert rule.params["market"] == Market.CN
 
     def test_sector_concentration_limit_allow_sell(self, portfolio: Portfolio, context: StrategyContext) -> None:
         """Test SectorConcentrationLimit always allows sell signals."""
@@ -831,9 +831,9 @@ class TestSectorLimitRules:
 
     def test_sector_neutral_rule_init(self) -> None:
         """Test SectorNeutralRule initialization."""
-        rule = SectorNeutralRule(max_deviation=0.05, market=Market.CN_A)
+        rule = SectorNeutralRule(max_deviation=0.05, market=Market.CN)
         assert rule.params["max_deviation"] == 0.05
-        assert rule.params["market"] == Market.CN_A
+        assert rule.params["market"] == Market.CN
 
     def test_sector_neutral_rule_allow_sell(self, portfolio: Portfolio, context: StrategyContext) -> None:
         """Test SectorNeutralRule always allows sell signals."""

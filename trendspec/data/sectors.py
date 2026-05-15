@@ -183,7 +183,7 @@ class SectorIndex:
             Sector code or None if instrument not in index
 
         Example:
-            >>> index = SectorIndex(Market.CN_A)
+            >>> index = SectorIndex(Market.CN)
             >>> index.sector("SH600000", date(2024, 1, 15))
             '15'  # Banking sector
         """
@@ -237,7 +237,7 @@ class SectorIndex:
             List of instrument_ids in the sector at that date
 
         Example:
-            >>> index = SectorIndex(Market.CN_A)
+            >>> index = SectorIndex(Market.CN)
             >>> index.sector_universe("15", date(2024, 1, 15))
             ['SH600000', 'SH600016', ...]  # Banking stocks
         """
@@ -329,7 +329,7 @@ def sector(
         Sector code or None
 
     Example:
-        >>> sector(Market.CN_A, "SH600000", date(2024, 1, 15))
+        >>> sector(Market.CN, "SH600000", date(2024, 1, 15))
         '15'
     """
     index = get_sector_index(market, root)
@@ -350,7 +350,7 @@ def sector_name(
     Returns:
         Sector name or None if not found
     """
-    if market == Market.CN_A:
+    if market == Market.CN:
         return SHENWAN_L1_SECTORS.get(sector_code)
     elif market == Market.US:
         return GICS_SECTORS.get(sector_code)
@@ -380,7 +380,7 @@ def sector_universe(
         List of instrument_ids in the sector at that date
 
     Example:
-        >>> sector_universe(Market.CN_A, "15", date(2024, 1, 15))
+        >>> sector_universe(Market.CN, "15", date(2024, 1, 15))
         ['SH600000', 'SH600016', ...]
     """
     index = get_sector_index(market, root)
@@ -397,7 +397,7 @@ def get_all_sectors(market: Market) -> dict[str, str]:
     Returns:
         Dict mapping sector code to sector name
     """
-    if market == Market.CN_A:
+    if market == Market.CN:
         return dict(SHENWAN_L1_SECTORS)
     elif market == Market.US:
         return dict(GICS_SECTORS)

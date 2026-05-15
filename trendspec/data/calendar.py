@@ -33,7 +33,7 @@ CN_A_HOLIDAY_YEARS: Final[range] = range(1990, 2030)  # SSE founded 1990
 US_HOLIDAY_YEARS: Final[range] = range(1900, 2030)
 
 
-def _get_cn_a_holidays() -> holidays_lib.HolidayBase:
+def _get_cn_holidays() -> holidays_lib.HolidayBase:
     """
     Get China A-share exchange holidays.
 
@@ -102,7 +102,7 @@ def _get_us_holidays() -> holidays_lib.HolidayBase:
 # =============================================================================
 
 # Pre-built holiday calendars for O(1) lookup
-_CN_A_HOLIDAYS: holidays_lib.HolidayBase = _get_cn_a_holidays()
+_CN_A_HOLIDAYS: holidays_lib.HolidayBase = _get_cn_holidays()
 _US_HOLIDAYS: holidays_lib.HolidayBase = _get_us_holidays()
 
 
@@ -128,11 +128,11 @@ def is_trading_day(market: Market, as_of_date: date) -> bool:
         NotImplementedError: For HK market (not implemented)
 
     Example:
-        >>> is_trading_day(Market.CN_A, date(2024, 1, 1))
+        >>> is_trading_day(Market.CN, date(2024, 1, 1))
         False  # New Year's Day
         >>> is_trading_day(Market.US, date(2024, 1, 1))
         False  # New Year's Day
-        >>> is_trading_day(Market.CN_A, date(2024, 1, 2))
+        >>> is_trading_day(Market.CN, date(2024, 1, 2))
         True   # Regular trading day
     """
     if market == Market.HK:
@@ -147,7 +147,7 @@ def is_trading_day(market: Market, as_of_date: date) -> bool:
         return False
 
     # Check holidays based on market
-    if market == Market.CN_A:
+    if market == Market.CN:
         return as_of_date not in _CN_A_HOLIDAYS
     elif market == Market.US:
         return as_of_date not in _US_HOLIDAYS
@@ -177,7 +177,7 @@ def trading_days_between(
         NotImplementedError: For HK market (not implemented)
 
     Example:
-        >>> trading_days_between(Market.CN_A, date(2024, 1, 1), date(2024, 1, 5))
+        >>> trading_days_between(Market.CN, date(2024, 1, 1), date(2024, 1, 5))
         [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4), date(2024, 1, 5)]
         # Jan 1 is holiday (New Year), Jan 6-7 are weekend
     """

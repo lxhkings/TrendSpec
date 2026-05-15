@@ -28,7 +28,7 @@ class TestIsTradingDayCN:
     @pytest.fixture
     def cn_market(self) -> Market:
         """Return CN_A market."""
-        return Market.CN_A
+        return Market.CN
 
     def test_weekend_not_trading_day(self, cn_market: Market) -> None:
         """Weekend should not be trading day."""
@@ -118,10 +118,10 @@ class TestTradingDaysBetween:
     def test_cn_a_trading_days_range(self) -> None:
         """Get trading days between dates for CN_A."""
         # Jan 1-5, 2024: Jan 1 is holiday, Jan 6-7 are weekend
-        days = trading_days_between(Market.CN_A, date(2024, 1, 1), date(2024, 1, 5))
+        days = trading_days_between(Market.CN, date(2024, 1, 1), date(2024, 1, 5))
         # Expected: Jan 2, 3, 4, 5 (Jan 1 is holiday)
         assert len(days) >= 3  # At least Jan 2-4 should be trading days
-        assert all(is_trading_day(Market.CN_A, d) for d in days)
+        assert all(is_trading_day(Market.CN, d) for d in days)
 
     def test_us_trading_days_range(self) -> None:
         """Get trading days between dates for US."""
@@ -130,14 +130,14 @@ class TestTradingDaysBetween:
 
     def test_empty_range(self) -> None:
         """Empty range should return empty list."""
-        days = trading_days_between(Market.CN_A, date(2024, 1, 5), date(2024, 1, 1))
+        days = trading_days_between(Market.CN, date(2024, 1, 5), date(2024, 1, 1))
         assert len(days) == 0
 
     def test_single_day_range(self) -> None:
         """Single day range should return one day if trading."""
         # Jan 2 is a trading day
-        days = trading_days_between(Market.CN_A, date(2024, 1, 2), date(2024, 1, 2))
-        if is_trading_day(Market.CN_A, date(2024, 1, 2)):
+        days = trading_days_between(Market.CN, date(2024, 1, 2), date(2024, 1, 2))
+        if is_trading_day(Market.CN, date(2024, 1, 2)):
             assert len(days) == 1
             assert days[0] == date(2024, 1, 2)
 
@@ -153,21 +153,21 @@ class TestNextPreviousTradingDay:
     def test_next_trading_day_after_weekend(self) -> None:
         """Next trading day after weekend should be Monday."""
         # Saturday Jan 6, 2024 -> next trading day should be Monday Jan 8
-        next_day = next_trading_day(Market.CN_A, date(2024, 1, 6))
+        next_day = next_trading_day(Market.CN, date(2024, 1, 6))
         assert next_day.weekday() == 0  # Monday
 
     def test_previous_trading_day_before_weekend(self) -> None:
         """Previous trading day before weekend should be Friday."""
         # Sunday Jan 7, 2024 -> previous trading day should be Friday Jan 5
-        prev_day = previous_trading_day(Market.CN_A, date(2024, 1, 7))
+        prev_day = previous_trading_day(Market.CN, date(2024, 1, 7))
         assert prev_day.weekday() == 4  # Friday
 
     def test_next_trading_day_after_holiday(self) -> None:
         """Next trading day after holiday."""
         # Jan 1 is holiday, next trading day should be Jan 2 or later
-        next_day = next_trading_day(Market.CN_A, date(2024, 1, 1))
+        next_day = next_trading_day(Market.CN, date(2024, 1, 1))
         assert next_day > date(2024, 1, 1)
-        assert is_trading_day(Market.CN_A, next_day)
+        assert is_trading_day(Market.CN, next_day)
 
     def test_hk_raises_not_implemented(self) -> None:
         """HK market should raise NotImplementedError."""
@@ -183,13 +183,13 @@ class TestCountTradingDays:
     def test_count_trading_days_week(self) -> None:
         """Count trading days in a week."""
         # Jan 1-7, 2024: Jan 1 is holiday, Jan 6-7 are weekend
-        count = count_trading_days(Market.CN_A, date(2024, 1, 1), date(2024, 1, 7))
+        count = count_trading_days(Market.CN, date(2024, 1, 1), date(2024, 1, 7))
         assert count <= 5  # Max 5 trading days in a week
         assert count >= 2  # At least some trading days
 
     def test_count_trading_days_empty(self) -> None:
         """Empty range should have zero trading days."""
-        count = count_trading_days(Market.CN_A, date(2024, 1, 7), date(2024, 1, 1))
+        count = count_trading_days(Market.CN, date(2024, 1, 7), date(2024, 1, 1))
         assert count == 0
 
 
@@ -198,11 +198,11 @@ class TestTradingDayOfWeek:
 
     def test_not_trading_day_returns_zero(self) -> None:
         """Non-trading day should return 0."""
-        assert get_trading_day_of_week(Market.CN_A, date(2024, 1, 6)) == 0  # Saturday
+        assert get_trading_day_of_week(Market.CN, date(2024, 1, 6)) == 0  # Saturday
 
     def test_trading_day_returns_positive(self) -> None:
         """Trading day should return positive number."""
-        if is_trading_day(Market.CN_A, date(2024, 1, 2)):
-            dow = get_trading_day_of_week(Market.CN_A, date(2024, 1, 2))
+        if is_trading_day(Market.CN, date(2024, 1, 2)):
+            dow = get_trading_day_of_week(Market.CN, date(2024, 1, 2))
             assert dow > 0
             assert dow <= 5

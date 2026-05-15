@@ -57,7 +57,7 @@ class Market(StrEnum):
     Values are market codes used throughout the system.
     """
 
-    CN_A = "CN_A"  # China A-shares
+    CN = "CN"  # China A-shares
     US = "US"  # US stocks (NYSE/NASDAQ)
     HK = "HK"  # Hong Kong stocks (placeholder)
 
@@ -165,8 +165,8 @@ class MarketMetadata:
 
 # Market metadata configuration
 _MARKET_METADATA: dict[Market, MarketMetadata] = {
-    Market.CN_A: MarketMetadata(
-        path="cn_a",
+    Market.CN: MarketMetadata(
+        path="cn",
         price_precision=2,
         trading_calendar="SSE/SZSE",
         sector_classification="Shenwan_L1",

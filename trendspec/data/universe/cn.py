@@ -52,7 +52,7 @@ class CNAUniverse(Universe):
     - Delisted stocks are excluded only after their delist date
     """
 
-    market: Final[str] = "CN_A"
+    market: Final[str] = "CN"
 
     def __init__(self, root: str | None = None) -> None:
         """
@@ -91,7 +91,7 @@ class CNAUniverse(Universe):
         - _halt_periods: halt period tracking
         """
         # Load components events
-        components_lf = scan_parquet(self.root, Market.CN_A, "components")
+        components_lf = scan_parquet(self.root, Market.CN, "components")
 
         if not _lazyframe_is_empty(components_lf):
             components_df = components_lf.collect()
@@ -100,7 +100,7 @@ class CNAUniverse(Universe):
                 self._process_components(components_df)
 
         # Build universe by date from daily data
-        daily_lf = scan_parquet(self.root, Market.CN_A, "daily")
+        daily_lf = scan_parquet(self.root, Market.CN, "daily")
 
         if not _lazyframe_is_empty(daily_lf):
             # Get all unique (instrument_id, date) pairs

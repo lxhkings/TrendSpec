@@ -119,7 +119,7 @@ class TestMACrossStrategyLogic:
             def init(self, ctx): pass
             def next(self, ctx): pass
 
-        ctx = StrategyContext(Market.CN_A, strategy, data=sample_data)
+        ctx = StrategyContext(Market.CN, strategy, data=sample_data)
         return ctx
 
     def test_init_precomputes_ma(self, strategy_context: StrategyContext) -> None:
@@ -169,7 +169,7 @@ class TestMACrossStrategySignals:
     def test_crossover_detection(self, crossover_data: pl.DataFrame) -> None:
         """Test that crossover is detected."""
         strategy = MACrossStrategy(params={"short_period": 10, "long_period": 20})
-        ctx = StrategyContext(Market.CN_A, strategy, data=crossover_data)
+        ctx = StrategyContext(Market.CN, strategy, data=crossover_data)
 
         # Initialize
         strategy.init(ctx)
@@ -248,7 +248,7 @@ class TestRSIReversalStrategyLogic:
     def test_init_precomputes_rsi(self, oversold_data: pl.DataFrame) -> None:
         """Test that init precomputes RSI."""
         strategy = RSIReversalStrategy(params={"rsi_period": 14})
-        ctx = StrategyContext(Market.CN_A, strategy, data=oversold_data)
+        ctx = StrategyContext(Market.CN, strategy, data=oversold_data)
 
         strategy.init(ctx)
 
@@ -347,7 +347,7 @@ class TestSectorMomentumStrategyLogic:
     def test_init_precomputes_momentum(self, multi_sector_data: pl.DataFrame) -> None:
         """Test that init precomputes momentum."""
         strategy = SectorMomentumStrategy(params={"momentum_period": 20})
-        ctx = StrategyContext(Market.CN_A, strategy, data=multi_sector_data)
+        ctx = StrategyContext(Market.CN, strategy, data=multi_sector_data)
 
         strategy.init(ctx)
 
@@ -487,7 +487,7 @@ class TestEndToEndValidation:
     ) -> None:
         """Test strategy initialization with synthetic data."""
         strategy = MACrossStrategy(params={"short_period": 10, "long_period": 20})
-        ctx = StrategyContext(Market.CN_A, strategy, data=synthetic_daily_data)
+        ctx = StrategyContext(Market.CN, strategy, data=synthetic_daily_data)
 
         # Run init
         strategy.init(ctx)
@@ -508,7 +508,7 @@ class TestEndToEndValidation:
         ]
 
         for strategy in strategies:
-            ctx = StrategyContext(Market.CN_A, strategy, data=synthetic_daily_data)
+            ctx = StrategyContext(Market.CN, strategy, data=synthetic_daily_data)
             strategy.init(ctx)
             assert strategy.is_initialized() or True  # init doesn't mark initialized, that's engine's job
 
@@ -564,7 +564,7 @@ class TestStrategyIntegration:
             "adj_factor": [1.0] * 20,
         })
 
-        ctx = StrategyContext(Market.CN_A, strategy, data=sample_data)
+        ctx = StrategyContext(Market.CN, strategy, data=sample_data)
         strategy.init(ctx)
 
         # Update positions (simulate having a position)

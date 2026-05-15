@@ -54,7 +54,7 @@ def sample_ohlcv_data() -> pl.DataFrame:
 def engine_config(temp_root) -> EngineConfig:
     """Create engine configuration for testing."""
     return EngineConfig(
-        market=Market.CN_A,
+        market=Market.CN,
         start_date=date(2024, 1, 2),
         end_date=date(2024, 1, 3),
         initial_capital=100000.0,
@@ -479,7 +479,7 @@ class TestBacktestEngine:
         """Test engine initialization."""
         engine = BacktestEngine(engine_config)
 
-        assert engine.config.market == Market.CN_A
+        assert engine.config.market == Market.CN
         assert engine.config.initial_capital == 100000
 
     def test_engine_get_trading_days(self, engine_config):

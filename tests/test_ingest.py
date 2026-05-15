@@ -26,9 +26,9 @@ from trendspec.ingest.incremental import (
 from trendspec.ingest.manifest import Manifest, get_global_status, read_manifest
 from trendspec.ingest.mariadb_client import get_engine
 from trendspec.ingest.schema_map import (
-    CN_A_COMPONENTS_MAP,
-    CN_A_DAILY_MAP,
-    CN_A_SECTORS_MAP,
+    CN_COMPONENTS_MAP,
+    CN_DAILY_MAP,
+    CN_SECTORS_MAP,
     US_DAILY_MAP,
     derive_instrument_id_cn,
     derive_instrument_id_us,
@@ -55,11 +55,11 @@ def insert_data(engine, table_name: str, data: list[tuple]) -> None:
     with engine.connect() as conn:
         # Convert tuples to dicts for SQLAlchemy 2.x
         # Use column names matching the fixture table definitions
-        if table_name == "cn_a_daily":
+        if table_name == "cn_daily":
             columns = ["instrument_id", "trade_date", "ticker", "open_price", "high_price", "low_price", "close_price", "volume", "adj_factor"]
-        elif table_name == "cn_a_components":
+        elif table_name == "cn_components":
             columns = ["instrument_id", "event_date", "event_type", "event_details"]
-        elif table_name == "cn_a_sectors":
+        elif table_name == "cn_sectors":
             columns = ["instrument_id", "assign_date", "sector_code", "sector_name"]
         elif table_name == "us_daily":
             columns = ["instrument_id", "trade_date", "ticker", "open_price", "high_price", "low_price", "close_price", "volume", "adj_factor"]
@@ -102,7 +102,7 @@ def sqlite_engine():
     # Create CN_A tables (matching naming convention: {market.path}_{dataset})
     with engine.connect() as conn:
         conn.execute(text("""
-            CREATE TABLE cn_a_daily (
+            CREATE TABLE cn_daily (
                 instrument_id TEXT,
                 trade_date DATE,
                 ticker TEXT,
@@ -115,7 +115,7 @@ def sqlite_engine():
             )
         """))
         conn.execute(text("""
-            CREATE TABLE cn_a_components (
+            CREATE TABLE cn_components (
                 instrument_id TEXT,
                 event_date DATE,
                 event_type TEXT,
@@ -123,7 +123,7 @@ def sqlite_engine():
             )
         """))
         conn.execute(text("""
-            CREATE TABLE cn_a_sectors (
+            CREATE TABLE cn_sectors (
                 instrument_id TEXT,
                 assign_date DATE,
                 sector_code TEXT,
@@ -256,16 +256,16 @@ class TestMariaDBClient:
 class TestSchemaMap:
     """Tests for schema mapping."""
 
-    def test_cn_a_daily_map_keys(self) -> None:
+    def test_cn_daily_map_keys(self) -> None:
         """CN_A daily map should have standard column keys."""
         expected_keys = ["instrument_id", "date", "ticker", "open", "high", "low", "close", "volume", "adj_factor"]
-        assert set(CN_A_DAILY_MAP.keys()) == set(expected_keys)
+        assert set(CN_DAILY_MAP.keys()) == set(expected_keys)
 
-    def test_cn_a_daily_map_values(self) -> None:
+    def test_cn_daily_map_values(self) -> None:
         """CN_A daily map should map to SQL column names."""
-        assert CN_A_DAILY_MAP["date"] == "trade_date"
-        assert CN_A_DAILY_MAP["open"] == "open_price"
-        assert CN_A_DAILY_MAP["close"] == "close_price"
+        assert CN_DAILY_MAP["date"] == "trade_date"
+        assert CN_DAILY_MAP["open"] == "open_price"
+        assert CN_DAILY_MAP["close"] == "close_price"
 
     def test_us_daily_map_keys(self) -> None:
         """US daily map should have standard column keys."""
@@ -274,18 +274,18 @@ class TestSchemaMap:
 
     def test_get_column_map_cn_daily(self) -> None:
         """get_column_map should return CN_A daily map."""
-        map = get_column_map(Market.CN_A, "daily")
-        assert map == CN_A_DAILY_MAP
+        map = get_column_map(Market.CN, "daily")
+        assert map == CN_DAILY_MAP
 
     def test_get_column_map_cn_components(self) -> None:
         """get_column_map should return CN_A components map."""
-        map = get_column_map(Market.CN_A, "components")
-        assert map == CN_A_COMPONENTS_MAP
+        map = get_column_map(Market.CN, "components")
+        assert map == CN_COMPONENTS_MAP
 
     def test_get_column_map_cn_sectors(self) -> None:
         """get_column_map should return CN_A sectors map."""
-        map = get_column_map(Market.CN_A, "sectors")
-        assert map == CN_A_SECTORS_MAP
+        map = get_column_map(Market.CN, "sectors")
+        assert map == CN_SECTORS_MAP
 
     def test_get_column_map_unknown_raises(self) -> None:
         """get_column_map should raise for unknown combination."""
@@ -294,7 +294,7 @@ class TestSchemaMap:
 
     def test_get_table_name_cn_daily(self) -> None:
         """get_table_name should return correct table name."""
-        assert get_table_name(Market.CN_A, "daily") == "cn_a_daily"
+        assert get_table_name(Market.CN, "daily") == "cn_daily"
 
     def test_get_table_name_us_components(self) -> None:
         """get_table_name should return correct table name."""
@@ -335,10 +335,10 @@ class TestParquetWriter:
             "volume": [1000000],
         })
 
-        write_parquet(df, Market.CN_A, "daily", temp_root)
+        write_parquet(df, Market.CN, "daily", temp_root)
 
         # Check partition directory exists
-        partition_dir = os.path.join(temp_root, "cn_a", "daily", "instrument_id=SH600000")
+        partition_dir = os.path.join(temp_root, "cn", "daily", "instrument_id=SH600000")
         assert os.path.exists(partition_dir)
 
         # Check Parquet file exists
@@ -354,11 +354,11 @@ class TestParquetWriter:
             "volume": [1000000, 500000],
         })
 
-        write_parquet(df, Market.CN_A, "daily", temp_root)
+        write_parquet(df, Market.CN, "daily", temp_root)
 
         # Check both instruments have partitions
-        assert os.path.exists(os.path.join(temp_root, "cn_a", "daily", "instrument_id=SH600000"))
-        assert os.path.exists(os.path.join(temp_root, "cn_a", "daily", "instrument_id=SZ000001"))
+        assert os.path.exists(os.path.join(temp_root, "cn", "daily", "instrument_id=SH600000"))
+        assert os.path.exists(os.path.join(temp_root, "cn", "daily", "instrument_id=SZ000001"))
 
     def test_write_parquet_multi_year(self, temp_root: str) -> None:
         """write_parquet should create separate files for different years."""
@@ -369,10 +369,10 @@ class TestParquetWriter:
             "volume": [1000000, 1100000],
         })
 
-        write_parquet(df, Market.CN_A, "daily", temp_root)
+        write_parquet(df, Market.CN, "daily", temp_root)
 
         # Check both year files exist
-        partition_dir = os.path.join(temp_root, "cn_a", "daily", "instrument_id=SH600000")
+        partition_dir = os.path.join(temp_root, "cn", "daily", "instrument_id=SH600000")
         assert os.path.exists(os.path.join(partition_dir, "2023.parquet"))
         assert os.path.exists(os.path.join(partition_dir, "2024.parquet"))
 
@@ -384,7 +384,7 @@ class TestParquetWriter:
         })
 
         with pytest.raises(ValueError, match="must have 'instrument_id'"):
-            write_parquet(df, Market.CN_A, "daily", temp_root)
+            write_parquet(df, Market.CN, "daily", temp_root)
 
     def test_write_parquet_requires_date(self, temp_root: str) -> None:
         """write_parquet should require date column."""
@@ -394,7 +394,7 @@ class TestParquetWriter:
         })
 
         with pytest.raises(ValueError, match="must have 'date'"):
-            write_parquet(df, Market.CN_A, "daily", temp_root)
+            write_parquet(df, Market.CN, "daily", temp_root)
 
     def test_write_parquet_zstd_compression(self, temp_root: str) -> None:
         """write_parquet should use zstd compression."""
@@ -404,10 +404,10 @@ class TestParquetWriter:
             "close": [10.0],
         })
 
-        write_parquet(df, Market.CN_A, "daily", temp_root)
+        write_parquet(df, Market.CN, "daily", temp_root)
 
         # Read back and verify
-        parquet_file = os.path.join(temp_root, "cn_a", "daily", "instrument_id=SH600000", "2024.parquet")
+        parquet_file = os.path.join(temp_root, "cn", "daily", "instrument_id=SH600000", "2024.parquet")
         read_df = pl.read_parquet(parquet_file)
 
         # Check data is correct
@@ -422,21 +422,21 @@ class TestParquetWriter:
             "close": [10.0],
         })
 
-        write_parquet(df, Market.CN_A, "daily", temp_root)
+        write_parquet(df, Market.CN, "daily", temp_root)
 
-        read_df = read_partition(temp_root, Market.CN_A, "daily", "SH600000", 2024)
+        read_df = read_partition(temp_root, Market.CN, "daily", "SH600000", 2024)
         assert len(read_df) == 1
         assert read_df["instrument_id"].item() == "SH600000"
 
     def test_read_partition_empty_if_not_exists(self, temp_root: str) -> None:
         """read_partition should return empty DataFrame if partition doesn't exist."""
-        read_df = read_partition(temp_root, Market.CN_A, "daily", "SH600000", 2024)
+        read_df = read_partition(temp_root, Market.CN, "daily", "SH600000", 2024)
         assert read_df.is_empty()
 
     def test_get_partition_path(self, temp_root: str) -> None:
         """get_partition_path should return correct path."""
-        path = get_partition_path(temp_root, Market.CN_A, "daily", "SH600000", 2024)
-        expected = os.path.join(temp_root, "cn_a", "daily", "instrument_id=SH600000", "2024.parquet")
+        path = get_partition_path(temp_root, Market.CN, "daily", "SH600000", 2024)
+        expected = os.path.join(temp_root, "cn", "daily", "instrument_id=SH600000", "2024.parquet")
         assert path == expected
 
 
@@ -450,15 +450,15 @@ class TestManifest:
 
     def test_manifest_creates_file(self, temp_root: str) -> None:
         """Manifest should create JSON file."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
         manifest.update_dataset_state("daily", 100, ("2024-01-01", "2024-01-31"), 5)
 
-        manifest_path = os.path.join(temp_root, "_manifest", "cn_a.json")
+        manifest_path = os.path.join(temp_root, "_manifest", "cn.json")
         assert os.path.exists(manifest_path)
 
     def test_manifest_stores_state(self, temp_root: str) -> None:
         """Manifest should store dataset state."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
         manifest.update_dataset_state("daily", 100, ("2024-01-01", "2024-01-31"), 5)
 
         state = manifest.get_dataset_state("daily")
@@ -469,7 +469,7 @@ class TestManifest:
 
     def test_manifest_get_last_date(self, temp_root: str) -> None:
         """Manifest should track last date per instrument."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
         manifest.update_instrument_date("daily", "SH600000", "2024-01-15")
 
         last_date = manifest.get_last_date("daily", "SH600000")
@@ -477,13 +477,13 @@ class TestManifest:
 
     def test_manifest_get_last_date_none_if_not_synced(self, temp_root: str) -> None:
         """Manifest should return None for unsynced instrument."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
         last_date = manifest.get_last_date("daily", "SH600000")
         assert last_date is None
 
     def test_manifest_update_instrument_date(self, temp_root: str) -> None:
         """Manifest should update instrument date incrementally."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
         manifest.update_instrument_date("daily", "SH600000", "2024-01-15")
         manifest.update_instrument_date("daily", "SZ000001", "2024-01-20")
 
@@ -493,17 +493,17 @@ class TestManifest:
 
     def test_read_manifest(self, temp_root: str) -> None:
         """read_manifest should load existing manifest."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
         manifest.update_dataset_state("daily", 100, ("2024-01-01", "2024-01-31"), 5)
 
-        loaded_manifest = read_manifest(Market.CN_A, temp_root)
+        loaded_manifest = read_manifest(Market.CN, temp_root)
         state = loaded_manifest.get_dataset_state("daily")
         assert state is not None
         assert state["row_count"] == 100
 
     def test_manifest_clear_dataset(self, temp_root: str) -> None:
         """Manifest should clear dataset state."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
         manifest.update_dataset_state("daily", 100, ("2024-01-01", "2024-01-31"), 5)
         manifest.clear_dataset("daily")
 
@@ -512,14 +512,14 @@ class TestManifest:
 
     def test_get_global_status(self, temp_root: str) -> None:
         """get_global_status should return all market statuses."""
-        cn_manifest = Manifest(Market.CN_A, temp_root)
+        cn_manifest = Manifest(Market.CN, temp_root)
         cn_manifest.update_dataset_state("daily", 100, ("2024-01-01", "2024-01-31"), 5)
 
         us_manifest = Manifest(Market.US, temp_root)
         us_manifest.update_dataset_state("daily", 200, ("2024-01-01", "2024-01-31"), 10)
 
         status = get_global_status(temp_root)
-        assert "cn_a" in status
+        assert "cn" in status
         assert "us" in status
 
 
@@ -544,7 +544,7 @@ class TestIncrementalSync:
 
     def test_get_instruments_to_sync(self, temp_root: str) -> None:
         """get_instruments_to_sync should check manifest."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
         manifest.update_instrument_date("daily", "SH600000", "2024-01-15")
 
         instruments = get_instruments_to_sync(manifest, "daily", ["SH600000", "SZ000001"])
@@ -560,14 +560,14 @@ class TestIncrementalSync:
     ) -> None:
         """Full sync should pull all data."""
         # Insert sample data
-        insert_data(sqlite_engine, "cn_a_daily", cn_a_sample_data)
+        insert_data(sqlite_engine, "cn_daily", cn_a_sample_data)
 
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
 
         df = sync_instrument_incremental(
             sqlite_engine,
-            "cn_a_daily",
-            CN_A_DAILY_MAP,
+            "cn_daily",
+            CN_DAILY_MAP,
             "SH600000",
             None,  # Full sync
         )
@@ -583,14 +583,14 @@ class TestIncrementalSync:
     ) -> None:
         """Incremental sync should pull only new data."""
         # Insert sample data
-        insert_data(sqlite_engine, "cn_a_daily", cn_a_sample_data)
+        insert_data(sqlite_engine, "cn_daily", cn_a_sample_data)
 
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
 
         df = sync_instrument_incremental(
             sqlite_engine,
-            "cn_a_daily",
-            CN_A_DAILY_MAP,
+            "cn_daily",
+            CN_DAILY_MAP,
             "SH600000",
             "2024-01-02",  # Pull data after Jan 2
         )
@@ -600,7 +600,7 @@ class TestIncrementalSync:
 
     def test_update_manifest_after_sync(self, temp_root: str) -> None:
         """update_manifest_after_sync should update manifest."""
-        manifest = Manifest(Market.CN_A, temp_root)
+        manifest = Manifest(Market.CN, temp_root)
 
         df = pl.DataFrame({
             "instrument_id": ["SH600000", "SZ000001"],
@@ -639,55 +639,55 @@ class TestIncrementalSync:
 class TestCNAIngestor:
     """Tests for CN_A ingestor."""
 
-    def test_ingest_cn_a_daily_full_sync(
+    def test_ingest_cn_daily_full_sync(
         self,
         sqlite_engine,
         cn_a_sample_data,
         temp_root: str,
     ) -> None:
         """Full CN_A daily sync should pull all data."""
-        from trendspec.ingest.cn_a_ingestor import ingest_cn_a_daily
+        from trendspec.ingest.cn_ingestor import ingest_cn_daily
 
         # Insert sample data
-        insert_data(sqlite_engine, "cn_a_daily", cn_a_sample_data)
+        insert_data(sqlite_engine, "cn_daily", cn_a_sample_data)
 
-        manifest = Manifest(Market.CN_A, temp_root)
-        result = ingest_cn_a_daily(sqlite_engine, manifest, temp_root, full_sync=True)
+        manifest = Manifest(Market.CN, temp_root)
+        result = ingest_cn_daily(sqlite_engine, manifest, temp_root, full_sync=True)
 
         assert result["row_count"] == 6
         assert result["instrument_count"] == 2
 
-    def test_ingest_cn_a_components(
+    def test_ingest_cn_components(
         self,
         sqlite_engine,
         cn_components_sample,
         temp_root: str,
     ) -> None:
         """CN_A components ingest should pull events."""
-        from trendspec.ingest.cn_a_ingestor import ingest_cn_a_components
+        from trendspec.ingest.cn_ingestor import ingest_cn_components
 
         # Insert sample data
-        insert_data(sqlite_engine, "cn_a_components", cn_components_sample)
+        insert_data(sqlite_engine, "cn_components", cn_components_sample)
 
-        manifest = Manifest(Market.CN_A, temp_root)
-        result = ingest_cn_a_components(sqlite_engine, manifest, temp_root, full_sync=True)
+        manifest = Manifest(Market.CN, temp_root)
+        result = ingest_cn_components(sqlite_engine, manifest, temp_root, full_sync=True)
 
         assert result["row_count"] == 4
 
-    def test_ingest_cn_a_sectors(
+    def test_ingest_cn_sectors(
         self,
         sqlite_engine,
         cn_sectors_sample,
         temp_root: str,
     ) -> None:
         """CN_A sectors ingest should pull assignments."""
-        from trendspec.ingest.cn_a_ingestor import ingest_cn_a_sectors
+        from trendspec.ingest.cn_ingestor import ingest_cn_sectors
 
         # Insert sample data
-        insert_data(sqlite_engine, "cn_a_sectors", cn_sectors_sample)
+        insert_data(sqlite_engine, "cn_sectors", cn_sectors_sample)
 
-        manifest = Manifest(Market.CN_A, temp_root)
-        result = ingest_cn_a_sectors(sqlite_engine, manifest, temp_root, full_sync=True)
+        manifest = Manifest(Market.CN, temp_root)
+        result = ingest_cn_sectors(sqlite_engine, manifest, temp_root, full_sync=True)
 
         assert result["row_count"] == 3
 
@@ -842,7 +842,7 @@ class TestSectorsIngestor:
         """get_sector_name should return Shenwan sector name."""
         from trendspec.ingest.sectors_ingestor import get_sector_name
 
-        name = get_sector_name(Market.CN_A, "15")
+        name = get_sector_name(Market.CN, "15")
         assert name == "银行"
 
     def test_get_sector_name_us(self) -> None:
@@ -856,7 +856,7 @@ class TestSectorsIngestor:
         """get_all_sectors should return all Shenwan sectors."""
         from trendspec.ingest.sectors_ingestor import get_all_sectors
 
-        sectors = get_all_sectors(Market.CN_A)
+        sectors = get_all_sectors(Market.CN)
         assert len(sectors) == 28
         assert "15" in sectors
 
