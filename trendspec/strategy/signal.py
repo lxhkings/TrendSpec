@@ -43,6 +43,7 @@ class Signal:
     price: float
     trigger_value: float | None = None
     note: str | None = None
+    shares: float | None = field(default=None, repr=False)
     timestamp: float | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:

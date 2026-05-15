@@ -9,7 +9,7 @@ Tests:
 - End-to-end validation with synthetic data
 """
 
-from datetime import date
+from datetime import date, timedelta
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
@@ -576,4 +576,21 @@ class TestStrategyIntegration:
         assert ctx.available_capital == 50000.0
 
 
-from datetime import timedelta
+# =============================================================================
+# Signal.shares Tests
+# =============================================================================
+
+
+def test_signal_shares_field() -> None:
+    """Signal.shares defaults to None and can be set after creation."""
+    sig = Signal(direction="BUY", ticker="AAPL", instrument_id="AAPL", price=150.0)
+    assert sig.shares is None
+
+    sig.shares = 42.0
+    assert sig.shares == 42.0
+
+
+def test_signal_shares_not_in_repr() -> None:
+    """Signal.shares is excluded from repr (like timestamp)."""
+    sig = Signal(direction="BUY", ticker="AAPL", instrument_id="AAPL", price=150.0, shares=10.0)
+    assert "shares" not in repr(sig)
