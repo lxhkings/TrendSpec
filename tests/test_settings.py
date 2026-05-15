@@ -17,17 +17,18 @@ from trendspec.config.settings import (
 class TestDatabaseSettings:
     """Tests for database settings."""
 
-    def test_database_settings_requires_host(self) -> None:
+    def test_database_settings_requires_host(self, monkeypatch) -> None:
         """Database host should be required."""
+        monkeypatch.delenv("DB_HOST", raising=False)
         with pytest.raises(ValidationError):
-            DatabaseSettings()
+            DatabaseSettings(_env_file=None)
 
-    def test_database_settings_requires_user(self) -> None:
+    def test_database_settings_requires_user(self, monkeypatch) -> None:
         """Database user should be required."""
-        with patch.dict(os.environ, {"DB_HOST": "localhost"}, clear=False), pytest.raises(
-            ValidationError
-        ):
-            DatabaseSettings()
+        monkeypatch.setenv("DB_HOST", "localhost")
+        monkeypatch.delenv("DB_USER", raising=False)
+        with pytest.raises(ValidationError):
+            DatabaseSettings(_env_file=None)
 
     def test_database_settings_requires_password(self) -> None:
         """Database password should be required."""

@@ -9,7 +9,9 @@ No hardcoded credentials allowed.
 from functools import lru_cache
 from urllib.parse import quote_plus
 
-from pydantic import Field, field_validator
+import warnings
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,25 +31,26 @@ class DatabaseSettings(BaseSettings):
     password: str = Field(..., description="Database password")
     name: str = Field(default="stocks", description="Database name")
     charset: str = Field(default="utf8mb4", description="Database charset")
+    # Read directly from env/dotenv (no DB_ prefix — uses validation_alias)
+    allow_root_db_user: bool = Field(
+        default=False,
+        validation_alias="ALLOW_ROOT_DB_USER",
+        description="Allow root DB user (development only)",
+    )
 
-    @field_validator("user")
-    @classmethod
-    def validate_user_not_root(cls, v: str) -> str:
-        """Ensure database user is not root for security."""
-        if v.lower() == "root":
-            import os
-            import warnings
-            if os.getenv("ALLOW_ROOT_DB_USER", "").lower() != "true":
+    @model_validator(mode="after")
+    def check_not_root(self) -> "DatabaseSettings":
+        """Ensure database user is not root unless ALLOW_ROOT_DB_USER=true."""
+        if self.user.lower() == "root":
+            if not self.allow_root_db_user:
                 raise ValueError(
                     "DB_USER cannot be 'root'. Use a read-only account for security. "
                     "Create one with: CREATE USER 'trendspec'@'%' IDENTIFIED BY '<password>'; "
                     "GRANT SELECT ON stocks.* TO 'trendspec'@'%'; "
-                    "Or set ALLOW_ROOT_DB_USER=true for development."
+                    "Or set ALLOW_ROOT_DB_USER=true in .env for development."
                 )
-            warnings.warn(
-                "DB_USER=root is insecure. Development only.", UserWarning, stacklevel=2
-            )
-        return v
+            warnings.warn("DB_USER=root is insecure. Development only.", UserWarning, stacklevel=2)
+        return self
 
     @property
     def connection_url(self) -> str:
