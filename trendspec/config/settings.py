@@ -35,10 +35,17 @@ class DatabaseSettings(BaseSettings):
     def validate_user_not_root(cls, v: str) -> str:
         """Ensure database user is not root for security."""
         if v.lower() == "root":
-            raise ValueError(
-                "DB_USER cannot be 'root'. Use a read-only account for security. "
-                "Create one with: CREATE USER 'trendspec'@'%' IDENTIFIED BY '<password>'; "
-                "GRANT SELECT ON stocks.* TO 'trendspec'@'%';"
+            import os
+            import warnings
+            if os.getenv("ALLOW_ROOT_DB_USER", "").lower() != "true":
+                raise ValueError(
+                    "DB_USER cannot be 'root'. Use a read-only account for security. "
+                    "Create one with: CREATE USER 'trendspec'@'%' IDENTIFIED BY '<password>'; "
+                    "GRANT SELECT ON stocks.* TO 'trendspec'@'%'; "
+                    "Or set ALLOW_ROOT_DB_USER=true for development."
+                )
+            warnings.warn(
+                "DB_USER=root is insecure. Development only.", UserWarning, stacklevel=2
             )
         return v
 

@@ -104,6 +104,27 @@ class TestDatabaseSettings:
             # Verify the actual @ separator between credentials and host is present
             assert "@localhost:3306/testdb" in url
 
+    def test_root_user_allowed_with_env_var(self, monkeypatch, tmp_path):
+        """DB_USER=root is accepted when ALLOW_ROOT_DB_USER=true."""
+        monkeypatch.setenv("ALLOW_ROOT_DB_USER", "true")
+        monkeypatch.setenv("DB_HOST", "localhost")
+        monkeypatch.setenv("DB_USER", "root")
+        monkeypatch.setenv("DB_PASSWORD", "secret")
+        from trendspec.config.settings import DatabaseSettings
+        settings = DatabaseSettings(_env_file=None)
+        assert settings.user == "root"
+
+    def test_root_user_rejected_without_env_var(self, monkeypatch):
+        """DB_USER=root raises ValueError when ALLOW_ROOT_DB_USER not set."""
+        monkeypatch.delenv("ALLOW_ROOT_DB_USER", raising=False)
+        monkeypatch.setenv("DB_HOST", "localhost")
+        monkeypatch.setenv("DB_USER", "root")
+        monkeypatch.setenv("DB_PASSWORD", "secret")
+        from trendspec.config.settings import DatabaseSettings
+        import pytest
+        with pytest.raises(ValueError, match="cannot be 'root'"):
+            DatabaseSettings(_env_file=None)
+
 
 class TestBacktestSettings:
     """Tests for backtest settings."""
