@@ -28,26 +28,32 @@ uv run ruff format .
 
 数据源：群辉 NAS MariaDB（`stocks` 数据库，192.168.8.9）
 
+**首次初始化（只需一次）：**
+
 ```bash
-# 美股日线数据（全量）
-uv run trendspec ingest daily --market us --full
+uv run trendspec ingest daily --market us --full      # 全量历史
+uv run trendspec ingest components --market us        # SP500 成分变动（低频，一次性）
+uv run trendspec ingest sectors --market us           # GICS 行业（静态，一次性）
 
-# 美股日线数据（增量）
-uv run trendspec ingest daily --market us
+uv run trendspec ingest daily --market cn --full      # A 股同上
+uv run trendspec ingest components --market cn        # CSI800 成分
+uv run trendspec ingest sectors --market cn
+```
 
-# A 股日线
+**日常增量（每天）：**
+
+```bash
+uv run trendspec ingest daily --market us   # 只拉新数据
 uv run trendspec ingest daily --market cn
+```
 
-# 成分变动 / 行业
-uv run trendspec ingest components --market us
-uv run trendspec ingest sectors --market us
+**回测 / 选股：**
 
-# 查看同步状态
-uv run trendspec ingest status --market us
-
-# 回测 / 选股
-uv run trendspec backtest run --strategy ma_cross --market us --start 2020-01-01
+```bash
+uv run trendspec backtest list
+uv run trendspec backtest run --strategy ma_cross --market us --start 2020-01-01 --end 2024-12-31
 uv run trendspec screen --strategy ma_cross --market us --date 2024-05-15
+uv run trendspec ingest status --market us
 ```
 
 ## 环境配置
