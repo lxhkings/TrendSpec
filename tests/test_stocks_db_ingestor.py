@@ -132,3 +132,69 @@ def test_ingest_us_daily_incremental(stocks_db, temp_root):
     manifest2 = Manifest(Market.US, temp_root)  # reload manifest from disk
     r2 = ingest_us_daily(stocks_db, manifest2, temp_root)
     assert r2["row_count"] == 0  # no new rows
+
+
+# =============================================================================
+# US components tests
+# =============================================================================
+
+@pytest.fixture
+def stocks_db_with_changes(stocks_db):
+    """Add SP500 constituent changes to the fixture DB."""
+    with stocks_db.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO constituent_changes VALUES
+            ('SP500', 'AAPL', 'ADDED', '2020-01-15'),
+            ('SP500', 'MSFT', 'ADDED', '2019-06-01'),
+            ('SP500', 'JPM', 'REMOVED', '2023-03-10')
+        """))
+        conn.commit()
+    return stocks_db
+
+
+def test_ingest_us_components_schema(stocks_db_with_changes, temp_root):
+    """US components Parquet has correct columns."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_components
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.US, temp_root)
+    result = ingest_us_components(stocks_db_with_changes, manifest, temp_root)
+
+    assert result["row_count"] > 0
+
+    df = pl.read_parquet(f"{temp_root}/us/components/")
+    assert set(df.columns) >= {"instrument_id", "date", "event", "event_details"}
+
+
+def test_ingest_us_components_event_mapping(stocks_db_with_changes, temp_root):
+    """ADDED maps to IPO, REMOVED maps to DELIST."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_components
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.US, temp_root)
+    ingest_us_components(stocks_db_with_changes, manifest, temp_root)
+
+    df = pl.read_parquet(f"{temp_root}/us/components/")
+    events = df["event"].unique().to_list()
+    assert "IPO" in events
+    assert "DELIST" in events
+    assert "ADDED" not in events
+    assert "REMOVED" not in events
+
+
+def test_ingest_us_components_all_tickers_have_ipo(stocks_db_with_changes, temp_root):
+    """Every US ticker in prices should have at least one IPO event."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_components
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.US, temp_root)
+    ingest_us_components(stocks_db_with_changes, manifest, temp_root)
+
+    df = pl.read_parquet(f"{temp_root}/us/components/")
+    ipos = df.filter(pl.col("event") == "IPO")["instrument_id"].unique().to_list()
+    assert "AAPL" in ipos
+    assert "MSFT" in ipos
+    assert "JPM" in ipos

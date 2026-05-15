@@ -121,3 +121,89 @@ def ingest_us_daily(
     manifest.update_dataset_state("daily", row_count, date_range, instrument_count)
 
     return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
+
+
+# =============================================================================
+# US Components
+# =============================================================================
+
+
+def ingest_us_components(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """
+    Ingest US component events from constituent_changes + prices.
+
+    SP500 constituent_changes provides ADDED→IPO and REMOVED→DELIST events.
+    All US tickers in prices also get an IPO event from their MIN(date) in prices,
+    ensuring every ticker has an entry even if not in SP500.
+
+    Returns:
+        {"row_count": int, "date_range": (str, str), "instrument_count": int}
+    """
+    ex_placeholders = _exchange_placeholder(_US_EXCHANGES)
+    ex_params = _exchange_params(_US_EXCHANGES)
+
+    sql_changes = text(f"""
+        SELECT c.ticker, c.change_date, c.change_type
+        FROM constituent_changes c
+        JOIN stocks s ON c.ticker = s.ticker
+        WHERE c.index_id = 'SP500'
+          AND s.exchange IN ({ex_placeholders})
+        ORDER BY c.change_date
+    """)
+
+    sql_min = text(f"""
+        SELECT p.ticker, MIN(p.date) as first_date
+        FROM prices p
+        JOIN stocks s ON p.ticker = s.ticker
+        WHERE s.exchange IN ({ex_placeholders})
+        GROUP BY p.ticker
+    """)
+
+    with engine.connect() as conn:
+        changes = conn.execute(sql_changes, ex_params).fetchall()
+        min_dates = conn.execute(sql_min, ex_params).fetchall()
+
+    rows = []
+    sp500_added: set[str] = set()
+
+    for ticker, change_date, change_type in changes:
+        event = "IPO" if change_type == "ADDED" else "DELIST"
+        if change_type == "ADDED":
+            sp500_added.add(ticker)
+        rows.append({
+            "instrument_id": ticker,
+            "date": change_date,
+            "event": event,
+            "event_details": f"SP500 {change_type.lower()}",
+        })
+
+    for ticker, first_date in min_dates:
+        if ticker not in sp500_added:
+            rows.append({
+                "instrument_id": ticker,
+                "date": first_date,
+                "event": "IPO",
+                "event_details": "first price record",
+            })
+
+    if not rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    df = pl.DataFrame(rows)
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+
+    write_parquet(df, Market.US, "components", root)
+
+    dates = df["date"].cast(pl.Utf8)
+    date_range = (dates.min(), dates.max())
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+
+    manifest.update_dataset_state("components", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
