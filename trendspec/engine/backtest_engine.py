@@ -207,7 +207,8 @@ class BacktestEngine(BaseEngine):
         # Initialize components
         self._initialize_execution_components()
 
-        # Load data and create strategy
+        # Load universe and data
+        self.load_universe()
         self.load_data()
         self.instantiate_strategy(strategy_class, params)
         self.create_context()
