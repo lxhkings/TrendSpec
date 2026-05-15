@@ -232,3 +232,96 @@ def test_ingest_us_sectors_static_date(stocks_db, temp_root):
     dates = df["date"].unique().to_list()
     assert len(dates) == 1
     assert str(dates[0]) == "2000-01-01"
+
+
+# =============================================================================
+# CN fixtures + tests
+# =============================================================================
+
+@pytest.fixture
+def stocks_db_cn(stocks_db):
+    """Add CN stocks and prices to the fixture DB."""
+    with stocks_db.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO stocks VALUES
+            ('600000', 'SSE', 'Financials', 'Banks', 1),
+            ('000001', 'SZSE', 'Financials', 'Banks', 1),
+            ('600036', 'SH', 'Financials', 'Banks', 1)
+        """))
+        conn.execute(text("""
+            INSERT INTO prices VALUES
+            ('600000', '2024-01-02', 10.0, 10.5, 9.8, 10.2, 1000000),
+            ('600000', '2024-01-03', 10.2, 10.8, 10.0, 10.5, 1100000),
+            ('000001', '2024-01-02', 20.0, 20.5, 19.8, 20.2, 500000),
+            ('000001', '2024-01-03', 20.2, 20.8, 20.0, 20.5, 550000),
+            ('600036', '2024-01-02', 15.0, 15.5, 14.8, 15.2, 800000),
+            ('600036', '2024-01-03', 15.2, 15.8, 15.0, 15.5, 850000)
+        """))
+        conn.commit()
+    return stocks_db
+
+
+def test_ingest_cn_daily_instrument_id_prefix(stocks_db_cn, temp_root):
+    """CN instrument_id has SH/SZ prefix based on exchange."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_daily
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.CN, temp_root)
+    result = ingest_cn_daily(stocks_db_cn, manifest, temp_root)
+
+    assert result["row_count"] == 6
+    assert result["instrument_count"] == 3
+
+    df = pl.read_parquet(f"{temp_root}/cn/daily/")
+    ids = sorted(df["instrument_id"].unique().to_list())
+    assert "SH600000" in ids
+    assert "SZ000001" in ids
+    assert "SH600036" in ids  # SH exchange → SH prefix
+
+
+def test_ingest_cn_daily_adj_factor_is_one(stocks_db_cn, temp_root):
+    """CN adj_factor = 1.0 (Tushare prices already backward-adjusted)."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_daily
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.CN, temp_root)
+    ingest_cn_daily(stocks_db_cn, manifest, temp_root)
+
+    df = pl.read_parquet(f"{temp_root}/cn/daily/")
+    assert df["adj_factor"].unique().to_list() == [1.0]
+
+
+def test_ingest_cn_components_has_ipo_events(stocks_db_cn, temp_root):
+    """Every CN ticker gets an IPO event from MIN(date) in prices."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_components
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.CN, temp_root)
+    result = ingest_cn_components(stocks_db_cn, manifest, temp_root)
+
+    assert result["row_count"] == 3  # one IPO per ticker
+
+    df = pl.read_parquet(f"{temp_root}/cn/components/")
+    assert set(df["event"].unique().to_list()) == {"IPO"}
+    ids = df["instrument_id"].unique().to_list()
+    assert "SH600000" in ids
+    assert "SZ000001" in ids
+
+
+def test_ingest_cn_sectors_maps_to_correct_market(stocks_db_cn, temp_root):
+    """CN sectors use CN instrument_id format (SH/SZ prefix)."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_sectors
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.CN, temp_root)
+    result = ingest_cn_sectors(stocks_db_cn, manifest, temp_root)
+
+    assert result["instrument_count"] == 3
+
+    df = pl.read_parquet(f"{temp_root}/cn/sectors/")
+    ids = df["instrument_id"].unique().to_list()
+    assert all(id_.startswith(("SH", "SZ")) for id_ in ids)

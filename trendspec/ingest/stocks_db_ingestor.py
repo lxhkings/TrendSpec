@@ -271,3 +271,243 @@ def ingest_us_sectors(
     manifest.update_dataset_state("sectors", row_count, date_range, instrument_count)
 
     return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
+
+
+# =============================================================================
+# CN Daily
+# =============================================================================
+
+_CN_EXCHANGE_TO_PREFIX: Final[dict[str, str]] = {
+    "SSE": "SH",
+    "SH": "SH",
+    "SZSE": "SZ",
+    "SZ": "SZ",
+}
+
+
+def _derive_cn_instrument_id(ticker: str, exchange: str) -> str:
+    """
+    Build CN instrument_id from ticker + exchange.
+
+    SSE/SH  → SH{ticker}
+    SZSE/SZ → SZ{ticker}
+    """
+    prefix = _CN_EXCHANGE_TO_PREFIX.get(exchange.upper())
+    if prefix is None:
+        raise ValueError(f"Unknown CN exchange: {exchange!r} for ticker {ticker!r}")
+    return f"{prefix}{ticker}"
+
+
+def ingest_cn_daily(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """
+    Ingest CN (A-share) daily OHLCV from prices + stocks tables.
+
+    instrument_id = SH{ticker} for SSE/SH, SZ{ticker} for SZSE/SZ.
+    adj_factor = 1.0 (prices are Tushare backward-adjusted).
+
+    Returns:
+        {"row_count": int, "date_range": (str, str), "instrument_count": int}
+    """
+    last_date = "1970-01-01" if full_sync else _get_last_synced_date(manifest, "daily")
+
+    ex_placeholders = _exchange_placeholder(_CN_EXCHANGES)
+    ex_params = _exchange_params(_CN_EXCHANGES)
+    ex_params["last_date"] = last_date
+
+    sql = text(f"""
+        SELECT p.ticker, p.date, p.open, p.high, p.low, p.close, p.volume,
+               s.exchange
+        FROM prices p
+        JOIN stocks s ON p.ticker = s.ticker
+        WHERE s.exchange IN ({ex_placeholders})
+          AND p.date > :last_date
+        ORDER BY p.date, p.ticker
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(sql, ex_params).fetchall()
+
+    if not rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    df = pl.DataFrame(
+        rows,
+        schema=["ticker", "date", "open", "high", "low", "close", "volume", "exchange"],
+        orient="row",
+    )
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+
+    df = df.with_columns(
+        pl.struct(["ticker", "exchange"])
+        .map_elements(
+            lambda s: _derive_cn_instrument_id(s["ticker"], s["exchange"]),
+            return_dtype=pl.Utf8,
+        )
+        .alias("instrument_id")
+    )
+    df = df.with_columns(pl.lit(1.0).alias("adj_factor"))
+    df = df.drop("exchange")
+
+    write_parquet(df, Market.CN, "daily", root)
+
+    dates = df["date"].cast(pl.Utf8)
+    date_range = (dates.min(), dates.max())
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+
+    manifest.update_dataset_state("daily", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
+
+
+# =============================================================================
+# CN Components
+# =============================================================================
+
+
+def ingest_cn_components(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """
+    Ingest CN component events.
+
+    Source has CSI800 constituent changes (ADDED/REMOVED).
+    All CN tickers in prices also get an IPO event from MIN(date).
+
+    Returns:
+        {"row_count": int, "date_range": (str, str), "instrument_count": int}
+    """
+    ex_placeholders = _exchange_placeholder(_CN_EXCHANGES)
+    ex_params = _exchange_params(_CN_EXCHANGES)
+
+    sql_changes = text(f"""
+        SELECT c.ticker, c.change_date, c.change_type, s.exchange
+        FROM constituent_changes c
+        JOIN stocks s ON c.ticker = s.ticker
+        WHERE c.index_id = 'CSI800'
+          AND s.exchange IN ({ex_placeholders})
+        ORDER BY c.change_date
+    """)
+
+    sql_min = text(f"""
+        SELECT p.ticker, MIN(p.date) as first_date, s.exchange
+        FROM prices p
+        JOIN stocks s ON p.ticker = s.ticker
+        WHERE s.exchange IN ({ex_placeholders})
+        GROUP BY p.ticker, s.exchange
+    """)
+
+    with engine.connect() as conn:
+        changes = conn.execute(sql_changes, ex_params).fetchall()
+        min_dates = conn.execute(sql_min, ex_params).fetchall()
+
+    rows = []
+    csi800_added: set[str] = set()
+
+    for ticker, change_date, change_type, exchange in changes:
+        instrument_id = _derive_cn_instrument_id(ticker, exchange)
+        event = "IPO" if change_type == "ADDED" else "DELIST"
+        if change_type == "ADDED":
+            csi800_added.add(ticker)
+        rows.append({
+            "instrument_id": instrument_id,
+            "date": change_date,
+            "event": event,
+            "event_details": f"CSI800 {change_type.lower()}",
+        })
+
+    for ticker, first_date, exchange in min_dates:
+        if ticker not in csi800_added:
+            instrument_id = _derive_cn_instrument_id(ticker, exchange)
+            rows.append({
+                "instrument_id": instrument_id,
+                "date": first_date,
+                "event": "IPO",
+                "event_details": "first price record",
+            })
+
+    if not rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    df = pl.DataFrame(rows)
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+
+    write_parquet(df, Market.CN, "components", root)
+
+    dates = df["date"].cast(pl.Utf8)
+    date_range = (dates.min(), dates.max())
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+
+    manifest.update_dataset_state("components", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
+
+
+# =============================================================================
+# CN Sectors
+# =============================================================================
+
+
+def ingest_cn_sectors(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """
+    Ingest CN sector assignments from stocks.gics_sector.
+
+    Note: Source DB uses GICS classification, not Shenwan/申万.
+    assign_date = 2000-01-01 (static — no historical changes in source).
+
+    Returns:
+        {"row_count": int, "date_range": (str, str), "instrument_count": int}
+    """
+    ex_placeholders = _exchange_placeholder(_CN_EXCHANGES)
+    ex_params = _exchange_params(_CN_EXCHANGES)
+
+    sql = text(f"""
+        SELECT ticker, exchange, gics_sector, gics_industry
+        FROM stocks
+        WHERE exchange IN ({ex_placeholders})
+          AND gics_sector IS NOT NULL
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(sql, ex_params).fetchall()
+
+    if not rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    static_date = date(2000, 1, 1)
+    df = pl.DataFrame(
+        [
+            {
+                "instrument_id": _derive_cn_instrument_id(ticker, exchange),
+                "date": static_date,
+                "sector": gics_sector or "",
+                "sector_name": gics_industry or "",
+            }
+            for ticker, exchange, gics_sector, gics_industry in rows
+        ]
+    )
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+
+    write_parquet(df, Market.CN, "sectors", root)
+
+    date_range = ("2000-01-01", "2000-01-01")
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+
+    manifest.update_dataset_state("sectors", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
