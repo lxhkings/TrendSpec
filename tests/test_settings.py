@@ -38,14 +38,14 @@ class TestDatabaseSettings:
         ), pytest.raises(ValidationError):
             DatabaseSettings(_env_file=None)
 
-    def test_database_settings_rejects_root_user(self) -> None:
+    def test_database_settings_rejects_root_user(self, monkeypatch) -> None:
         """Root user should be rejected for security."""
-        with patch.dict(
-            os.environ,
-            {"DB_HOST": "localhost", "DB_USER": "root", "DB_PASSWORD": "test"},
-            clear=False,
-        ), pytest.raises(ValueError, match="cannot be 'root'"):
-            DatabaseSettings()
+        monkeypatch.delenv("ALLOW_ROOT_DB_USER", raising=False)
+        monkeypatch.setenv("DB_HOST", "localhost")
+        monkeypatch.setenv("DB_USER", "root")
+        monkeypatch.setenv("DB_PASSWORD", "test")
+        with pytest.raises(ValueError, match="cannot be 'root'"):
+            DatabaseSettings(_env_file=None)
 
     def test_database_settings_accepts_valid_config(self) -> None:
         """Valid database configuration should be accepted."""
@@ -104,7 +104,7 @@ class TestDatabaseSettings:
             # Verify the actual @ separator between credentials and host is present
             assert "@localhost:3306/testdb" in url
 
-    def test_root_user_allowed_with_env_var(self, monkeypatch, tmp_path):
+    def test_root_user_allowed_with_env_var(self, monkeypatch):
         """DB_USER=root is accepted when ALLOW_ROOT_DB_USER=true."""
         monkeypatch.setenv("ALLOW_ROOT_DB_USER", "true")
         monkeypatch.setenv("DB_HOST", "localhost")
