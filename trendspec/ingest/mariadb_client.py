@@ -62,3 +62,8 @@ def get_readonly_engine(settings: Settings) -> Engine:
         SQLAlchemy Engine for MariaDB connection (read-only)
     """
     return get_engine(settings)
+
+
+def create_engine_from_settings(db_settings) -> Engine:
+    """Create SQLAlchemy engine from DatabaseSettings."""
+    return create_engine(db_settings.connection_url)

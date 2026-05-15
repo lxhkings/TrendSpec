@@ -1,103 +1,69 @@
-<arg_value>
 """
-Ingest command for TrendSpec CLI.
-
-Import market data from MariaDB to Parquet data lake.
+TrendSpec data ingest CLI.
 
 Commands:
-    trendspec ingest --market cn --dataset daily --since 2020-01-01
-    trendspec ingest --market cn --dataset components --since 2020-01-01
-    trendspec ingest --market cn --dataset sectors --since 2020-01-01
-    trendspec ingest --market us --dataset daily --since 2020-01-01
-    trendspec ingest --status
+    trendspec ingest daily --market us
+    trendspec ingest daily --market cn
+    trendspec ingest components --market us
+    trendspec ingest sectors --market us
+    trendspec ingest status
 """
-
-from datetime import date
-from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.table import Table
 
-app = typer.Typer(help="导入市场数据")
+app = typer.Typer(name="ingest", help="导入市场数据")
 console = Console()
 
 
 @app.command("daily")
 def ingest_daily(
     market: str = typer.Option(
-        "cn",
+        "us",
         "--market",
-        "-m",
         help="市场代码 (cn, us)",
     ),
     since: str = typer.Option(
-        "2020-01-01",
+        "2000-01-01",
         "--since",
-        "-s",
-        help="起始日期 (YYYY-MM-DD)",
+        help="起始日期 YYYY-MM-DD（仅用于显示，实际由 manifest 控制增量）",
     ),
     incremental: bool = typer.Option(
-        False,
-        "--incremental",
-        "-i",
-        help="增量导入 (仅导入新数据)",
+        True,
+        "--incremental/--full",
+        help="增量同步 (默认) 或全量同步",
     ),
 ) -> None:
     """
-    导入日线行情数据.
-
-    从MariaDB导入OHLCV日线数据到Parquet数据湖.
+    从群辉 stocks DB 导入 OHLCV 日线数据.
 
     示例:
-        trendspec ingest daily --market cn --since 2020-01-01
-        trendspec ingest daily --market us --since 2020-01-01
+        trendspec ingest daily --market us
+        trendspec ingest daily --market cn --full
     """
     from trendspec.data.markets import Market
-    from trendspec.ingest.cn_ingestor import CNAIngestor
-    from trendspec.ingest.us_ingestor import USIngestor
     from trendspec.config.settings import get_settings
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.mariadb_client import create_engine_from_settings
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_daily, ingest_us_daily
 
-    # Parse date
-    try:
-        since_date = date.fromisoformat(since)
-    except ValueError:
-        console.print("[red]日期格式错误，请使用 YYYY-MM-DD 格式[/red]")
-        raise typer.Exit(1)
-
-    # Get market
-    market_enum = Market(market)
-
-    # Get settings
+    market_enum = Market(market.upper())
     settings = get_settings()
+    engine = create_engine_from_settings(settings.db)
+    root = settings.data_lake.data_lake_root
+    manifest = Manifest(market_enum, root)
+    full_sync = not incremental
 
-    console.print(f"[cyan]导入 {market} 日线数据，起始日期: {since_date}[/cyan]")
-
+    console.print(f"[cyan]导入 {market} 日线数据...[/cyan]")
     try:
-        if market_enum == Market.CN:
-            ingestor = CNAIngestor(
-                db_url=settings.db.connection_url,
-                root=settings.data_lake.data_lake_root,
-            )
-            result = ingestor.ingest_daily(
-                since=since_date,
-                incremental=incremental,
-            )
-        elif market_enum == Market.US:
-            ingestor = USIngestor(
-                db_url=settings.db.connection_url,
-                root=settings.data_lake.data_lake_root,
-            )
-            result = ingestor.ingest_daily(
-                since=since_date,
-                incremental=incremental,
-            )
+        if market_enum == Market.US:
+            result = ingest_us_daily(engine, manifest, root, full_sync=full_sync)
+        elif market_enum == Market.CN:
+            result = ingest_cn_daily(engine, manifest, root, full_sync=full_sync)
         else:
             console.print(f"[red]不支持的市场: {market}[/red]")
             raise typer.Exit(1)
-
-        console.print(f"[green]导入完成: {result}[/green]")
-
+        console.print(f"[green]完成: {result['row_count']} 行, {result['instrument_count']} 只股票[/green]")
     except Exception as e:
         console.print(f"[red]导入失败: {e}[/red]")
         raise typer.Exit(1)
@@ -105,51 +71,31 @@ def ingest_daily(
 
 @app.command("components")
 def ingest_components(
-    market: str = typer.Option(
-        "cn",
-        "--market",
-        "-m",
-        help="市场代码 (cn)",
-    ),
-    since: str = typer.Option(
-        "2020-01-01",
-        "--since",
-        "-s",
-        help="起始日期 (YYYY-MM-DD)",
-    ),
+    market: str = typer.Option("us", "--market", help="市场代码 (cn, us)"),
 ) -> None:
-    """
-    导入指数成分股数据.
-
-    从MariaDB导入指数成分股变更数据到Parquet数据湖.
-
-    示例:
-        trendspec ingest components --market cn --since 2020-01-01
-    """
+    """导入成分变动数据."""
     from trendspec.data.markets import Market
-    from trendspec.ingest.components_ingestor import ComponentsIngestor
     from trendspec.config.settings import get_settings
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.mariadb_client import create_engine_from_settings
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_components, ingest_us_components
 
-    try:
-        since_date = date.fromisoformat(since)
-    except ValueError:
-        console.print("[red]日期格式错误，请使用 YYYY-MM-DD 格式[/red]")
-        raise typer.Exit(1)
-
-    market_enum = Market(market)
+    market_enum = Market(market.upper())
     settings = get_settings()
+    engine = create_engine_from_settings(settings.db)
+    root = settings.data_lake.data_lake_root
+    manifest = Manifest(market_enum, root)
 
-    console.print(f"[cyan]导入 {market} 指数成分股数据，起始日期: {since_date}[/cyan]")
-
+    console.print(f"[cyan]导入 {market} 成分数据...[/cyan]")
     try:
-        ingestor = ComponentsIngestor(
-            db_url=settings.db.connection_url,
-            root=settings.data_lake.data_lake_root,
-        )
-        result = ingestor.ingest(since=since_date)
-
-        console.print(f"[green]导入完成: {result}[/green]")
-
+        if market_enum == Market.US:
+            result = ingest_us_components(engine, manifest, root)
+        elif market_enum == Market.CN:
+            result = ingest_cn_components(engine, manifest, root)
+        else:
+            console.print(f"[red]不支持的市场: {market}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[green]完成: {result['row_count']} 行[/green]")
     except Exception as e:
         console.print(f"[red]导入失败: {e}[/red]")
         raise typer.Exit(1)
@@ -157,120 +103,54 @@ def ingest_components(
 
 @app.command("sectors")
 def ingest_sectors(
-    market: str = typer.Option(
-        "cn",
-        "--market",
-        "-m",
-        help="市场代码 (cn)",
-    ),
-    since: str = typer.Option(
-        "2020-01-01",
-        "--since",
-        "-s",
-        help="起始日期 (YYYY-MM-DD)",
-    ),
+    market: str = typer.Option("us", "--market", help="市场代码 (cn, us)"),
 ) -> None:
-    """
-    导入板块分类数据.
-
-    从MariaDB导入板块分类数据到Parquet数据湖.
-
-    示例:
-        trendspec ingest sectors --market cn --since 2020-01-01
-    """
+    """导入行业分类数据."""
     from trendspec.data.markets import Market
-    from trendspec.ingest.sectors_ingestor import SectorsIngestor
     from trendspec.config.settings import get_settings
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.mariadb_client import create_engine_from_settings
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_sectors, ingest_us_sectors
 
-    try:
-        since_date = date.fromisoformat(since)
-    except ValueError:
-        console.print("[red]日期格式错误，请使用 YYYY-MM-DD 格式[/red]")
-        raise typer.Exit(1)
-
-    market_enum = Market(market)
+    market_enum = Market(market.upper())
     settings = get_settings()
+    engine = create_engine_from_settings(settings.db)
+    root = settings.data_lake.data_lake_root
+    manifest = Manifest(market_enum, root)
 
-    console.print(f"[cyan]导入 {market} 板块分类数据，起始日期: {since_date}[/cyan]")
-
+    console.print(f"[cyan]导入 {market} 行业数据...[/cyan]")
     try:
-        ingestor = SectorsIngestor(
-            db_url=settings.db.connection_url,
-            root=settings.data_lake.data_lake_root,
-        )
-        result = ingestor.ingest(since=since_date)
-
-        console.print(f"[green]导入完成: {result}[/green]")
-
+        if market_enum == Market.US:
+            result = ingest_us_sectors(engine, manifest, root)
+        elif market_enum == Market.CN:
+            result = ingest_cn_sectors(engine, manifest, root)
+        else:
+            console.print(f"[red]不支持的市场: {market}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[green]完成: {result['row_count']} 行[/green]")
     except Exception as e:
         console.print(f"[red]导入失败: {e}[/red]")
         raise typer.Exit(1)
 
 
 @app.command("status")
-def ingest_status() -> None:
-    """
-    查看数据导入状态.
-
-    显示数据湖中各数据集的状态信息.
-    """
-    from trendspec.ingest.manifest import Manifest
-    from trendspec.config.settings import get_settings
-
-    settings = get_settings()
-    manifest = Manifest(root=settings.data_lake.data_lake_root)
-
-    table = Table(title="数据导入状态")
-    table.add_column("数据集", style="cyan")
-    table.add_column("市场", style="cyan")
-    table.add_column("最后更新", style="green")
-    table.add_column("记录数", style="yellow")
-    table.add_column("状态", style="white")
-
-    status = manifest.get_status()
-
-    for dataset, info in status.items():
-        table.add_row(
-            dataset,
-            info.get("market", "N/A"),
-            info.get("last_update", "N/A"),
-            str(info.get("records", 0)),
-            info.get("status", "未知"),
-        )
-
-    console.print(table)
-
-
-@app.command("all")
-def ingest_all(
-    market: str = typer.Option(
-        "cn",
-        "--market",
-        "-m",
-        help="市场代码 (cn, us)",
-    ),
-    since: str = typer.Option(
-        "2020-01-01",
-        "--since",
-        "-s",
-        help="起始日期 (YYYY-MM-DD)",
-    ),
+def ingest_status(
+    market: str = typer.Option("us", "--market", help="市场代码 (cn, us)"),
 ) -> None:
-    """
-    导入所有数据集.
+    """显示摄入状态."""
+    from trendspec.data.markets import Market
+    from trendspec.config.settings import get_settings
+    from trendspec.ingest.manifest import Manifest
 
-    一次性导入日线、成分股、板块数据.
+    market_enum = Market(market.upper())
+    settings = get_settings()
+    root = settings.data_lake.data_lake_root
+    manifest = Manifest(market_enum, root)
 
-    示例:
-        trendspec ingest all --market cn --since 2020-01-01
-    """
-    console.print("[cyan]导入所有数据集...[/cyan]")
-
-    # Run each ingest command
-    ingest_daily(market=market, since=since, incremental=False)
-
-    if market == "cn":
-        ingest_components(market=market, since=since)
-        ingest_sectors(market=market, since=since)
-
-    console.print("[green]所有数据导入完成[/green]")
+    for dataset in ("daily", "components", "sectors"):
+        state = manifest.get_dataset_state(dataset)
+        if state:
+            console.print(f"[green]{dataset}:[/green] {state.get('row_count', 0)} 行, "
+                          f"日期: {state.get('date_range', {})}")
+        else:
+            console.print(f"[yellow]{dataset}:[/yellow] 未同步")
