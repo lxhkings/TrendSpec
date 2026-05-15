@@ -198,3 +198,37 @@ def test_ingest_us_components_all_tickers_have_ipo(stocks_db_with_changes, temp_
     assert "AAPL" in ipos
     assert "MSFT" in ipos
     assert "JPM" in ipos
+
+
+# =============================================================================
+# US sectors tests
+# =============================================================================
+
+def test_ingest_us_sectors_schema(stocks_db, temp_root):
+    """US sectors Parquet has correct columns."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_sectors
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.US, temp_root)
+    result = ingest_us_sectors(stocks_db, manifest, temp_root)
+
+    assert result["instrument_count"] == 3
+
+    df = pl.read_parquet(f"{temp_root}/us/sectors/")
+    assert set(df.columns) >= {"instrument_id", "date", "sector", "sector_name"}
+
+
+def test_ingest_us_sectors_static_date(stocks_db, temp_root):
+    """All sector rows have assign_date = 2000-01-01."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_sectors
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.US, temp_root)
+    ingest_us_sectors(stocks_db, manifest, temp_root)
+
+    df = pl.read_parquet(f"{temp_root}/us/sectors/")
+    dates = df["date"].unique().to_list()
+    assert len(dates) == 1
+    assert str(dates[0]) == "2000-01-01"

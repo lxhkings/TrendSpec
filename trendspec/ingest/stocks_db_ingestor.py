@@ -207,3 +207,67 @@ def ingest_us_components(
     manifest.update_dataset_state("components", row_count, date_range, instrument_count)
 
     return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
+
+
+# =============================================================================
+# US Sectors
+# =============================================================================
+
+
+def ingest_us_sectors(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """
+    Ingest US sector assignments from stocks.gics_sector.
+
+    Static snapshot — no historical sector changes in source.
+    All rows get assign_date = 2000-01-01 as a sentinel.
+
+    sector      = gics_sector   (e.g. "Information Technology")
+    sector_name = gics_industry (e.g. "Technology Hardware")
+
+    Returns:
+        {"row_count": int, "date_range": (str, str), "instrument_count": int}
+    """
+    ex_placeholders = _exchange_placeholder(_US_EXCHANGES)
+    ex_params = _exchange_params(_US_EXCHANGES)
+
+    sql = text(f"""
+        SELECT ticker, gics_sector, gics_industry
+        FROM stocks
+        WHERE exchange IN ({ex_placeholders})
+          AND gics_sector IS NOT NULL
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(sql, ex_params).fetchall()
+
+    if not rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    static_date = date(2000, 1, 1)
+    df = pl.DataFrame(
+        [
+            {
+                "instrument_id": ticker,
+                "date": static_date,
+                "sector": gics_sector or "",
+                "sector_name": gics_industry or "",
+            }
+            for ticker, gics_sector, gics_industry in rows
+        ]
+    )
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+
+    write_parquet(df, Market.US, "sectors", root)
+
+    date_range = ("2000-01-01", "2000-01-01")
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+
+    manifest.update_dataset_state("sectors", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
