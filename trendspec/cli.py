@@ -1,19 +1,9 @@
 """
-TrendSpec CLI module.
+TrendSpec CLI module entry point.
 
-Placeholder CLI - full functionality will be implemented in Phase 10.
+Imports the full CLI from the cli/ package.
 """
 
-import typer
+from trendspec.cli.main import app
 
-app = typer.Typer(help="TrendSpec - 量化回测与选股系统")
-
-
-@app.callback()
-def main() -> None:
-    """TrendSpec CLI - 完整功能将在后续版本实现."""
-    pass
-
-
-if __name__ == "__main__":
-    app()
+__all__ = ["app"]
