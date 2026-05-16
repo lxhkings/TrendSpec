@@ -71,22 +71,50 @@ uv run trendspec ingest daily --market cn
 uv run trendspec ingest status --market us
 ```
 
+## 可用策略
+
+| 策略名 | 类型 | 说明 |
+|--------|------|------|
+| `clenow_momentum` | 量化动量 | Clenow《Stocks on the Move》：指数回归斜率×R² 排名，ATR 仓位，每周调仓 |
+| `ma_cross` | 趋势跟踪 | 双均线交叉（短期 MA 上穿长期 MA 买入） |
+| `rsi_reversal` | 均值回归 | RSI 超卖买入、超买卖出 |
+| `sector_momentum` | 行业动量 | 行业内相对动量排名，买入前 10% |
+
+### clenow_momentum 参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `score_period` | 90 | 指数回归回望窗口（交易日） |
+| `sma_period` | 200 | 趋势过滤均线（价格须在此均线上方） |
+| `atr_period` | 20 | ATR 周期，用于仓位计算 |
+| `risk_factor` | 0.001 | 每单位 ATR 分配的权益比例 |
+| `rebalance_weekday` | 2 | 调仓日（0=周一…4=周五，默认周三） |
+| `top_pct` | 0.8 | 持有排名前多少比例（默认前 80%） |
+| `max_gap` | -0.15 | 90 日内单日最大跌幅过滤（-15%） |
+
 ## 回测
 
 ```bash
 # 查看可用策略
 uv run trendspec backtest list
 
-# 运行回测
+# Clenow 动量策略回测
+uv run trendspec backtest run --strategy clenow_momentum --market us --start 2020-01-01 --end 2024-12-31
+
+# MA 交叉策略回测
 uv run trendspec backtest run --strategy ma_cross --market us --start 2020-01-01 --end 2024-12-31
 
 # 指定初始资金
-uv run trendspec backtest run --strategy ma_cross --market us --start 2023-01-01 --capital 1000000
+uv run trendspec backtest run --strategy clenow_momentum --market us --start 2023-01-01 --capital 1000000
 ```
 
 ## 选股
 
 ```bash
+# Clenow 动量选股
+uv run trendspec screen --strategy clenow_momentum --market us --date 2024-05-15
+
+# MA 交叉选股
 uv run trendspec screen --strategy ma_cross --market us --date 2024-05-15
 ```
 
@@ -106,6 +134,29 @@ uv run trendspec --help
 | `stocks` | 股票基本信息，含 GICS 行业分类 |
 | `constituent_changes` | 指数成分变动（CSI800 / SP500 / HSI）|
 
+## 编写自定义策略
+
+继承 `BaseStrategy`，实现 `init()` 和 `next()`：
+
+```python
+from trendspec.strategy import BaseStrategy, register_strategy, StrategyContext
+
+@register_strategy("my_strategy")
+class MyStrategy(BaseStrategy):
+    name = "my_strategy"
+    params = {"period": 20}
+
+    def init(self, ctx: StrategyContext) -> None:
+        ctx.precompute_indicator("MA", period=self.get_param("period", 20))
+
+    def next(self, ctx: StrategyContext) -> None:
+        ma = ctx.indicator_value("MA", ctx.instrument_id, ctx.date, period=self.get_param("period", 20))
+        if ma and ctx.close > ma and not ctx.has_position():
+            ctx.signal("BUY", ctx.instrument_id, ctx.close)
+```
+
+参考 `trendspec/strategy/examples/` 下的四个示例策略。
+
 ## 开发
 
 ```bash
@@ -116,4 +167,3 @@ uv run pytest
 uv run ruff check .
 uv run ruff format .
 ```
-# TrendSpec
