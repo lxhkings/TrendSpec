@@ -293,6 +293,12 @@ class BacktestEngine(BaseEngine):
         # Update context with current date
         ctx._current_date = trading_day
 
+        # Sync portfolio state into context so strategies can access positions and capital
+        ctx.update_positions(
+            {iid: pos.shares for iid, pos in portfolio.active_positions().items()},
+            portfolio.available_cash(),
+        )
+
         # Clear signals from previous day
         ctx.clear_signals()
 

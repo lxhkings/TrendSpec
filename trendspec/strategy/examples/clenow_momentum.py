@@ -173,15 +173,14 @@ class ClenowMomentumStrategy(BaseStrategy):
 
             sell_reason = None
             if close is None:
-                sell_reason = "no price data"
+                continue  # no price data — cannot sell safely, skip
             elif sma is not None and close <= sma:
                 sell_reason = f"below SMA{self._sma_period}"
             elif iid not in top_set:
                 sell_reason = "rank out of top qualifying universe"
 
             if sell_reason:
-                sell_price = close if close is not None else ctx.close
-                sig = ctx.signal("SELL", iid, sell_price, note=sell_reason)
+                sig = ctx.signal("SELL", iid, close, note=sell_reason)
                 sig.ticker = get_ticker(iid)
 
         # BUY: top-ranked stocks not already held

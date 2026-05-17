@@ -840,3 +840,96 @@ class TestClenowMomentumStrategySignals:
         assert any("MIN_DAILY_RETURN" in k for k in cache_keys)
         assert any("ATR" in k for k in cache_keys)
         assert any("MA" in k for k in cache_keys)
+
+    def test_next_generates_buy_with_shares_on_rebalance_day(self) -> None:
+        """On a rebalance day, strategy generates BUY signals with positive shares."""
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        from trendspec.strategy.context import StrategyContext
+        from unittest.mock import MagicMock, patch
+
+        df = self._make_trending_df(300)
+        instrument_ids = df["instrument_id"].unique().to_list()
+
+        # Find a Wednesday in the data range
+        all_dates = df["date"].unique().sort()
+        wednesdays = [d for d in all_dates.to_list() if d.weekday() == 2]
+        assert wednesdays, "No Wednesdays in synthetic data"
+        rebalance_date = wednesdays[-1]
+
+        strategy = ClenowMomentumStrategy(params={
+            "sma_period": 50,
+            "score_period": 30,
+            "gap_period": 30,
+            "atr_period": 10,
+            "rebalance_weekday": 2,
+            "risk_factor": 0.001,
+            "top_pct": 0.8,
+        })
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+
+        # Mock pit_universe to return instruments from synthetic data (no data lake needed)
+        mock_universe = MagicMock()
+        mock_universe.tickers.return_value = instrument_ids
+        ctx._universe = mock_universe
+
+        # Simulate engine: update positions (empty) + available capital
+        ctx.update_positions({}, 100_000.0)
+
+        # Feed all instruments for the rebalance date
+        for iid in instrument_ids:
+            row = df.filter(
+                (pl.col("instrument_id") == iid) & (pl.col("date") == rebalance_date)
+            )
+            if row.is_empty():
+                continue
+            ctx.update_bar(rebalance_date, iid, row["ticker"].item(), df)
+            strategy.next(ctx)
+
+        signals = ctx.pending_signals()
+        buy_signals = [s for s in signals if s.is_buy()]
+
+        # With 300 days of uptrending data, at least some stocks should qualify
+        assert len(buy_signals) > 0, "Expected BUY signals on rebalance day with uptrending data"
+        # All BUY signals must have computed shares (ATR-based)
+        for sig in buy_signals:
+            assert sig.shares is not None, f"Signal for {sig.instrument_id} missing shares"
+            assert sig.shares >= 1.0, f"Signal shares must be >= 1, got {sig.shares}"
+
+    def test_next_no_signals_on_non_rebalance_day(self) -> None:
+        """On a non-rebalance weekday, next() returns immediately with no signals."""
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        from trendspec.strategy.context import StrategyContext
+        from unittest.mock import MagicMock
+
+        df = self._make_trending_df(300)
+        instrument_ids = df["instrument_id"].unique().to_list()
+
+        # Find a Monday (weekday=0) — not the default rebalance day (Wednesday=2)
+        all_dates = df["date"].unique().sort()
+        mondays = [d for d in all_dates.to_list() if d.weekday() == 0]
+        assert mondays
+        monday = mondays[-1]
+
+        strategy = ClenowMomentumStrategy(params={
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+        })
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+
+        mock_universe = MagicMock()
+        mock_universe.tickers.return_value = instrument_ids
+        ctx._universe = mock_universe
+
+        ctx.update_positions({}, 100_000.0)
+
+        for iid in instrument_ids:
+            row = df.filter(
+                (pl.col("instrument_id") == iid) & (pl.col("date") == monday)
+            )
+            if row.is_empty():
+                continue
+            ctx.update_bar(monday, iid, row["ticker"].item(), df)
+            strategy.next(ctx)
+
+        assert ctx.pending_signals() == [], "Expected no signals on non-rebalance day"
