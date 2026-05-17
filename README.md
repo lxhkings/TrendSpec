@@ -77,6 +77,7 @@ uv run trendspec ingest status --market us
 |--------|------|------|
 | `clenow_momentum` | 量化动量 | Clenow《Stocks on the Move》：指数回归斜率×R² 排名，ATR 仓位，每周调仓 |
 | `ma_cross` | 趋势跟踪 | 双均线交叉（短期 MA 上穿长期 MA 买入） |
+| `minervini_trend` | 动量筛选 | Minervini 趋势模板：6 项纯技术指标过滤，2 日确认 |
 | `rsi_reversal` | 均值回归 | RSI 超卖买入、超买卖出 |
 | `sector_momentum` | 行业动量 | 行业内相对动量排名，买入前 10% |
 
@@ -92,6 +93,17 @@ uv run trendspec ingest status --market us
 | `top_pct` | 0.8 | 持有排名前多少比例（默认前 80%） |
 | `max_gap` | -0.15 | 90 日内单日最大跌幅过滤（-15%） |
 
+### minervini_trend 参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `ma_short` | 50 | 短期均线周期 |
+| `ma_mid` | 150 | 中期均线周期 |
+| `ma_long` | 200 | 长期均线周期 |
+| `rs_threshold` | 70.0 | RS_RATING 最低阈值 |
+| `confirmation_days` | 2 | 连续满足条件的天数 |
+| `market_index_id` | SP500 | 大盘指数 ID（CN 市场用 CSI800） |
+
 ## 回测
 
 ```bash
@@ -106,6 +118,10 @@ uv run trendspec backtest run --strategy ma_cross --market us --start 2020-01-01
 
 # 指定初始资金
 uv run trendspec backtest run --strategy clenow_momentum --market us --start 2023-01-01 --capital 1000000
+
+# 策略对比回测
+uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31
+uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31 --sort sharpe --export csv
 ```
 
 ## 选股
@@ -133,6 +149,7 @@ uv run trendspec --help
 | `prices` | 日线 OHLCV（美股为 Yahoo 复权价，A 股为 Tushare 后复权价）|
 | `stocks` | 股票基本信息，含 GICS 行业分类 |
 | `constituent_changes` | 指数成分变动（CSI800 / SP500 / HSI）|
+| `index_prices` | 指数日线价格（SP500 / CSI800 / 行业 ETF）|
 
 ## 编写自定义策略
 
@@ -155,7 +172,7 @@ class MyStrategy(BaseStrategy):
             ctx.signal("BUY", ctx.instrument_id, ctx.close)
 ```
 
-参考 `trendspec/strategy/examples/` 下的四个示例策略。
+参考 `trendspec/strategy/examples/` 下的五个示例策略。
 
 ## 开发
 

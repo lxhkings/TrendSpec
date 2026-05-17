@@ -133,6 +133,42 @@ def ingest_sectors(
         raise typer.Exit(1)
 
 
+@app.command("indices")
+def ingest_indices(
+    market: str = typer.Option("us", "--market", "-m", help="市场代码 (cn, us)"),
+    full: bool = typer.Option(False, "--full", help="全量同步"),
+) -> None:
+    """摄入大盘指数数据 (SP500 / CSI800 等)."""
+    from trendspec.data.markets import Market
+    from trendspec.config.settings import get_settings
+    from trendspec.ingest.mariadb_client import create_engine_from_settings
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_indices, ingest_cn_indices
+
+    try:
+        market_enum = Market(market.upper())
+    except ValueError:
+        console.print(f"[red]不支持的市场: {market}[/red]")
+        raise typer.Exit(1)
+
+    settings = get_settings()
+    db_engine = create_engine_from_settings(settings.db)
+    root = settings.data_lake.data_lake_root
+    mf = Manifest(market_enum, root)
+
+    try:
+        if market_enum == Market.US:
+            result = ingest_us_indices(db_engine, mf, root, full_sync=full)
+        else:
+            result = ingest_cn_indices(db_engine, mf, root, full_sync=full)
+        console.print(f"[green]摄入完成[/green] — {result['row_count']} 行, "
+                      f"指数数 {result['instrument_count']}, "
+                      f"日期: {result['date_range']}")
+    except Exception as e:
+        console.print(f"[red]摄入失败: {e}[/red]")
+        raise typer.Exit(1)
+
+
 @app.command("status")
 def ingest_status(
     market: str = typer.Option("us", "--market", help="市场代码 (cn, us)"),

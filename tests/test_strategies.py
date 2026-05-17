@@ -933,3 +933,195 @@ class TestClenowMomentumStrategySignals:
             strategy.next(ctx)
 
         assert ctx.pending_signals() == [], "Expected no signals on non-rebalance day"
+
+
+# =============================================================================
+# MinerviniTrendTemplate Tests
+# =============================================================================
+
+
+class TestMinerviniTrendTemplateInit:
+    def test_strategy_registration(self) -> None:
+        from trendspec.strategy.examples import MinerviniTrendTemplate
+        assert get_strategy("minervini_trend") is MinerviniTrendTemplate
+
+    def test_default_params(self) -> None:
+        from trendspec.strategy.examples import MinerviniTrendTemplate
+        s = MinerviniTrendTemplate()
+        assert s.get_param("ma_short", 50) == 50
+        assert s.get_param("ma_long", 200) == 200
+        assert s.get_param("rs_threshold", 70.0) == 70.0
+        assert s.get_param("confirmation_days", 2) == 2
+        assert s.get_param("market_index_id", "SP500") == "SP500"
+
+    def test_invalid_rs_threshold(self) -> None:
+        from trendspec.strategy.examples import MinerviniTrendTemplate
+        with pytest.raises(ValueError, match="rs_threshold"):
+            MinerviniTrendTemplate(params={"rs_threshold": 150})
+
+    def test_invalid_confirmation_days(self) -> None:
+        from trendspec.strategy.examples import MinerviniTrendTemplate
+        with pytest.raises(ValueError, match="confirmation_days"):
+            MinerviniTrendTemplate(params={"confirmation_days": 0})
+
+    def test_in_list_strategies(self) -> None:
+        import trendspec.strategy.examples  # noqa: F401
+        assert "minervini_trend" in list_strategies()
+
+    def test_init_precomputes_indicators(self) -> None:
+        from trendspec.strategy.examples import MinerviniTrendTemplate
+        df = _make_price_df(300)
+        strategy = MinerviniTrendTemplate(params={
+            "ma_short": 50, "ma_mid": 150, "ma_long": 200,
+            "high_low_lookback": 252, "rs_period": 252,
+        })
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+        keys = list(ctx._indicator_cache.keys())
+        assert any("MA" in k for k in keys)
+        assert any("RS_RATING" in k for k in keys)
+
+
+class TestMinerviniTrendTemplateLogic:
+    @pytest.fixture
+    def trending_data(self) -> pl.DataFrame:
+        dates = [date(2024, 1, 1) + timedelta(days=i) for i in range(300)]
+        n = len(dates)
+        prices = [10.0 + i * 0.05 if i < 200 else 20.0 + (i - 200) * 0.03 for i in range(n)]
+        return pl.DataFrame({
+            "instrument_id": ["US001"] * n,
+            "date": dates,
+            "ticker": ["US001"] * n,
+            "open": prices,
+            "high": [p + 0.5 for p in prices],
+            "low": [p - 0.3 for p in prices],
+            "close": prices,
+            "volume": [1_000_000] * n,
+            "adj_factor": [1.0] * n,
+        })
+
+    def test_init_precomputes_ma(self, trending_data: pl.DataFrame) -> None:
+        from trendspec.strategy.examples import MinerviniTrendTemplate
+        strategy = MinerviniTrendTemplate()
+        ctx = StrategyContext(Market.US, strategy, data=trending_data)
+        strategy.init(ctx)
+        assert strategy._ma_s == 50
+        assert strategy._ma_m == 150
+        assert strategy._ma_l == 200
+
+
+# =============================================================================
+# RS_RATING Indicator Tests
+# =============================================================================
+
+
+class TestRSRatingIndicator:
+    def test_registered(self) -> None:
+        from trendspec.strategy.indicators import list_indicators
+        assert "RS_RATING" in list_indicators()
+
+    def test_column_added(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(300)
+        result = compute_indicator(df, "RS_RATING", period=252)
+        assert "RS_RATING_252" in result.columns
+
+    def test_values_in_range(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(300)
+        result = compute_indicator(df, "RS_RATING", period=252)
+        values = result["RS_RATING_252"].drop_nulls()
+        assert len(values) > 0
+        assert (values >= 0).all() and (values <= 100).all()
+
+
+# =============================================================================
+# Indices Loader Tests
+# =============================================================================
+
+
+class TestIndicesLoader:
+    def test_read_indices_returns_dataframe(self, tmp_path) -> None:
+        from trendspec.ingest.writer import write_parquet
+        from trendspec.data.parquet_loader import read_indices
+
+        df = pl.DataFrame({
+            "instrument_id": ["SP500", "SP500", "SP500"],
+            "date": [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)],
+            "close": [4800.0, 4820.0, 4810.0],
+        })
+        write_parquet(df, Market.US, "indices", str(tmp_path))
+
+        result = read_indices(Market.US, root=str(tmp_path))
+        assert "instrument_id" in result.columns
+        assert "date" in result.columns
+        assert "close" in result.columns
+        assert len(result) == 3
+
+
+def test_context_index_close_returns_price(tmp_path) -> None:
+    """ctx.index_close() returns close price for a known index+date."""
+    from trendspec.ingest.writer import write_parquet
+    from trendspec.strategy.context import StrategyContext
+
+    df = pl.DataFrame({
+        "instrument_id": ["SP500", "SP500"],
+        "date": [date(2024, 1, 2), date(2024, 1, 3)],
+        "close": [4800.0, 4820.0],
+    })
+    write_parquet(df, Market.US, "indices", str(tmp_path))
+
+    from unittest.mock import MagicMock
+    strategy = MagicMock(spec=BaseStrategy)
+    strategy.log = MagicMock()
+    ctx = StrategyContext(market=Market.US, strategy=strategy, root=str(tmp_path))
+    ctx._current_date = date(2024, 1, 2)
+
+    assert ctx.index_close("SP500") == 4800.0
+    assert ctx.index_close("SP500", date(2024, 1, 3)) == 4820.0
+    assert ctx.index_close("SP500", date(2000, 1, 1)) is None
+
+
+# =============================================================================
+# Strategy Comparison Tests
+# =============================================================================
+
+
+class TestStrategyComparison:
+    def test_comparison_row_fields(self) -> None:
+        from trendspec.analyzer.strategy_comparison import ComparisonRow
+        row = ComparisonRow(
+            strategy_name="test", total_return=0.1, annualized_return=0.05,
+            max_drawdown=0.1, sharpe_ratio=1.2, total_trades=10,
+            final_nav=110000.0, elapsed_seconds=0.5,
+        )
+        assert row.strategy_name == "test"
+        assert row.error is None
+
+    def test_comparison_row_with_error(self) -> None:
+        from trendspec.analyzer.strategy_comparison import ComparisonRow
+        row = ComparisonRow(
+            strategy_name="broken", total_return=0.0, annualized_return=0.0,
+            max_drawdown=0.0, sharpe_ratio=0.0, total_trades=0,
+            final_nav=0.0, elapsed_seconds=0.0, error="data missing",
+        )
+        assert row.error == "data missing"
+
+    def test_comparison_report_sort(self) -> None:
+        from trendspec.analyzer.strategy_comparison import ComparisonRow, ComparisonReport
+        rows = [
+            ComparisonRow("low", 0.1, 0.05, 0.1, 0.5, 10, 105000, 1.0),
+            ComparisonRow("high", 0.3, 0.15, 0.05, 1.5, 20, 130000, 1.0),
+        ]
+        report = ComparisonReport(rows, "us", (date(2022, 1, 1), date(2024, 1, 1)))
+        sorted_rows = report._sorted_rows("sharpe")
+        assert sorted_rows[0].strategy_name == "high"
+
+    def test_comparison_report_csv_export(self, tmp_path) -> None:
+        from trendspec.analyzer.strategy_comparison import ComparisonRow, ComparisonReport
+        rows = [ComparisonRow("s1", 0.1, 0.05, 0.1, 1.0, 5, 110000, 0.5)]
+        report = ComparisonReport(rows, "us", (date(2022, 1, 1), date(2024, 1, 1)))
+        path = report.export("csv", tmp_path)
+        assert path.exists()
+        content = path.read_text()
+        assert "s1" in content

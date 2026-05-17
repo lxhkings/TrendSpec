@@ -219,6 +219,27 @@ class StrategyContext:
         """Override the universe (used in tests to inject a stub without a data lake)."""
         self._universe = universe
 
+    def index_close(self, index_id: str, as_of_date: DateType | None = None) -> float | None:
+        """Get index close price at a specific date. Lazily loads and caches the indices DataFrame."""
+        target_date = as_of_date or self._current_date
+        if target_date is None:
+            return None
+
+        if not hasattr(self, "_indices_cache"):
+            from trendspec.data.parquet_loader import read_indices
+            try:
+                self._indices_cache = read_indices(self.market, root=self._root)
+            except Exception:
+                self._indices_cache = None
+
+        if self._indices_cache is None:
+            return None
+
+        rows = self._indices_cache.filter(
+            (pl.col("instrument_id") == index_id) & (pl.col("date") == target_date)
+        )
+        return rows["close"].item() if not rows.is_empty() else None
+
     def sector_index(self) -> SectorIndex:
         """Get sector index for the market."""
         if self._sector_index is None:

@@ -454,3 +454,28 @@ def read_sectors(
         lf = lf.filter(pl.col("date") <= end_date)
 
     return lf.collect().sort("date")
+
+
+def read_indices(
+    market: Market,
+    root: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    instrument_ids: list[str] | None = None,
+) -> pl.DataFrame:
+    """Load index close price series from data_lake/{market}/indices/."""
+    lf = scan_parquet(root, market, "indices")
+
+    if _lazyframe_is_empty(lf):
+        return pl.DataFrame()
+
+    if start_date is not None:
+        lf = lf.filter(pl.col("date") >= start_date)
+
+    if end_date is not None:
+        lf = lf.filter(pl.col("date") <= end_date)
+
+    if instrument_ids is not None:
+        lf = lf.filter(pl.col("instrument_id").is_in(instrument_ids))
+
+    return lf.collect().sort(["instrument_id", "date"])

@@ -511,3 +511,70 @@ def ingest_cn_sectors(
     manifest.update_dataset_state("sectors", row_count, date_range, instrument_count)
 
     return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
+
+
+# =============================================================================
+# US Indices
+# =============================================================================
+
+
+def ingest_us_indices(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """Ingest US index prices (SP500 + sector ETFs) from index_prices table."""
+    sql = text("SELECT date, index_id, close FROM index_prices ORDER BY index_id, date")
+    with engine.connect() as conn:
+        rows = conn.execute(sql).fetchall()
+    if not rows:
+        return {"row_count": 0, "date_range": None, "instrument_count": 0}
+    df = pl.DataFrame(
+        rows,
+        schema={"date": pl.Date, "index_id": pl.String, "close": pl.Float64},
+        orient="row",
+    ).rename({"index_id": "instrument_id"})
+    write_parquet(df, Market.US, "indices", root)
+    dates = df["date"]
+    index_ids = df["instrument_id"].unique()
+    manifest.update_dataset_state(
+        "indices",
+        row_count=len(df),
+        date_range=(dates.min(), dates.max()),
+        instrument_count=len(index_ids),
+    )
+    return {"row_count": len(df), "date_range": (dates.min(), dates.max()), "instrument_count": len(index_ids)}
+
+
+# =============================================================================
+# CN Indices
+# =============================================================================
+
+
+def ingest_cn_indices(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """Ingest CN index prices (CSI800) from index_prices table."""
+    sql = text("SELECT date, index_id, close FROM index_prices WHERE index_id = 'CSI800' ORDER BY date")
+    with engine.connect() as conn:
+        rows = conn.execute(sql).fetchall()
+    if not rows:
+        return {"row_count": 0, "date_range": None, "instrument_count": 0}
+    df = pl.DataFrame(
+        rows,
+        schema={"date": pl.Date, "index_id": pl.String, "close": pl.Float64},
+        orient="row",
+    ).rename({"index_id": "instrument_id"})
+    write_parquet(df, Market.CN, "indices", root)
+    dates = df["date"]
+    manifest.update_dataset_state(
+        "indices",
+        row_count=len(df),
+        date_range=(dates.min(), dates.max()),
+        instrument_count=1,
+    )
+    return {"row_count": len(df), "date_range": (dates.min(), dates.max()), "instrument_count": 1}

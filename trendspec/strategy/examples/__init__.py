@@ -21,12 +21,14 @@ Example usage:
 
 from trendspec.strategy.examples.clenow_momentum import ClenowMomentumStrategy
 from trendspec.strategy.examples.ma_cross import MACrossStrategy
+from trendspec.strategy.examples.minervini_trend_template import MinerviniTrendTemplate
 from trendspec.strategy.examples.rsi_reversal import RSIReversalStrategy
 from trendspec.strategy.examples.sector_momentum import SectorMomentumStrategy
 
 __all__ = [
     "ClenowMomentumStrategy",
     "MACrossStrategy",
+    "MinerviniTrendTemplate",
     "RSIReversalStrategy",
     "SectorMomentumStrategy",
 ]

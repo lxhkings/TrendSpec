@@ -820,6 +820,46 @@ def min_daily_return(df: pl.DataFrame, period: int = 90) -> pl.DataFrame:
     ).drop("_daily_ret")
 
 
+@register_indicator("RS_RATING")
+def rs_rating(df: pl.DataFrame, period: int = 252) -> pl.DataFrame:
+    """
+    IBD-style Relative Strength Rating (0-100 cross-sectional rank).
+
+    RS_raw = (2 * close/close[63] + close/close[126]
+              + close/close[189] + close/close[252]) / 5
+    RS_RATING = percentile rank of RS_raw within each date, scaled 0-100.
+
+    Args:
+        df: DataFrame with OHLCV data
+        period: Always 252 (kept for indicator_value() column-name compatibility)
+
+    Returns:
+        DataFrame with RS_RATING_{period} column added
+    """
+    col_name = f"RS_RATING_{period}"
+
+    df_sorted = df.sort(["instrument_id", "date"])
+
+    df_raw = df_sorted.with_columns(
+        (
+            2.0 * pl.col("close") / pl.col("close").shift(63).over("instrument_id")
+            + pl.col("close") / pl.col("close").shift(126).over("instrument_id")
+            + pl.col("close") / pl.col("close").shift(189).over("instrument_id")
+            + pl.col("close") / pl.col("close").shift(252).over("instrument_id")
+        ).alias("_rs_raw") / 5.0
+    )
+
+    return df_raw.with_columns(
+        (
+            pl.col("_rs_raw")
+            .rank(method="average", descending=False)
+            .over("date")
+            / pl.col("_rs_raw").count().over("date")
+            * 100.0
+        ).alias(col_name)
+    ).drop("_rs_raw")
+
+
 # =============================================================================
 # Utility Functions
 # =============================================================================

@@ -163,3 +163,78 @@ def backtest_list() -> None:
 
     console.print(table)
     console.print("\n[yellow]提示: 使用 --strategy 参数选择策略[/yellow]")
+
+@app.command("compare")
+def backtest_compare(
+    market: str = typer.Option("cn", "--market", "-m", help="市场 (cn, us)"),
+    start: str = typer.Option("2020-01-01", "--start", help="起始日期"),
+    end: str = typer.Option("2024-12-31", "--end", help="结束日期"),
+    capital: float = typer.Option(100000.0, "--capital", "-c", help="初始资金"),
+    sort: str = typer.Option("sharpe", "--sort", help="排序: return|annual|mdd|sharpe|trades"),
+    export: Optional[str] = typer.Option(None, "--export", help="导出: csv|json|markdown"),
+    exclude: Optional[str] = typer.Option(None, "--exclude", help="排除策略(逗号分隔)"),
+) -> None:
+    """运行全部策略回测并对比绩效."""
+    import time
+    from trendspec.data.markets import Market
+    from trendspec.engine.base_engine import EngineConfig
+    from trendspec.engine.backtest_engine import BacktestEngine
+    from trendspec.strategy.base import get_strategy, list_strategies
+    from trendspec.analyzer.strategy_comparison import ComparisonRow, ComparisonReport
+    import trendspec.strategy.examples  # noqa: F401
+
+    try:
+        start_date = date.fromisoformat(start)
+        end_date = date.fromisoformat(end)
+        market_enum = Market(market.upper())
+    except ValueError as e:
+        console.print(f"[red]参数错误: {e}[/red]")
+        raise typer.Exit(1)
+
+    excluded = {x.strip() for x in (exclude or "").split(",") if x.strip()}
+    strategy_names = [n for n in list_strategies() if n not in excluded]
+
+    console.print(f"[cyan]对比 {len(strategy_names)} 个策略 — {market.upper()} "
+                  f"{start_date} → {end_date}[/cyan]\n")
+
+    rows: list[ComparisonRow] = []
+    for name in strategy_names:
+        strategy_class = get_strategy(name)
+        if strategy_class is None:
+            continue
+        console.print(f"  运行 [cyan]{name}[/cyan]...")
+        t0 = time.perf_counter()
+        try:
+            config = EngineConfig(
+                market=market_enum,
+                start_date=start_date,
+                end_date=end_date,
+                initial_capital=capital,
+            )
+            result = BacktestEngine(config).run(strategy_class)
+            m = result.metrics
+            elapsed = time.perf_counter() - t0
+            rows.append(ComparisonRow(
+                strategy_name=name,
+                total_return=m.get("total_return", 0.0),
+                annualized_return=m.get("annualized_return", 0.0),
+                max_drawdown=m.get("max_drawdown", 0.0),
+                sharpe_ratio=m.get("sharpe_ratio", 0.0),
+                total_trades=m.get("total_trades", 0),
+                final_nav=m.get("final_nav", capital),
+                elapsed_seconds=elapsed,
+            ))
+        except Exception as e:
+            elapsed = time.perf_counter() - t0
+            rows.append(ComparisonRow(
+                strategy_name=name, total_return=0, annualized_return=0,
+                max_drawdown=0, sharpe_ratio=0, total_trades=0,
+                final_nav=0, elapsed_seconds=elapsed, error=str(e),
+            ))
+
+    report = ComparisonReport(rows, market, (start_date, end_date))
+    report.output(sort_key=sort)
+
+    if export:
+        path = report.export(export)
+        console.print(f"\n[green]已导出至: {path}[/green]")
