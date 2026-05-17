@@ -215,6 +215,10 @@ class StrategyContext:
             self._universe = get_universe(self.market, self._root)
         return self._universe
 
+    def set_universe(self, universe: Universe) -> None:
+        """Override the universe (used in tests to inject a stub without a data lake)."""
+        self._universe = universe
+
     def sector_index(self) -> SectorIndex:
         """Get sector index for the market."""
         if self._sector_index is None:

@@ -173,7 +173,10 @@ class ClenowMomentumStrategy(BaseStrategy):
 
             sell_reason = None
             if close is None:
-                continue  # no price data — cannot sell safely, skip
+                # No price data (halt/delist). Cannot sell at unknown price.
+                # Position held until price returns. Log for visibility.
+                ctx.strategy.log(f"WARN: no price for held position {iid} on {current_date} — skipping SELL")
+                continue
             elif sma is not None and close <= sma:
                 sell_reason = f"below SMA{self._sma_period}"
             elif iid not in top_set:

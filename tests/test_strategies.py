@@ -845,7 +845,7 @@ class TestClenowMomentumStrategySignals:
         """On a rebalance day, strategy generates BUY signals with positive shares."""
         from trendspec.strategy.examples import ClenowMomentumStrategy
         from trendspec.strategy.context import StrategyContext
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         df = self._make_trending_df(300)
         instrument_ids = df["instrument_id"].unique().to_list()
@@ -871,7 +871,7 @@ class TestClenowMomentumStrategySignals:
         # Mock pit_universe to return instruments from synthetic data (no data lake needed)
         mock_universe = MagicMock()
         mock_universe.tickers.return_value = instrument_ids
-        ctx._universe = mock_universe
+        ctx.set_universe(mock_universe)
 
         # Simulate engine: update positions (empty) + available capital
         ctx.update_positions({}, 100_000.0)
@@ -919,7 +919,7 @@ class TestClenowMomentumStrategySignals:
 
         mock_universe = MagicMock()
         mock_universe.tickers.return_value = instrument_ids
-        ctx._universe = mock_universe
+        ctx.set_universe(mock_universe)
 
         ctx.update_positions({}, 100_000.0)
 
