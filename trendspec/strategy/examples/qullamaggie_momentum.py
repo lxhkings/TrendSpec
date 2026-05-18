@@ -272,8 +272,37 @@ class QullamaggieMomentumStrategy(BaseStrategy):
     # =========================================================================
 
     def _handle_exit(self, ctx: StrategyContext, iid: str, d: DateType) -> None:
-        # Tasks 5-7 fill this in; a held position with no exit means HOLD.
-        return
+        """
+        Per-bar exit handler for a held position.
+
+        Order of evaluation each bar:
+          1. Increment bars_since_entry.
+          2. If bars_since_entry >= partial_sell_after_days and not half_sold yet,
+             emit a SELL for partial_sell_fraction of remaining shares.
+          3. (Task 7 will add trailing exit + stop-loss here.)
+        """
+        st = self._position_state.get(iid)
+        if st is None:
+            return
+
+        st["bars_since_entry"] += 1
+
+        if (
+            not st["half_sold"]
+            and st["bars_since_entry"] >= self._partial_sell_after_days
+        ):
+            sell_qty = int(st["shares"] * self._partial_sell_fraction)
+            if sell_qty >= 1:
+                sig = ctx.signal(
+                    "SELL",
+                    iid,
+                    ctx.close,
+                    trigger_value=float(st["bars_since_entry"]),
+                    note=f"Q partial 1/{int(1/self._partial_sell_fraction)}",
+                )
+                sig.shares = float(sell_qty)
+                st["shares"] -= sell_qty
+                st["half_sold"] = True
 
     # =========================================================================
     # Utilities

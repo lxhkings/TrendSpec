@@ -1249,6 +1249,106 @@ class TestQullamaggieMomentumEntry:
         all_signals = [s for _, sigs in signals_per_date for s in sigs]
         assert [s for s in all_signals if s.is_buy()] == []
 
+    def _build_breakout_with_holding_period(self, hold_days: int) -> pl.DataFrame:
+        """Breakout setup + `hold_days` extra bars of flat price after the breakout bar."""
+        df = self._build_breakout_df()
+        breakout_close = df.tail(1)["close"].item()
+        d_last = df["date"].max()
+        extras = []
+        for i in range(1, hold_days + 1):
+            extras.append({
+                "instrument_id": "BO", "ticker": "BO",
+                "date": d_last + timedelta(days=i),
+                "open": breakout_close, "high": breakout_close * 1.005,
+                "low": breakout_close * 0.995,
+                "close": breakout_close,
+                "volume": 2_000_000, "adj_factor": 1.0,
+            })
+        return pl.concat([df, pl.DataFrame(extras)])
+
+    def _drive_with_engine_sim(self, df: pl.DataFrame, strategy):
+        """
+        Drive next() over df, simulating engine-side fills: when the strategy
+        emits BUY/SELL with shares, update ctx positions accordingly so the
+        position-tracking branch in next() executes on later bars.
+
+        Returns list of (date, [Signal]) tuples preserving order.
+        """
+        from trendspec.strategy.context import StrategyContext
+        from unittest.mock import MagicMock
+
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+
+        mock_universe = MagicMock()
+        instrument_ids = df["instrument_id"].unique().to_list()
+        mock_universe.tickers.return_value = instrument_ids
+        ctx.set_universe(mock_universe)
+
+        capital = 100_000.0
+        positions: dict[str, float] = {}
+        ctx.update_positions(positions, capital)
+
+        signals_per_date = []
+        all_dates = sorted(df["date"].unique().to_list())
+        for d in all_dates:
+            for iid in instrument_ids:
+                row = df.filter(
+                    (pl.col("instrument_id") == iid) & (pl.col("date") == d)
+                )
+                if row.is_empty():
+                    continue
+                ctx.update_bar(d, iid, row["ticker"].item(), df)
+                strategy.next(ctx)
+
+            day_signals = list(ctx.pending_signals())
+            ctx.clear_signals()
+
+            # Simulate fills: adjust positions and capital
+            for sig in day_signals:
+                qty = float(sig.shares) if sig.shares is not None else 100.0
+                if sig.is_buy():
+                    positions[sig.instrument_id] = positions.get(sig.instrument_id, 0.0) + qty
+                    capital -= qty * sig.price
+                else:  # SELL
+                    current = positions.get(sig.instrument_id, 0.0)
+                    new_qty = max(0.0, current - qty)
+                    if new_qty <= 0:
+                        positions.pop(sig.instrument_id, None)
+                    else:
+                        positions[sig.instrument_id] = new_qty
+                    capital += qty * sig.price
+            ctx.update_positions(positions, capital)
+
+            signals_per_date.append((d, day_signals))
+        return signals_per_date
+
+    def test_partial_sell_after_n_days(self) -> None:
+        """4 bars after entry, half the position is sold."""
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        df = self._build_breakout_with_holding_period(hold_days=4)
+        strategy = QullamaggieMomentumStrategy()
+        signals_per_date = self._drive_with_engine_sim(df, strategy)
+
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+        buys = [s for s in all_signals if s.is_buy()]
+        sells = [s for s in all_signals if not s.is_buy()]
+        assert len(buys) == 1, f"Expected 1 BUY, got {buys}"
+        assert len(sells) == 1, f"Expected 1 partial SELL, got {sells}"
+        # Partial SELL must be ~half the BUY shares (integer truncation)
+        assert int(sells[0].shares) == int(buys[0].shares) // 2
+
+    def test_no_partial_sell_before_n_days(self) -> None:
+        """3 bars after entry -> no SELL yet."""
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        df = self._build_breakout_with_holding_period(hold_days=3)
+        strategy = QullamaggieMomentumStrategy()
+        signals_per_date = self._drive_with_engine_sim(df, strategy)
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+        assert [s for s in all_signals if not s.is_buy()] == []
+
     def test_no_buy_when_breakout_low_volume(self) -> None:
         """Otherwise valid breakout, but breakout-day volume < 1.5x VMA20 -> no BUY."""
         from trendspec.strategy.examples import QullamaggieMomentumStrategy
