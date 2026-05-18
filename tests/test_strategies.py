@@ -1115,6 +1115,72 @@ class TestQullamaggieMomentumInit:
             QullamaggieMomentumStrategy(params={"consolidation_days": 1})
 
 
+class TestQullamaggieMomentumInitPrecompute:
+    def _make_df(self, n_days: int = 120) -> pl.DataFrame:
+        import numpy as np
+        rng = np.random.default_rng(7)
+        rows = []
+        for inst in ["AAA", "BBB"]:
+            price = 100.0
+            for i in range(n_days):
+                price *= 1 + rng.normal(0.001, 0.01)
+                rows.append({
+                    "instrument_id": inst, "ticker": inst,
+                    "date": date(2023, 1, 2) + timedelta(days=i),
+                    "open": price * 0.995,
+                    "high": price * 1.02,
+                    "low": price * 0.98,
+                    "close": price,
+                    "volume": 2_000_000,
+                    "adj_factor": 1.0,
+                })
+        return pl.DataFrame(rows)
+
+    def test_init_precomputes_all_indicators(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        df = self._make_df(120)
+        strategy = QullamaggieMomentumStrategy()
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+
+        cache_keys = list(ctx._indicator_cache.keys())
+        # MA10, MA20, MA50
+        assert any("MA" in k and "10" in k for k in cache_keys)
+        assert any("MA" in k and "20" in k for k in cache_keys)
+        assert any("MA" in k and "50" in k for k in cache_keys)
+        # ROC60
+        assert any("ROC" in k and "60" in k for k in cache_keys)
+        # VMA20
+        assert any("VMA" in k and "20" in k for k in cache_keys)
+        # ADR_PCT20
+        assert any("ADR_PCT" in k and "20" in k for k in cache_keys)
+        # HH and LL over consolidation_days
+        assert any("HH" in k for k in cache_keys)
+        assert any("LL" in k for k in cache_keys)
+
+    def test_init_caches_resolved_params(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        df = self._make_df(120)
+        strategy = QullamaggieMomentumStrategy(params={"ma_short_period": 8})
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+
+        assert strategy._ma_short == 8
+        assert strategy._ma_mid == 20
+        assert strategy._ma_long == 50
+        assert strategy._risk_pct == 0.005
+        assert strategy._consolidation_days == 5
+        assert strategy._partial_sell_after_days == 4
+
+    def test_init_creates_empty_state(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        df = self._make_df(120)
+        strategy = QullamaggieMomentumStrategy()
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+        assert strategy._position_state == {}
+
+
 # =============================================================================
 # RS_RATING Indicator Tests
 # =============================================================================

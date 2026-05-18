@@ -58,8 +58,56 @@ class QullamaggieMomentumStrategy(BaseStrategy):
         if cons_days < 2:
             raise ValueError(f"consolidation_days ({cons_days}) must be >= 2")
 
-    def init(self, ctx: StrategyContext) -> None:  # pragma: no cover - filled in Task 3
-        raise NotImplementedError("Task 3 implements init()")
+    def init(self, ctx: StrategyContext) -> None:
+        """Precompute every indicator the strategy reads in next() and cache params."""
+        ma_short = self.get_param("ma_short_period", 10)
+        ma_mid = self.get_param("ma_mid_period", 20)
+        ma_long = self.get_param("ma_long_period", 50)
+        roc_period = self.get_param("roc_period", 60)
+        adr_period = self.get_param("adr_period", 20)
+        cons_days = self.get_param("consolidation_days", 5)
+        trail_ma = self.get_param("trail_ma_period", 10)
+
+        # Precompute indicators
+        ctx.precompute_indicator("MA", period=ma_short)
+        ctx.precompute_indicator("MA", period=ma_mid)
+        ctx.precompute_indicator("MA", period=ma_long)
+        if trail_ma not in (ma_short, ma_mid, ma_long):
+            ctx.precompute_indicator("MA", period=trail_ma)
+        ctx.precompute_indicator("ROC", period=roc_period)
+        ctx.precompute_indicator("VMA", period=ma_mid)
+        ctx.precompute_indicator("ADR_PCT", period=adr_period)
+        ctx.precompute_indicator("HH", period=cons_days)
+        ctx.precompute_indicator("LL", period=cons_days)
+
+        # Cache resolved param values for fast lookup in next()
+        self._ma_short = ma_short
+        self._ma_mid = ma_mid
+        self._ma_long = ma_long
+        self._roc_period = roc_period
+        self._prior_move_threshold = self.get_param("prior_move_threshold", 0.30)
+        self._adr_period = adr_period
+        self._adr_pct_min = self.get_param("adr_pct_min", 0.04)
+        self._dollar_volume_min = self.get_param("dollar_volume_min", 5_000_000)
+        self._consolidation_days = cons_days
+        self._consolidation_tightness = self.get_param("consolidation_tightness", 1.5)
+        self._volume_mult = self.get_param("volume_mult", 1.5)
+        self._partial_sell_after_days = self.get_param("partial_sell_after_days", 4)
+        self._partial_sell_fraction = self.get_param("partial_sell_fraction", 0.5)
+        self._trail_ma_period = trail_ma
+        self._risk_pct = self.get_param("risk_pct", 0.005)
+
+        # Per-instrument runtime state
+        self._position_state: dict[str, dict[str, Any]] = {}
+
+        # Cache full data for cross-bar history lookups
+        self._full_data = ctx._data
+
+        ctx.strategy.log(
+            f"Initialized: ma=({ma_short}/{ma_mid}/{ma_long}), trail_ma={trail_ma}, "
+            f"adr>={self._adr_pct_min}, cons_days={cons_days}, "
+            f"partial_sell_after={self._partial_sell_after_days} bars"
+        )
 
     def next(self, ctx: StrategyContext) -> None:  # pragma: no cover - filled later
         raise NotImplementedError("Tasks 4-7 implement next()")
