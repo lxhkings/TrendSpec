@@ -134,6 +134,8 @@ class ScreeningReport:
 
     def _create_signals_table(self, signals: list[Any], title: str) -> Table:
         """Create signals table with Chinese column names."""
+        if title == "买入信号" and self.strategy_name == "clenow_momentum":
+            return self._create_clenow_buy_table(signals)
         table = Table(title=title, show_header=True, header_style="bold green")
 
         # Chinese column names
@@ -213,3 +215,58 @@ class ScreeningReport:
             f"  Buy signals: {self.buy_count()}\n"
             f"  Sell signals: {self.sell_count()}"
         )
+
+    @staticmethod
+    def _r2_label(r2: float) -> str:
+        if r2 >= 0.85:
+            return "极平稳"
+        if r2 >= 0.75:
+            return "优秀"
+        if r2 >= 0.65:
+            return "良好"
+        return "一般"
+
+    def _iter_clenow_buy_rows(self, signals: list[Any]):
+        """Yield formatted row tuples (10 items) for clenow BUY signals."""
+        for s in signals:
+            e = s.extras or {}
+            sector = e.get("sector") or "-"
+            rank = e.get("rank")
+            r2 = e.get("r2", 0.0)
+            deviation = e.get("deviation_pct", 0.0)
+            drawdown = e.get("drawdown_pct", 0.0)
+            vol_mult = e.get("vol_mult", 0.0)
+            stop_loss = e.get("stop_loss", 0.0)
+            alerts = e.get("alerts") or []
+            note = "[警报] " + "，".join(alerts) if alerts else "正常"
+            yield (
+                s.ticker,
+                sector,
+                f"#{rank}" if rank is not None else "-",
+                f"${s.price:.2f}",
+                f"${stop_loss:.2f}",
+                f"{r2:.2f} ({self._r2_label(r2)})",
+                f"{deviation:+.1f}%",
+                f"{drawdown:+.1f}%",
+                f"{vol_mult:.1f}x",
+                note,
+            )
+
+    def _create_clenow_buy_table(self, signals: list[Any]) -> Table:
+        table = Table(title="买入信号", show_header=True, header_style="bold green")
+        table.add_column("股票代码", style="cyan")
+        table.add_column("行业", style="cyan")
+        table.add_column("选股排名", style="magenta")
+        table.add_column("建议买入价", style="green")
+        table.add_column("初始止损线", style="red")
+        table.add_column("趋势质量 (R²)", style="blue")
+        table.add_column("乖离率 (距 MA200)", style="yellow")
+        table.add_column("回撤 (距 63 日高点)", style="yellow")
+        table.add_column("放量倍数", style="blue")
+        table.add_column("备注/预警", style="white")
+
+        for row, s in zip(self._iter_clenow_buy_rows(signals), signals):
+            alerts = (s.extras or {}).get("alerts") or []
+            style = "red" if alerts else "white"
+            table.add_row(*row, style=style)
+        return table
