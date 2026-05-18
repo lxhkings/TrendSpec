@@ -12,8 +12,8 @@ from typing import Any
 
 import polars as pl
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
 from trendspec.config.settings import get_settings
 
@@ -308,7 +308,7 @@ class ScreeningReport:
         table.add_column("放量倍数", style="blue")
         table.add_column("备注/预警", style="white")
 
-        for row, s in zip(self._iter_clenow_buy_rows(signals), signals):
+        for row, s in zip(self._iter_clenow_buy_rows(signals), signals, strict=True):
             alerts = (s.extras or {}).get("alerts") or []
             style = "red" if alerts else "white"
             table.add_row(*row, style=style)
