@@ -173,7 +173,7 @@ class TestMACrossStrategySignals:
         # Process bars
         signals_generated = []
 
-        for i, bar_date in enumerate(crossover_data["date"].unique()):
+        for _i, bar_date in enumerate(crossover_data["date"].unique()):
             ctx.update_bar(bar_date, "SH600000", "600000", crossover_data)
             ctx.clear_signals()
             strategy.next(ctx)
@@ -641,7 +641,10 @@ def test_backtest_engine_uses_signal_shares(custom_shares, expected_shares) -> N
 
     engine = BacktestEngine(config)
     engine._data = day_data
-    engine._universe = MagicMock(tickers=lambda d: ["AAPL"])
+    def _ticker_list(_d):
+        return ["AAPL"]
+
+    engine._universe = MagicMock(tickers=_ticker_list)
 
     with (
         patch.object(engine, "load_data"),
@@ -990,10 +993,12 @@ class TestClenowMomentumStrategySignals:
         ctx.update_positions({}, 100_000.0)
 
         # Feed all instruments for the rebalance date
-        mock_sector = lambda m, iid, dt: None
+        def _mock_sector(_m, _iid, _dt):
+            return None
+
         with patch(
             "trendspec.strategy.examples.clenow_momentum.sector_lookup",
-            side_effect=mock_sector,
+            side_effect=_mock_sector,
         ):
             for iid in instrument_ids:
                 row = df.filter(
@@ -1076,7 +1081,12 @@ class TestClenowMomentumStrategySignals:
         ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
         ctx._universe = MagicMock()
         ctx._universe.tickers = MagicMock(return_value=list(df["instrument_id"].unique()))
-        ctx.pit_universe = lambda d: list(df["instrument_id"].unique())
+        ids = list(df["instrument_id"].unique())
+
+        def _pit_universe(_d):
+            return ids
+
+        ctx.pit_universe = _pit_universe
         ctx._current_date = rebalance_date
         ctx.update_positions({}, 1_000_000.0)
         strategy.init(ctx)
@@ -1094,7 +1104,11 @@ class TestClenowMomentumStrategySignals:
         # Always mock sector_lookup to avoid DB config dependency;
         # use a default passthrough that returns None when no custom mock is given.
         if sector_index_mock is None:
-            sector_index_mock = lambda m, iid, dt: None
+
+            def _mock_sector(_m, _iid, _dt):
+                return None
+
+            sector_index_mock = _mock_sector
 
         with patch(
             "trendspec.strategy.examples.clenow_momentum.sector_lookup",
@@ -1139,7 +1153,7 @@ class TestClenowMomentumStrategySignals:
         df = self._make_trending_df(200)
         rebalance_date = df.sort("date")["date"].to_list()[-1]
 
-        def mock_sector(market, iid, dt):
+        def mock_sector(_market, iid, _dt):
             return {"UP1": "Technology", "UP2": "Financials", "DOWN": "Energy"}.get(iid)
 
         buys = self._run_strategy_and_get_buys(df, rebalance_date, sector_index_mock=mock_sector)
@@ -1150,7 +1164,7 @@ class TestClenowMomentumStrategySignals:
         """sector() returns None → extras['sector'] is None, signal still emitted."""
         df = self._make_trending_df(200)
         rebalance_date = df.sort("date")["date"].to_list()[-1]
-        buys = self._run_strategy_and_get_buys(df, rebalance_date, sector_index_mock=lambda *a: None)
+        buys = self._run_strategy_and_get_buys(df, rebalance_date, sector_index_mock=lambda *_a: None)
         assert len(buys) >= 1
         assert all(s.extras["sector"] is None for s in buys)
 
