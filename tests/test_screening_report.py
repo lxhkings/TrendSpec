@@ -156,3 +156,86 @@ class TestClenowBuyTableRendering:
             sig = self._clenow_signal("X", 100.0, r2=r2)
             rows = list(report._iter_clenow_buy_rows([sig]))
             assert label in rows[0][5]
+
+
+class TestClenowCSVSchema:
+    def _clenow_signal(self, ticker: str, price: float, **extras_override) -> Signal:
+        extras = {
+            "sector": "Technology", "rank": 1, "r2": 0.85,
+            "deviation_pct": 32.5, "drawdown_pct": -2.1, "vol_mult": 1.5,
+            "stop_loss": price * 0.77, "alerts": [],
+        }
+        extras.update(extras_override)
+        return _buy_signal(ticker, price, extras)
+
+    def test_clenow_csv_has_13_columns(self, tmp_path: Path) -> None:
+        signals = [self._clenow_signal("LITE", 1001.81)]
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="clenow_momentum",
+            market="us",
+        )
+        out = report.export(tmp_path)
+        df = pl.read_csv(out)
+        assert df.columns == [
+            "股票代码", "instrument_id", "日期", "方向", "行业",
+            "选股排名", "建议买入价", "初始止损线", "趋势质量 (R²)",
+            "乖离率 (距 MA200)", "回撤 (距 63 日高点)", "放量倍数", "备注/预警",
+        ]
+
+    def test_clenow_csv_buy_row_fully_populated(self, tmp_path: Path) -> None:
+        signals = [self._clenow_signal("CIEN", 591.57, alerts=["量能萎缩"])]
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="clenow_momentum",
+            market="us",
+        )
+        out = report.export(tmp_path)
+        df = pl.read_csv(out)
+        row = df.row(0, named=True)
+        assert row["股票代码"] == "CIEN"
+        assert row["方向"] == "BUY"
+        assert row["行业"] == "Technology"
+        assert row["选股排名"] == 1
+        assert row["建议买入价"] == pytest.approx(591.57)
+        assert "量能萎缩" in str(row["备注/预警"])
+
+    def test_clenow_csv_sell_row_blanks_display_cols(self, tmp_path: Path) -> None:
+        buy = self._clenow_signal("LITE", 1001.81)
+        sell = Signal(
+            direction="SELL", ticker="OLD", instrument_id="OLD",
+            price=50.0, note="below SMA200",
+        )
+        report = ScreeningReport(
+            signals=[buy, sell],
+            screening_date=date(2026, 5, 18),
+            strategy_name="clenow_momentum",
+            market="us",
+        )
+        out = report.export(tmp_path)
+        df = pl.read_csv(out)
+        sell_row = df.filter(pl.col("方向") == "SELL").row(0, named=True)
+        assert sell_row["股票代码"] == "OLD"
+        assert sell_row["建议买入价"] == pytest.approx(50.0)
+        assert sell_row["备注/预警"] == "below SMA200"
+        for col in ["行业", "选股排名", "初始止损线", "趋势质量 (R²)",
+                    "乖离率 (距 MA200)", "回撤 (距 63 日高点)", "放量倍数"]:
+            v = sell_row[col]
+            assert v is None or v == "" or v == 0
+
+    def test_non_clenow_csv_keeps_7_columns(self, tmp_path: Path) -> None:
+        signals = [_buy_signal("AAPL", 100.0)]
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="ma_cross",
+            market="us",
+        )
+        out = report.export(tmp_path)
+        df = pl.read_csv(out)
+        assert df.columns == [
+            "股票代码", "instrument_id", "日期", "方向",
+            "价格", "触发指标值", "备注",
+        ]

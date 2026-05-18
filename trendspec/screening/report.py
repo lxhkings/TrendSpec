@@ -159,13 +159,17 @@ class ScreeningReport:
         return table
 
     def _signals_to_dataframe(self) -> pl.DataFrame:
-        """Convert signals to Polars DataFrame."""
+        """Convert signals to Polars DataFrame, schema varies by strategy."""
         if not self.signals:
             return pl.DataFrame()
 
+        if self.strategy_name == "clenow_momentum":
+            return self._signals_to_clenow_dataframe()
+
+        # Original 7-column schema
         records = []
         for signal in self.signals:
-            record = {
+            records.append({
                 "股票代码": signal.ticker,
                 "instrument_id": signal.instrument_id,
                 "日期": self.screening_date.isoformat(),
@@ -173,9 +177,48 @@ class ScreeningReport:
                 "价格": signal.price,
                 "触发指标值": signal.trigger_value,
                 "备注": signal.note or "",
-            }
-            records.append(record)
+            })
+        return pl.DataFrame(records)
 
+    def _signals_to_clenow_dataframe(self) -> pl.DataFrame:
+        """13-column schema: BUY rows fully populated, SELL rows blank display cols."""
+        records = []
+        for s in self.signals:
+            if s.is_buy():
+                e = s.extras or {}
+                alerts = e.get("alerts") or []
+                note = "[警报] " + "，".join(alerts) if alerts else "正常"
+                records.append({
+                    "股票代码": s.ticker,
+                    "instrument_id": s.instrument_id,
+                    "日期": self.screening_date.isoformat(),
+                    "方向": "BUY",
+                    "行业": e.get("sector") or "",
+                    "选股排名": e.get("rank"),
+                    "建议买入价": s.price,
+                    "初始止损线": e.get("stop_loss"),
+                    "趋势质量 (R²)": f"{e.get('r2', 0.0):.4f}",
+                    "乖离率 (距 MA200)": f"{e.get('deviation_pct', 0.0):.2f}",
+                    "回撤 (距 63 日高点)": f"{e.get('drawdown_pct', 0.0):.2f}",
+                    "放量倍数": f"{e.get('vol_mult', 0.0):.4f}",
+                    "备注/预警": note,
+                })
+            else:
+                records.append({
+                    "股票代码": s.ticker,
+                    "instrument_id": s.instrument_id,
+                    "日期": self.screening_date.isoformat(),
+                    "方向": "SELL",
+                    "行业": "",
+                    "选股排名": None,
+                    "建议买入价": s.price,
+                    "初始止损线": None,
+                    "趋势质量 (R²)": "",
+                    "乖离率 (距 MA200)": "",
+                    "回撤 (距 63 日高点)": "",
+                    "放量倍数": "",
+                    "备注/预警": s.note or "",
+                })
         return pl.DataFrame(records)
 
     def buy_signals(self) -> list[Any]:
