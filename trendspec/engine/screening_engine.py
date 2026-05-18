@@ -186,7 +186,7 @@ class ScreeningEngine(BaseEngine):
 
         # Expand date range for indicator lookback (SMA200 needs ~200 trading days)
         original_start = self.config.start_date
-        lookback_start = original_start - timedelta(days=365)
+        lookback_start = original_start - timedelta(days=330)  # MA200 needs ~290 calendar days + holiday buffer
         self.config.start_date = lookback_start
         self.load_data()
         self.config.start_date = original_start
@@ -205,6 +205,9 @@ class ScreeningEngine(BaseEngine):
 
         # Set available capital for position sizing
         self._ctx.update_positions({}, self.config.initial_capital)
+
+        # Signal to strategy that this is a screening run (skip periodic guards like weekday checks)
+        self._ctx.is_screening = True
 
         # Run screening for target date
         signals = self._run_screening(screening_date)

@@ -193,7 +193,7 @@ class ScreeningReport:
                     "instrument_id": s.instrument_id,
                     "日期": self.screening_date.isoformat(),
                     "方向": "BUY",
-                    "行业": e.get("sector") or "",
+                    "行业": self._translate_sector(e.get("sector")),
                     "选股排名": e.get("rank"),
                     "建议买入价": s.price,
                     "初始止损线": e.get("stop_loss"),
@@ -259,6 +259,26 @@ class ScreeningReport:
             f"  Sell signals: {self.sell_count()}"
         )
 
+    _SECTOR_CN: dict[str, str] = {
+        "Information Technology": "信息技术",
+        "Health Care": "医疗保健",
+        "Financials": "金融",
+        "Consumer Discretionary": "可选消费",
+        "Communication Services": "通信服务",
+        "Industrials": "工业",
+        "Consumer Staples": "必需消费",
+        "Energy": "能源",
+        "Utilities": "公用事业",
+        "Real Estate": "房地产",
+        "Materials": "原材料",
+    }
+
+    @classmethod
+    def _translate_sector(cls, sector: str | None) -> str:
+        if not sector:
+            return "-"
+        return cls._SECTOR_CN.get(sector, sector)
+
     @staticmethod
     def _r2_label(r2: float) -> str:
         if r2 >= 0.85:
@@ -273,7 +293,7 @@ class ScreeningReport:
         """Yield formatted row tuples (10 items) for clenow BUY signals."""
         for s in signals:
             e = s.extras or {}
-            sector = e.get("sector") or "-"
+            sector = self._translate_sector(e.get("sector"))
             rank = e.get("rank")
             r2 = e.get("r2", 0.0)
             deviation = e.get("deviation_pct", 0.0)

@@ -743,44 +743,57 @@ def clenow_score(df: pl.DataFrame, period: int = 90) -> pl.DataFrame:
         CLENOW_R2_{period} columns added
     """
     import numpy as np
-    from scipy import stats
+    from numpy.lib.stride_tricks import sliding_window_view
 
     slope_col = f"CLENOW_SLOPE_{period}"
     r2_col = f"CLENOW_R2_{period}"
     score_col = f"CLENOW_SCORE_{period}"
 
     x = np.arange(period, dtype=float)
+    x_c = x - x.mean()
+    x_ss = float((x_c**2).sum())
 
     all_groups: list[pl.DataFrame] = []
     for (_instrument_id,), group in df.sort(["instrument_id", "date"]).group_by(
         ["instrument_id"], maintain_order=True
     ):
-        closes = group["close"].to_numpy()
+        closes = group["close"].to_numpy(allow_copy=True).astype(float)
         n = len(closes)
 
-        slopes: list[float | None] = [None] * n
-        r2s: list[float | None] = [None] * n
-        scores: list[float | None] = [None] * n
+        if n < period:
+            nans = [None] * n
+            all_groups.append(group.with_columns([
+                pl.Series(slope_col, nans, dtype=pl.Float64),
+                pl.Series(r2_col, nans, dtype=pl.Float64),
+                pl.Series(score_col, nans, dtype=pl.Float64),
+            ]))
+            continue
 
-        for i in range(period - 1, n):
-            window = closes[i - period + 1 : i + 1]
-            if np.any(window <= 0):
-                continue
-            y = np.log(window)
-            fit = stats.linregress(x, y)
-            annual_slope = (np.exp(fit.slope * 252) - 1) * 100
-            r2 = fit.rvalue ** 2
-            slopes[i] = annual_slope
-            r2s[i] = r2
-            scores[i] = annual_slope * r2
+        # Replace non-positive prices with NaN so invalid windows are masked
+        log_c = np.where(closes > 0, np.log(np.where(closes > 0, closes, 1.0)), np.nan)
+        wins = sliding_window_view(log_c, period)          # (n-period+1, period)
+        valid = ~np.any(np.isnan(wins), axis=1)
 
-        all_groups.append(
-            group.with_columns([
-                pl.Series(slope_col, slopes, dtype=pl.Float64),
-                pl.Series(r2_col, r2s, dtype=pl.Float64),
-                pl.Series(score_col, scores, dtype=pl.Float64),
-            ])
-        )
+        y_c = wins - wins.mean(axis=1, keepdims=True)
+        xy = (y_c * x_c).sum(axis=1)
+        y_ss = (y_c**2).sum(axis=1)
+
+        ok = valid & (y_ss > 0)
+        slope_arr = np.where(ok, xy / x_ss, np.nan)
+        r2_arr = np.where(ok, (xy * xy) / (x_ss * y_ss), np.nan)
+        annual_arr = np.where(ok, (np.exp(np.where(ok, slope_arr, 0.0) * 252) - 1) * 100, np.nan)
+        score_arr = np.where(ok, annual_arr * r2_arr, np.nan)
+
+        pad = [None] * (period - 1)
+
+        def _to_list(arr: np.ndarray) -> list:
+            return pad + [None if np.isnan(v) else float(v) for v in arr]
+
+        all_groups.append(group.with_columns([
+            pl.Series(slope_col, _to_list(slope_arr), dtype=pl.Float64),
+            pl.Series(r2_col, _to_list(r2_arr), dtype=pl.Float64),
+            pl.Series(score_col, _to_list(score_arr), dtype=pl.Float64),
+        ]))
 
     if not all_groups:
         return df.with_columns([
@@ -937,26 +950,39 @@ def clenow_r2(df: pl.DataFrame, period: int = 90) -> pl.DataFrame:
         and for windows containing non-positive prices)
     """
     import numpy as np
-    from scipy import stats
+    from numpy.lib.stride_tricks import sliding_window_view
 
     col_name = f"CLENOW_R2_{period}"
     x = np.arange(period, dtype=float)
+    x_c = x - x.mean()
+    x_ss = float((x_c**2).sum())
 
     all_groups: list[pl.DataFrame] = []
     for (_iid,), group in df.sort(["instrument_id", "date"]).group_by(
         ["instrument_id"], maintain_order=True
     ):
-        closes = group["close"].to_numpy()
+        closes = group["close"].to_numpy(allow_copy=True).astype(float)
         n = len(closes)
-        r2s: list[float | None] = [None] * n
 
-        for i in range(period - 1, n):
-            window = closes[i - period + 1 : i + 1]
-            if np.any(window <= 0):
-                continue
-            y = np.log(window)
-            fit = stats.linregress(x, y)
-            r2s[i] = float(fit.rvalue ** 2)
+        if n < period:
+            all_groups.append(
+                group.with_columns(pl.Series(col_name, [None] * n, dtype=pl.Float64))
+            )
+            continue
+
+        log_c = np.where(closes > 0, np.log(np.where(closes > 0, closes, 1.0)), np.nan)
+        wins = sliding_window_view(log_c, period)
+        valid = ~np.any(np.isnan(wins), axis=1)
+
+        y_c = wins - wins.mean(axis=1, keepdims=True)
+        xy = (y_c * x_c).sum(axis=1)
+        y_ss = (y_c**2).sum(axis=1)
+
+        ok = valid & (y_ss > 0)
+        r2_arr = np.where(ok, (xy * xy) / (x_ss * y_ss), np.nan)
+
+        pad = [None] * (period - 1)
+        r2s = pad + [None if np.isnan(v) else float(v) for v in r2_arr]
 
         all_groups.append(
             group.with_columns(pl.Series(col_name, r2s, dtype=pl.Float64))

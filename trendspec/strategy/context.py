@@ -89,6 +89,9 @@ class StrategyContext:
         self._positions: dict[str, float] = {}  # instrument_id -> quantity
         self._available_capital: float = 0.0
 
+        # Set to True by ScreeningEngine — strategies skip periodic guards (e.g. weekday checks)
+        self.is_screening: bool = False
+
         # Signals generated in current next() call
         self._pending_signals: list[Signal] = []
 

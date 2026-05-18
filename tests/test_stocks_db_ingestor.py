@@ -45,6 +45,21 @@ def stocks_db():
                 change_date DATE
             )
         """))
+        conn.execute(text("""
+            CREATE TABLE index_constituents (
+                index_id TEXT,
+                snapshot_date DATE,
+                ticker TEXT
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO index_constituents VALUES
+            ('SP500', '2024-01-01', 'AAPL'),
+            ('SP500', '2024-01-01', 'MSFT'),
+            ('RUSSELL1000', '2024-01-01', 'AAPL'),
+            ('RUSSELL1000', '2024-01-01', 'MSFT'),
+            ('RUSSELL1000', '2024-01-01', 'JPM')
+        """))
         # US stocks metadata
         conn.execute(text("""
             INSERT INTO stocks VALUES
@@ -247,6 +262,12 @@ def stocks_db_cn(stocks_db):
             ('600000', 'SSE', 'Financials', 'Banks', 1),
             ('000001', 'SZSE', 'Financials', 'Banks', 1),
             ('600036', 'SH', 'Financials', 'Banks', 1)
+        """))
+        conn.execute(text("""
+            INSERT INTO index_constituents VALUES
+            ('CSI800', '2024-01-01', '600000'),
+            ('CSI800', '2024-01-01', '000001'),
+            ('CSI800', '2024-01-01', '600036')
         """))
         conn.execute(text("""
             INSERT INTO prices VALUES

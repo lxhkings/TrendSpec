@@ -81,16 +81,16 @@ def ingest_us_daily(
     """
     last_date = "1970-01-01" if full_sync else _get_last_synced_date(manifest, "daily")
 
-    placeholders = _exchange_placeholder(_US_EXCHANGES)
-    params = _exchange_params(_US_EXCHANGES)
-    params["last_date"] = last_date
+    params = {"last_date": last_date}
 
-    sql = text(f"""
+    sql = text("""
         SELECT p.ticker, p.date, p.open, p.high, p.low, p.close, p.volume
         FROM prices p
-        JOIN stocks s ON p.ticker = s.ticker
-        WHERE s.exchange IN ({placeholders})
-          AND p.date > :last_date
+        JOIN (
+            SELECT DISTINCT ticker FROM index_constituents
+            WHERE index_id IN ('SP500', 'RUSSELL1000')
+        ) AS us ON p.ticker = us.ticker
+        WHERE p.date > :last_date
         ORDER BY p.date, p.ticker
     """)
 
@@ -111,7 +111,7 @@ def ingest_us_daily(
         pl.lit(1.0).alias("adj_factor"),
     ])
 
-    write_parquet(df, Market.US, "daily", root)
+    write_parquet(df, Market.US, "daily", root, overwrite=full_sync)
 
     dates = df["date"].cast(pl.Utf8)
     date_range = (dates.min(), dates.max())
@@ -144,29 +144,26 @@ def ingest_us_components(
     Returns:
         {"row_count": int, "date_range": (str, str), "instrument_count": int}
     """
-    ex_placeholders = _exchange_placeholder(_US_EXCHANGES)
-    ex_params = _exchange_params(_US_EXCHANGES)
-
-    sql_changes = text(f"""
+    sql_changes = text("""
         SELECT c.ticker, c.change_date, c.change_type
         FROM constituent_changes c
-        JOIN stocks s ON c.ticker = s.ticker
         WHERE c.index_id = 'SP500'
-          AND s.exchange IN ({ex_placeholders})
         ORDER BY c.change_date
     """)
 
-    sql_min = text(f"""
+    sql_min = text("""
         SELECT p.ticker, MIN(p.date) as first_date
         FROM prices p
-        JOIN stocks s ON p.ticker = s.ticker
-        WHERE s.exchange IN ({ex_placeholders})
+        JOIN (
+            SELECT DISTINCT ticker FROM index_constituents
+            WHERE index_id IN ('SP500', 'RUSSELL1000')
+        ) AS us ON p.ticker = us.ticker
         GROUP BY p.ticker
     """)
 
     with engine.connect() as conn:
-        changes = conn.execute(sql_changes, ex_params).fetchall()
-        min_dates = conn.execute(sql_min, ex_params).fetchall()
+        changes = conn.execute(sql_changes).fetchall()
+        min_dates = conn.execute(sql_min).fetchall()
 
     rows = []
     sp500_added: set[str] = set()
@@ -232,18 +229,18 @@ def ingest_us_sectors(
     Returns:
         {"row_count": int, "date_range": (str, str), "instrument_count": int}
     """
-    ex_placeholders = _exchange_placeholder(_US_EXCHANGES)
-    ex_params = _exchange_params(_US_EXCHANGES)
-
-    sql = text(f"""
-        SELECT ticker, gics_sector, gics_industry
-        FROM stocks
-        WHERE exchange IN ({ex_placeholders})
-          AND gics_sector IS NOT NULL
+    sql = text("""
+        SELECT s.ticker, s.gics_sector, s.gics_industry
+        FROM stocks s
+        JOIN (
+            SELECT DISTINCT ticker FROM index_constituents
+            WHERE index_id IN ('SP500', 'RUSSELL1000')
+        ) AS us ON s.ticker = us.ticker
+        WHERE s.gics_sector IS NOT NULL
     """)
 
     with engine.connect() as conn:
-        rows = conn.execute(sql, ex_params).fetchall()
+        rows = conn.execute(sql).fetchall()
 
     if not rows:
         return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
@@ -353,7 +350,7 @@ def ingest_cn_daily(
     df = df.with_columns(pl.lit(1.0).alias("adj_factor"))
     df = df.drop("exchange")
 
-    write_parquet(df, Market.CN, "daily", root)
+    write_parquet(df, Market.CN, "daily", root, overwrite=full_sync)
 
     dates = df["date"].cast(pl.Utf8)
     date_range = (dates.min(), dates.max())
@@ -385,29 +382,28 @@ def ingest_cn_components(
     Returns:
         {"row_count": int, "date_range": (str, str), "instrument_count": int}
     """
-    ex_placeholders = _exchange_placeholder(_CN_EXCHANGES)
-    ex_params = _exchange_params(_CN_EXCHANGES)
-
-    sql_changes = text(f"""
+    sql_changes = text("""
         SELECT c.ticker, c.change_date, c.change_type, s.exchange
         FROM constituent_changes c
         JOIN stocks s ON c.ticker = s.ticker
         WHERE c.index_id = 'CSI800'
-          AND s.exchange IN ({ex_placeholders})
         ORDER BY c.change_date
     """)
 
-    sql_min = text(f"""
+    sql_min = text("""
         SELECT p.ticker, MIN(p.date) as first_date, s.exchange
         FROM prices p
         JOIN stocks s ON p.ticker = s.ticker
-        WHERE s.exchange IN ({ex_placeholders})
+        JOIN (
+            SELECT DISTINCT ticker FROM index_constituents
+            WHERE index_id = 'CSI800'
+        ) AS cn ON p.ticker = cn.ticker
         GROUP BY p.ticker, s.exchange
     """)
 
     with engine.connect() as conn:
-        changes = conn.execute(sql_changes, ex_params).fetchall()
-        min_dates = conn.execute(sql_min, ex_params).fetchall()
+        changes = conn.execute(sql_changes).fetchall()
+        min_dates = conn.execute(sql_min).fetchall()
 
     rows = []
     csi800_added: set[str] = set()
@@ -472,18 +468,18 @@ def ingest_cn_sectors(
     Returns:
         {"row_count": int, "date_range": (str, str), "instrument_count": int}
     """
-    ex_placeholders = _exchange_placeholder(_CN_EXCHANGES)
-    ex_params = _exchange_params(_CN_EXCHANGES)
-
-    sql = text(f"""
-        SELECT ticker, exchange, gics_sector, gics_industry
-        FROM stocks
-        WHERE exchange IN ({ex_placeholders})
-          AND gics_sector IS NOT NULL
+    sql = text("""
+        SELECT s.ticker, s.exchange, s.gics_sector, s.gics_industry
+        FROM stocks s
+        JOIN (
+            SELECT DISTINCT ticker FROM index_constituents
+            WHERE index_id = 'CSI800'
+        ) AS cn ON s.ticker = cn.ticker
+        WHERE s.gics_sector IS NOT NULL
     """)
 
     with engine.connect() as conn:
-        rows = conn.execute(sql, ex_params).fetchall()
+        rows = conn.execute(sql).fetchall()
 
     if not rows:
         return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}

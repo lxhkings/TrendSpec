@@ -1,18 +1,19 @@
 # TrendSpec
 
-量化回测与选股系统，支持 A 股和美股。
+量化回测与选股系统，支持 A 股（CSI800）和美股（SP500 + Russell1000）。
 
 ## 功能
 
 - 双模式：历史回测 + 每日选股，同一策略代码通用
 - PIT（Point-in-Time）宇宙，避免生存者偏差
-- 本地 Parquet 缓存，快速数据访问
-- 支持 A 股（沪深）和美股（NYSE/Nasdaq）
+- 本地 Parquet 数据湖，选股无需实时连接数据库
+- 行业中文显示（GICS 标准分类）
+- 选股结果输出终端 10 列决策表 + CSV 导出
 
 ## 环境要求
 
 - Python >= 3.11
-- 群辉 NAS 或其他 MariaDB/MySQL 数据源
+- 群辉 NAS MariaDB（仅入库时需要）
 
 ## 安装
 
@@ -22,22 +23,16 @@ uv sync
 
 ## 配置
 
-复制 `.env.example` 到 `.env` 并填写：
-
-```bash
-cp .env.example .env
-```
-
-主要配置项：
+复制 `.env.example` 到 `.env`：
 
 ```
-DB_HOST=192.168.8.9        # 群辉 NAS IP
+DB_HOST=192.168.8.9
 DB_PORT=3306
-DB_USER=root               # 建议使用只读账户
+DB_USER=root
 DB_PASSWORD=...
 DB_NAME=stocks
 DATA_LAKE_ROOT=./data_lake
-ALLOW_ROOT_DB_USER=true    # 使用 root 账户时需要设置
+ALLOW_ROOT_DB_USER=true
 ```
 
 ## 数据摄入
@@ -45,12 +40,12 @@ ALLOW_ROOT_DB_USER=true    # 使用 root 账户时需要设置
 ### 首次初始化（只需一次）
 
 ```bash
-# 美股：拉取全量历史 + 成分 + 行业
+# 美股：SP500 + Russell1000，全量历史
 uv run trendspec ingest daily --market us --full
 uv run trendspec ingest components --market us
 uv run trendspec ingest sectors --market us
 
-# A 股：同上，换成 cn
+# A 股：CSI800，全量历史
 uv run trendspec ingest daily --market cn --full
 uv run trendspec ingest components --market cn
 uv run trendspec ingest sectors --market cn
@@ -61,7 +56,7 @@ uv run trendspec ingest sectors --market cn
 ### 日常增量更新
 
 ```bash
-uv run trendspec ingest daily --market us   # 只拉新数据，已有数据不重复
+uv run trendspec ingest daily --market us   # 合并新数据，已有历史不覆盖
 uv run trendspec ingest daily --market cn
 ```
 
@@ -70,6 +65,13 @@ uv run trendspec ingest daily --market cn
 ```bash
 uv run trendspec ingest status --market us
 ```
+
+## 股票池范围
+
+| 市场 | 来源 | 只数 |
+|------|------|------|
+| 美股 | SP500 + Russell1000（`index_constituents`） | ~1017 |
+| A 股 | CSI800（`index_constituents`） | ~800 |
 
 ## 可用策略
 
@@ -89,67 +91,55 @@ uv run trendspec ingest status --market us
 | `sma_period` | 200 | 趋势过滤均线（价格须在此均线上方） |
 | `atr_period` | 20 | ATR 周期，用于仓位计算 |
 | `risk_factor` | 0.001 | 每单位 ATR 分配的权益比例 |
-| `rebalance_weekday` | 2 | 调仓日（0=周一…4=周五，默认周三） |
+| `rebalance_weekday` | 2 | 调仓日（0=周一…4=周五，默认周三）；选股模式自动跳过此限制 |
 | `top_pct` | 0.8 | 持有排名前多少比例（默认前 80%） |
 | `max_gap` | -0.15 | 90 日内单日最大跌幅过滤（-15%） |
-
-### minervini_trend 参数
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `ma_short` | 50 | 短期均线周期 |
-| `ma_mid` | 150 | 中期均线周期 |
-| `ma_long` | 200 | 长期均线周期 |
-| `rs_threshold` | 70.0 | RS_RATING 最低阈值 |
-| `confirmation_days` | 2 | 连续满足条件的天数 |
-| `market_index_id` | SP500 | 大盘指数 ID（CN 市场用 CSI800） |
-
-## 回测
-
-```bash
-# 查看可用策略
-uv run trendspec backtest list
-
-# Clenow 动量策略回测
-uv run trendspec backtest run --strategy clenow_momentum --market us --start 2020-01-01 --end 2024-12-31
-
-# MA 交叉策略回测
-uv run trendspec backtest run --strategy ma_cross --market us --start 2020-01-01 --end 2024-12-31
-
-# 指定初始资金
-uv run trendspec backtest run --strategy clenow_momentum --market us --start 2023-01-01 --capital 1000000
-
-# 策略对比回测
-uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31
-uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31 --sort sharpe --export csv
-```
+| `atr_stop_k` | 3.0 | 初始止损 = 收盘价 − k × ATR |
+| `drawdown_period` | 63 | 回撤基准窗口（日） |
+| `volume_avg_period` | 50 | 成交量均量窗口（日） |
+| `warn_deviation_max` | 40.0 | 乖离率预警阈值（超过则标注"均线乖离过大"） |
+| `warn_vol_mult_low` | 1.0 | 放量倍数下限（低于则"量能萎缩"） |
+| `warn_vol_mult_high` | 3.0 | 放量倍数上限（高于则"放量过快"） |
+| `warn_drawdown_max` | -15.0 | 回撤预警阈值（低于则"回撤过深"） |
 
 ## 选股
 
 ```bash
-# Clenow 动量选股
-uv run trendspec screen --strategy clenow_momentum --market us --date 2024-05-15
+# Clenow 动量选股（任意日期，自动用当天数据）
+uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-05-14
+uv run trendspec screen run --strategy clenow_momentum --market cn --date 2026-05-14
 
-# MA 交叉选股
-uv run trendspec screen --strategy ma_cross --market us --date 2024-05-15
+# 其他策略
+uv run trendspec screen run --strategy ma_cross --market us --date 2026-05-14
 ```
 
-## 查看所有命令
+选股输出包含：行业、选股排名、建议买入价、初始止损线、趋势质量（R²）、乖离率、回撤、放量倍数、预警信息。
+
+CSV 文件保存为 `results/screening/signals_<strategy>_<date>.csv`。
+
+## 回测
 
 ```bash
-uv run trendspec --help
+uv run trendspec backtest list
+
+uv run trendspec backtest run --strategy clenow_momentum --market us --start 2020-01-01 --end 2024-12-31
+
+uv run trendspec backtest run --strategy clenow_momentum --market us --start 2023-01-01 --capital 1000000
+
+uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31 --sort sharpe --export csv
 ```
 
-## 数据源说明
+## 数据源
 
-系统读取群辉 NAS 上的 `stocks` 数据库，表结构：
+数据来自群辉 NAS `stocks` 数据库（入库后即可离线使用）：
 
 | 表名 | 说明 |
 |------|------|
-| `prices` | 日线 OHLCV（美股为 Yahoo 复权价，A 股为 Tushare 后复权价）|
-| `stocks` | 股票基本信息，含 GICS 行业分类 |
-| `constituent_changes` | 指数成分变动（CSI800 / SP500 / HSI）|
-| `index_prices` | 指数日线价格（SP500 / CSI800 / 行业 ETF）|
+| `prices` | 日线 OHLCV（美股 Yahoo 复权价，A 股 Tushare 后复权价） |
+| `stocks` | 基本信息，含 GICS 行业分类 |
+| `index_constituents` | 指数成分快照（SP500 / Russell1000 / CSI800 / HSI） |
+| `constituent_changes` | 指数成分变动历史 |
+| `index_prices` | 指数日线价格 |
 
 ## 编写自定义策略
 
@@ -172,15 +162,12 @@ class MyStrategy(BaseStrategy):
             ctx.signal("BUY", ctx.instrument_id, ctx.close)
 ```
 
-参考 `trendspec/strategy/examples/` 下的五个示例策略。
+参考 `trendspec/strategy/examples/` 下的示例策略。
 
 ## 开发
 
 ```bash
-# 运行测试
-uv run pytest
-
-# 代码检查
-uv run ruff check .
-uv run ruff format .
+uv run pytest          # 运行测试
+uv run ruff check .    # 代码检查
+uv run ruff format .   # 代码格式化
 ```

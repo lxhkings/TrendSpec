@@ -32,6 +32,7 @@ Example:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Callable, ClassVar
 
 from trendspec.strategy.context import StrategyContext
@@ -279,6 +280,15 @@ class BaseStrategy(ABC):
         """
         # For now, just print. Later integrate with logging system.
         print(f"[{self.name}] [{level}] {message}")
+
+    def resolve_screening_date(self, requested_date: date) -> date:
+        """Return the effective screening date for a given requested date.
+
+        Override in strategies with periodic rebalancing to return the last
+        rebalance date at or before requested_date, so screening always
+        produces signals regardless of which day the user requests.
+        """
+        return requested_date
 
     def get_param(self, key: str, default: Any = None) -> Any:
         """Get a parameter value."""

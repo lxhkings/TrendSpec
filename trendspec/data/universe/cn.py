@@ -164,6 +164,10 @@ class CNAUniverse(Universe):
         Args:
             df: Daily DataFrame with (instrument_id, date) columns
         """
+        # When components loaded, restrict to those instruments (e.g. CSI800)
+        if self._all_instruments:
+            df = df.filter(pl.col("instrument_id").is_in(list(self._all_instruments)))
+
         # Group by date and collect instrument_ids
         grouped = df.group_by("date").agg(
             pl.col("instrument_id").alias("instruments")

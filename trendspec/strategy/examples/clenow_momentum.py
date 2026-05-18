@@ -163,7 +163,7 @@ class ClenowMomentumStrategy(BaseStrategy):
         """
         current_date = ctx.date
 
-        if current_date.weekday() != self._rebalance_weekday:
+        if not ctx.is_screening and current_date.weekday() != self._rebalance_weekday:
             return
 
         if current_date == self._last_rebalance_date:
@@ -260,22 +260,20 @@ class ClenowMomentumStrategy(BaseStrategy):
             day_rows = day_data.filter(pl.col("instrument_id") == iid)
             today_vol = day_rows["volume"].item() if not day_rows.is_empty() else None
 
-            if ma200 is None or hh is None or vol_avg is None or r2 is None:
-                continue
-            if vol_avg <= 0 or today_vol is None:
-                continue
-
-            deviation_pct = (close - ma200) / ma200 * 100
-            drawdown_pct = (close - hh) / hh * 100
-            vol_mult = float(today_vol) / float(vol_avg)
+            # Display-only fields: use 0.0 fallback — missing data never blocks BUY signal
+            deviation_pct = (close - ma200) / ma200 * 100 if (ma200 is not None and ma200 > 0) else 0.0
+            drawdown_pct = (close - hh) / hh * 100 if (hh is not None and hh > 0) else 0.0
+            vol_mult_valid = vol_avg is not None and vol_avg > 0 and today_vol is not None
+            vol_mult = float(today_vol) / float(vol_avg) if vol_mult_valid else 0.0  # type: ignore[arg-type]
+            r2_val = float(r2) if r2 is not None else 0.0
             stop_loss = close - self._atr_stop_k * atr
 
             alerts: list[str] = []
             if deviation_pct > self._warn_deviation_max:
                 alerts.append("均线乖离过大")
-            if vol_mult < self._warn_vol_mult_low:
+            if vol_mult_valid and vol_mult < self._warn_vol_mult_low:
                 alerts.append("量能萎缩")
-            if vol_mult > self._warn_vol_mult_high:
+            if vol_mult_valid and vol_mult > self._warn_vol_mult_high:
                 alerts.append("放量过快")
             if drawdown_pct < self._warn_drawdown_max:
                 alerts.append("回撤过深")
@@ -294,7 +292,7 @@ class ClenowMomentumStrategy(BaseStrategy):
             sig.extras = {
                 "sector": sector_code,
                 "rank": rank_pos,
-                "r2": float(r2),
+                "r2": r2_val,
                 "deviation_pct": float(deviation_pct),
                 "drawdown_pct": float(drawdown_pct),
                 "vol_mult": float(vol_mult),

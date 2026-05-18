@@ -98,7 +98,7 @@ def scan_parquet(
 
     try:
         lf = pl.scan_parquet(
-            str(dataset_path),
+            str(dataset_path / "**" / "*.parquet"),
             hive_partitioning=True,
         )
         return lf
