@@ -181,7 +181,8 @@ class ScreeningEngine(BaseEngine):
         Returns:
             ScreeningResult with signals
         """
-        # Load data (need historical data for indicators)
+        # Load universe and data
+        self.load_universe()
         self.load_data()
 
         # Get target date

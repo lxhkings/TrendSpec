@@ -57,6 +57,7 @@ def screen_run(
     from trendspec.engine.base_engine import EngineConfig
     from trendspec.engine.screening_engine import ScreeningEngine
     from trendspec.strategy.base import get_strategy
+    import trendspec.strategy.examples  # noqa: F401 — triggers @register_strategy decorators
     from trendspec.screening.report import ScreeningReport
 
     # Parse date (default to today)
@@ -71,7 +72,7 @@ def screen_run(
 
     # Get market
     try:
-        market_enum = Market(market)
+        market_enum = Market(market.upper())
     except ValueError:
         console.print(f"[red]不支持的市场: {market}[/red]")
         raise typer.Exit(1)
