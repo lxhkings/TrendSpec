@@ -32,7 +32,7 @@ Flow:
 """
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import polars as pl
@@ -183,7 +183,13 @@ class ScreeningEngine(BaseEngine):
         """
         # Load universe and data
         self.load_universe()
+
+        # Expand date range for indicator lookback (SMA200 needs ~200 trading days)
+        original_start = self.config.start_date
+        lookback_start = original_start - timedelta(days=365)
+        self.config.start_date = lookback_start
         self.load_data()
+        self.config.start_date = original_start
 
         # Get target date
         target_dates = self.get_trading_days()
@@ -196,6 +202,9 @@ class ScreeningEngine(BaseEngine):
         self.instantiate_strategy(strategy_class, params)
         self.create_context()
         self.initialize_strategy()
+
+        # Set available capital for position sizing
+        self._ctx.update_positions({}, self.config.initial_capital)
 
         # Run screening for target date
         signals = self._run_screening(screening_date)
