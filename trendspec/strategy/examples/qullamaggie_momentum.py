@@ -198,9 +198,7 @@ class QullamaggieMomentumStrategy(BaseStrategy):
             return False
         if adr < self._adr_pct_min:
             return False
-        if close * volume < self._dollar_volume_min:
-            return False
-        return True
+        return close * volume >= self._dollar_volume_min
 
     def _evaluate_consolidation(self, ctx: StrategyContext, iid: str, d: DateType) -> dict | None:
         """
