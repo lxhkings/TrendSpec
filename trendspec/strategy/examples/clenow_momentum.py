@@ -27,6 +27,7 @@ from datetime import date as DateType
 
 import polars as pl
 
+from trendspec.data.sectors import sector as sector_lookup
 from trendspec.strategy.base import BaseStrategy, register_strategy
 from trendspec.strategy.context import StrategyContext
 
@@ -235,7 +236,7 @@ class ClenowMomentumStrategy(BaseStrategy):
                 sig.ticker = get_ticker(iid)
 
         # BUY: top-ranked stocks not already held
-        for iid in ranked[:n_keep]:
+        for rank_pos, iid in enumerate(ranked[:n_keep], start=1):
             if ctx.has_position(iid):
                 continue
 
@@ -249,6 +250,38 @@ class ClenowMomentumStrategy(BaseStrategy):
             if shares < 1:
                 continue
 
+            ma200 = ctx.indicator_value("MA", iid, current_date, period=self._sma_period)
+            hh = ctx.indicator_value("HH", iid, current_date, period=self._drawdown_period)
+            vol_avg = ctx.indicator_value(
+                "SMA_VOLUME", iid, current_date, period=self._volume_avg_period
+            )
+            r2 = ctx.indicator_value("CLENOW_R2", iid, current_date, period=self._score_period)
+
+            day_rows = day_data.filter(pl.col("instrument_id") == iid)
+            today_vol = day_rows["volume"].item() if not day_rows.is_empty() else None
+
+            if ma200 is None or hh is None or vol_avg is None or r2 is None:
+                continue
+            if vol_avg <= 0 or today_vol is None:
+                continue
+
+            deviation_pct = (close - ma200) / ma200 * 100
+            drawdown_pct = (close - hh) / hh * 100
+            vol_mult = float(today_vol) / float(vol_avg)
+            stop_loss = close - self._atr_stop_k * atr
+
+            alerts: list[str] = []
+            if deviation_pct > self._warn_deviation_max:
+                alerts.append("均线乖离过大")
+            if vol_mult < self._warn_vol_mult_low:
+                alerts.append("量能萎缩")
+            if vol_mult > self._warn_vol_mult_high:
+                alerts.append("放量过快")
+            if drawdown_pct < self._warn_drawdown_max:
+                alerts.append("回撤过深")
+
+            sector_code = sector_lookup(ctx.market, iid, current_date)
+
             sig = ctx.signal(
                 "BUY",
                 iid,
@@ -258,3 +291,13 @@ class ClenowMomentumStrategy(BaseStrategy):
             )
             sig.ticker = get_ticker(iid)
             sig.shares = float(shares)
+            sig.extras = {
+                "sector": sector_code,
+                "rank": rank_pos,
+                "r2": float(r2),
+                "deviation_pct": float(deviation_pct),
+                "drawdown_pct": float(drawdown_pct),
+                "vol_mult": float(vol_mult),
+                "stop_loss": float(stop_loss),
+                "alerts": alerts,
+            }

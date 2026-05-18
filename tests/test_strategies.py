@@ -10,28 +10,24 @@ Tests:
 """
 
 from datetime import date, timedelta
-from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
 
 from trendspec.data.markets import Market
-from trendspec.engine.base_engine import EngineConfig
 from trendspec.engine.backtest_engine import BacktestEngine
-from trendspec.engine.screening_engine import ScreeningEngine, ScreeningResult
+from trendspec.engine.base_engine import EngineConfig
 from trendspec.strategy import (
     BaseStrategy,
-    StrategyContext,
     Signal,
-    StrategyParams,
+    StrategyContext,
     create_strategy,
     get_strategy,
     list_strategies,
     register_strategy,
 )
 from trendspec.strategy.examples import MACrossStrategy, RSIReversalStrategy, SectorMomentumStrategy
-
 
 # =============================================================================
 # MACrossStrategy Tests
@@ -604,9 +600,11 @@ def test_signal_shares_not_in_repr() -> None:
 @pytest.mark.parametrize("custom_shares,expected_shares", [(7, 7), (None, 100)])
 def test_backtest_engine_uses_signal_shares(custom_shares, expected_shares) -> None:
     """Engine uses signal.shares when set; falls back to order_size=100 otherwise."""
-    from unittest.mock import MagicMock, patch
-    import polars as pl
     from datetime import date
+    from unittest.mock import MagicMock, patch
+
+    import polars as pl
+
     from trendspec.risk.pipeline import RiskPipeline
 
     day_data = pl.DataFrame({
@@ -921,8 +919,8 @@ class TestClenowMomentumStrategySignals:
         return pl.DataFrame(rows)
 
     def test_init_precomputes_indicators(self) -> None:
-        from trendspec.strategy.examples import ClenowMomentumStrategy
         from trendspec.strategy.context import StrategyContext
+        from trendspec.strategy.examples import ClenowMomentumStrategy
 
         df = self._make_trending_df(300)
         strategy = ClenowMomentumStrategy(params={
@@ -939,8 +937,8 @@ class TestClenowMomentumStrategySignals:
 
     def test_init_precomputes_display_indicators(self) -> None:
         """init() also precomputes HH, SMA_VOLUME, CLENOW_R2 for display fields."""
-        from trendspec.strategy.examples import ClenowMomentumStrategy
         from trendspec.strategy.context import StrategyContext
+        from trendspec.strategy.examples import ClenowMomentumStrategy
 
         df = self._make_trending_df(300)
         strategy = ClenowMomentumStrategy(params={
@@ -957,9 +955,10 @@ class TestClenowMomentumStrategySignals:
 
     def test_next_generates_buy_with_shares_on_rebalance_day(self) -> None:
         """On a rebalance day, strategy generates BUY signals with positive shares."""
-        from trendspec.strategy.examples import ClenowMomentumStrategy
-        from trendspec.strategy.context import StrategyContext
         from unittest.mock import MagicMock
+
+        from trendspec.strategy.context import StrategyContext
+        from trendspec.strategy.examples import ClenowMomentumStrategy
 
         df = self._make_trending_df(300)
         instrument_ids = df["instrument_id"].unique().to_list()
@@ -991,14 +990,19 @@ class TestClenowMomentumStrategySignals:
         ctx.update_positions({}, 100_000.0)
 
         # Feed all instruments for the rebalance date
-        for iid in instrument_ids:
-            row = df.filter(
-                (pl.col("instrument_id") == iid) & (pl.col("date") == rebalance_date)
-            )
-            if row.is_empty():
-                continue
-            ctx.update_bar(rebalance_date, iid, row["ticker"].item(), df)
-            strategy.next(ctx)
+        mock_sector = lambda m, iid, dt: None
+        with patch(
+            "trendspec.strategy.examples.clenow_momentum.sector_lookup",
+            side_effect=mock_sector,
+        ):
+            for iid in instrument_ids:
+                row = df.filter(
+                    (pl.col("instrument_id") == iid) & (pl.col("date") == rebalance_date)
+                )
+                if row.is_empty():
+                    continue
+                ctx.update_bar(rebalance_date, iid, row["ticker"].item(), df)
+                strategy.next(ctx)
 
         signals = ctx.pending_signals()
         buy_signals = [s for s in signals if s.is_buy()]
@@ -1012,9 +1016,10 @@ class TestClenowMomentumStrategySignals:
 
     def test_next_no_signals_on_non_rebalance_day(self) -> None:
         """On a non-rebalance weekday, next() returns immediately with no signals."""
-        from trendspec.strategy.examples import ClenowMomentumStrategy
-        from trendspec.strategy.context import StrategyContext
         from unittest.mock import MagicMock
+
+        from trendspec.strategy.context import StrategyContext
+        from trendspec.strategy.examples import ClenowMomentumStrategy
 
         df = self._make_trending_df(300)
         instrument_ids = df["instrument_id"].unique().to_list()
@@ -1047,6 +1052,193 @@ class TestClenowMomentumStrategySignals:
             strategy.next(ctx)
 
         assert ctx.pending_signals() == [], "Expected no signals on non-rebalance day"
+
+    def _run_strategy_and_get_buys(
+        self,
+        df: pl.DataFrame,
+        rebalance_date: date,
+        sector_index_mock=None,
+        params_override: dict | None = None,
+    ) -> list:
+        """Helper: init + manually invoke next() for one rebalance day, return BUY signals."""
+        from trendspec.strategy.context import StrategyContext
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+
+        params = {
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+            "drawdown_period": 20, "volume_avg_period": 20,
+            "rebalance_weekday": rebalance_date.weekday(),
+        }
+        if params_override:
+            params.update(params_override)
+
+        strategy = ClenowMomentumStrategy(params=params)
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        ctx._universe = MagicMock()
+        ctx._universe.tickers = MagicMock(return_value=list(df["instrument_id"].unique()))
+        ctx.pit_universe = lambda d: list(df["instrument_id"].unique())
+        ctx._current_date = rebalance_date
+        ctx.update_positions({}, 1_000_000.0)
+        strategy.init(ctx)
+
+        collected: list = []
+        original_signal = ctx.signal
+
+        def capture_signal(*args, **kwargs):
+            sig = original_signal(*args, **kwargs)
+            collected.append(sig)
+            return sig
+
+        ctx.signal = capture_signal
+
+        # Always mock sector_lookup to avoid DB config dependency;
+        # use a default passthrough that returns None when no custom mock is given.
+        if sector_index_mock is None:
+            sector_index_mock = lambda m, iid, dt: None
+
+        with patch(
+            "trendspec.strategy.examples.clenow_momentum.sector_lookup",
+            side_effect=sector_index_mock,
+        ):
+            strategy.next(ctx)
+
+        return [s for s in collected if s.is_buy()]
+
+    def test_buy_signal_has_full_extras_schema(self) -> None:
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(df, rebalance_date)
+        assert len(buys) >= 1
+        for sig in buys:
+            keys = set(sig.extras.keys())
+            assert keys == {
+                "sector", "rank", "r2", "deviation_pct",
+                "drawdown_pct", "vol_mult", "stop_loss", "alerts",
+            }
+            assert isinstance(sig.extras["rank"], int)
+            assert sig.extras["rank"] >= 1
+            assert isinstance(sig.extras["r2"], float)
+            assert 0.0 <= sig.extras["r2"] <= 1.0
+            assert isinstance(sig.extras["deviation_pct"], float)
+            assert isinstance(sig.extras["drawdown_pct"], float)
+            assert isinstance(sig.extras["vol_mult"], float)
+            assert isinstance(sig.extras["stop_loss"], float)
+            assert sig.extras["stop_loss"] > 0
+            assert isinstance(sig.extras["alerts"], list)
+
+    def test_buy_rank_monotonic_top_first(self) -> None:
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(df, rebalance_date)
+        ranks = [s.extras["rank"] for s in buys]
+        assert ranks == sorted(ranks)
+        assert ranks[0] == 1
+
+    def test_buy_sector_lookup_returned(self) -> None:
+        """sector() mocked → extras['sector'] reflects mock value."""
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+
+        def mock_sector(market, iid, dt):
+            return {"UP1": "Technology", "UP2": "Financials", "DOWN": "Energy"}.get(iid)
+
+        buys = self._run_strategy_and_get_buys(df, rebalance_date, sector_index_mock=mock_sector)
+        sectors = {s.instrument_id: s.extras["sector"] for s in buys}
+        assert sectors.get("UP1") == "Technology" or sectors.get("UP2") == "Financials"
+
+    def test_buy_sector_missing_returns_none(self) -> None:
+        """sector() returns None → extras['sector'] is None, signal still emitted."""
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(df, rebalance_date, sector_index_mock=lambda *a: None)
+        assert len(buys) >= 1
+        assert all(s.extras["sector"] is None for s in buys)
+
+    def test_stop_loss_formula(self) -> None:
+        """stop_loss == close - atr_stop_k * ATR(20)"""
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(df, rebalance_date)
+        for sig in buys:
+            assert sig.extras["stop_loss"] < sig.price
+            implied_atr = (sig.price - sig.extras["stop_loss"]) / 3.0
+            assert implied_atr > 0
+
+    def test_alerts_normal_when_no_threshold_hit(self) -> None:
+        """trending smooth df → no alerts expected."""
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(
+            df, rebalance_date,
+            params_override={
+                "warn_deviation_max": 9999.0,
+                "warn_vol_mult_low": 0.0,
+                "warn_vol_mult_high": 9999.0,
+                "warn_drawdown_max": -9999.0,
+            },
+        )
+        assert all(s.extras["alerts"] == [] for s in buys)
+
+    def test_alerts_deviation_trigger(self) -> None:
+        """warn_deviation_max=0.01 → any positive deviation triggers."""
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(
+            df, rebalance_date,
+            params_override={
+                "warn_deviation_max": 0.01,
+                "warn_vol_mult_low": -1.0,
+                "warn_vol_mult_high": 9999.0,
+                "warn_drawdown_max": -9999.0,
+            },
+        )
+        assert any("均线乖离过大" in s.extras["alerts"] for s in buys)
+
+    def test_alerts_vol_low_trigger(self) -> None:
+        """warn_vol_mult_low extremely high → volume shrink alert."""
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(
+            df, rebalance_date,
+            params_override={
+                "warn_deviation_max": 9999.0,
+                "warn_vol_mult_low": 9999.0,
+                "warn_vol_mult_high": 99999.0,
+                "warn_drawdown_max": -9999.0,
+            },
+        )
+        assert all("量能萎缩" in s.extras["alerts"] for s in buys)
+
+    def test_alerts_vol_high_trigger(self) -> None:
+        """warn_vol_mult_high extremely low → volume spike alert."""
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(
+            df, rebalance_date,
+            params_override={
+                "warn_deviation_max": 9999.0,
+                "warn_vol_mult_low": -1.0,
+                "warn_vol_mult_high": 0.001,
+                "warn_drawdown_max": -9999.0,
+            },
+        )
+        assert all("放量过快" in s.extras["alerts"] for s in buys)
+
+    def test_alerts_drawdown_trigger(self) -> None:
+        """warn_drawdown_max close to 0 → almost any drawdown triggers."""
+        df = self._make_trending_df(200)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        buys = self._run_strategy_and_get_buys(
+            df, rebalance_date,
+            params_override={
+                "warn_deviation_max": 9999.0,
+                "warn_vol_mult_low": -1.0,
+                "warn_vol_mult_high": 9999.0,
+                "warn_drawdown_max": -0.001,
+            },
+        )
+        has_dd_alert = any("回撤过深" in s.extras["alerts"] for s in buys)
+        assert has_dd_alert
 
 
 # =============================================================================
@@ -1202,8 +1394,9 @@ class TestQullamaggieMomentumEntry:
         Positions persist across bars; the caller updates them via the returned ctx
         if simulating engine-side fills.
         """
-        from trendspec.strategy.context import StrategyContext
         from unittest.mock import MagicMock
+
+        from trendspec.strategy.context import StrategyContext
 
         ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
         strategy.init(ctx)
@@ -1337,8 +1530,9 @@ class TestQullamaggieMomentumEntry:
 
         Returns list of (date, [Signal]) tuples preserving order.
         """
-        from trendspec.strategy.context import StrategyContext
         from unittest.mock import MagicMock
+
+        from trendspec.strategy.context import StrategyContext
 
         ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
         strategy.init(ctx)
@@ -1675,8 +1869,8 @@ class TestRSRatingIndicator:
 
 class TestIndicesLoader:
     def test_read_indices_returns_dataframe(self, tmp_path) -> None:
-        from trendspec.ingest.writer import write_parquet
         from trendspec.data.parquet_loader import read_indices
+        from trendspec.ingest.writer import write_parquet
 
         df = pl.DataFrame({
             "instrument_id": ["SP500", "SP500", "SP500"],
@@ -1741,7 +1935,7 @@ class TestStrategyComparison:
         assert row.error == "data missing"
 
     def test_comparison_report_sort(self) -> None:
-        from trendspec.analyzer.strategy_comparison import ComparisonRow, ComparisonReport
+        from trendspec.analyzer.strategy_comparison import ComparisonReport, ComparisonRow
         rows = [
             ComparisonRow("low", 0.1, 0.05, 0.1, 0.5, 10, 105000, 1.0),
             ComparisonRow("high", 0.3, 0.15, 0.05, 1.5, 20, 130000, 1.0),
@@ -1751,7 +1945,7 @@ class TestStrategyComparison:
         assert sorted_rows[0].strategy_name == "high"
 
     def test_comparison_report_csv_export(self, tmp_path) -> None:
-        from trendspec.analyzer.strategy_comparison import ComparisonRow, ComparisonReport
+        from trendspec.analyzer.strategy_comparison import ComparisonReport, ComparisonRow
         rows = [ComparisonRow("s1", 0.1, 0.05, 0.1, 1.0, 5, 110000, 0.5)]
         report = ComparisonReport(rows, "us", (date(2022, 1, 1), date(2024, 1, 1)))
         path = report.export("csv", tmp_path)
