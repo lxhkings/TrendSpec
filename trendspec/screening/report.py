@@ -15,7 +15,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from trendspec.analyzer.signal_history import SignalHistoryStore
 from trendspec.config.settings import get_settings
+from trendspec.data.markets import Market
 
 
 class ScreeningReport:
@@ -219,7 +221,65 @@ class ScreeningReport:
                     "放量倍数": "",
                     "备注/预警": s.note or "",
                 })
-        return pl.DataFrame(records)
+        df = pl.DataFrame(records)
+
+        # Join historical signal stats (graceful degradation on cache miss)
+        hist = self._load_signal_history()
+        if hist is not None and not hist.is_empty():
+            hist_cols = ["instrument_id", "n_signals",
+                         "mean_ret_1d", "mean_ret_5d", "mean_ret_20d",
+                         "hit_rate_5d"]
+            available = [c for c in hist_cols if c in hist.columns]
+            hist = hist.select(available)
+            df = df.join(hist, on="instrument_id", how="left")
+
+            # Percentage columns: decimal → %
+            df = df.with_columns([
+                (pl.col("mean_ret_1d") * 100).alias("历史 1d 均值收益 %"),
+                (pl.col("mean_ret_5d") * 100).alias("历史 5d 均值收益 %"),
+                (pl.col("mean_ret_20d") * 100).alias("历史 20d 均值收益 %"),
+                (pl.col("hit_rate_5d") * 100).alias("历史 5d 胜率 %"),
+            ])
+
+            # Confidence stars
+            df = df.with_columns(
+                pl.col("n_signals")
+                .map_elements(self._confidence_stars, return_dtype=pl.String)
+                .alias("信号置信度")
+            )
+
+            # Default n_signals = 0 for missing
+            df = df.with_columns(
+                pl.col("n_signals").fill_null(0).alias("历史样本数")
+            )
+        else:
+            # Cache miss: fill blanks
+            df = df.with_columns([
+                pl.lit(0).cast(pl.Int64).alias("历史样本数"),
+                pl.lit(None, dtype=pl.Float64).alias("历史 1d 均值收益 %"),
+                pl.lit(None, dtype=pl.Float64).alias("历史 5d 均值收益 %"),
+                pl.lit(None, dtype=pl.Float64).alias("历史 20d 均值收益 %"),
+                pl.lit(None, dtype=pl.Float64).alias("历史 5d 胜率 %"),
+                pl.lit("-").alias("信号置信度"),
+            ])
+
+        # Drop internal join columns, keep display columns
+        drop_cols = {"n_signals", "mean_ret_1d", "mean_ret_5d",
+                     "mean_ret_20d", "hit_rate_5d"}
+        keep = [c for c in df.columns if c not in drop_cols]
+
+        # Ensure column order: original 13 + 6 new
+        base_cols = [
+            "股票代码", "instrument_id", "日期", "方向", "行业", "选股排名",
+            "建议买入价", "初始止损线", "趋势质量 (R²)", "乖离率 (距 MA200)",
+            "回撤 (距 63 日高点)", "放量倍数", "备注/预警",
+        ]
+        new_cols = [
+            "历史样本数", "历史 1d 均值收益 %", "历史 5d 均值收益 %",
+            "历史 20d 均值收益 %", "历史 5d 胜率 %", "信号置信度",
+        ]
+        ordered = [c for c in base_cols + new_cols if c in keep]
+        return df.select(ordered)
 
     def buy_signals(self) -> list[Any]:
         """Get buy signals."""
@@ -280,6 +340,25 @@ class ScreeningReport:
         return cls._SECTOR_CN.get(sector, sector)
 
     @staticmethod
+    def _confidence_stars(n_signals) -> str:
+        """Map sample count to confidence stars."""
+        if n_signals is None or n_signals == 0:
+            return "-"
+        if n_signals < 5:
+            return "★"
+        if n_signals < 10:
+            return "★★"
+        return "★★★"
+
+    def _load_signal_history(self) -> pl.DataFrame | None:
+        """Load cached signal history stats. Returns None on cache miss."""
+        try:
+            market = Market(self.market.lower())
+            return SignalHistoryStore.load(self.strategy_name, market)
+        except Exception:
+            return None
+
+    @staticmethod
     def _r2_label(r2: float) -> str:
         if r2 >= 0.85:
             return "极平稳"
@@ -289,8 +368,14 @@ class ScreeningReport:
             return "良好"
         return "一般"
 
-    def _iter_clenow_buy_rows(self, signals: list[Any]):
-        """Yield formatted row tuples (10 items) for clenow BUY signals."""
+    def _iter_clenow_buy_rows(self, signals: list[Any], hist_cache: pl.DataFrame | None = None):
+        """Yield formatted row tuples (12 items) for clenow BUY signals."""
+        # Build a lookup dict from cache
+        hist_map: dict[str, dict] = {}
+        if hist_cache is not None and not hist_cache.is_empty():
+            for row in hist_cache.iter_rows(named=True):
+                hist_map[row["instrument_id"]] = row
+
         for s in signals:
             e = s.extras or {}
             sector = self._translate_sector(e.get("sector"))
@@ -302,6 +387,15 @@ class ScreeningReport:
             stop_loss = e.get("stop_loss", 0.0)
             alerts = e.get("alerts") or []
             note = "[警报] " + "，".join(alerts) if alerts else "正常"
+
+            # Historical stats
+            h = hist_map.get(s.instrument_id)
+            if h and h.get("mean_ret_5d") is not None:
+                hist_5d = f"{h['mean_ret_5d'] * 100:+.2f}%"
+            else:
+                hist_5d = "-"
+            conf = self._confidence_stars(h["n_signals"] if h else 0)
+
             yield (
                 s.ticker,
                 sector,
@@ -313,6 +407,8 @@ class ScreeningReport:
                 f"{drawdown:+.1f}%",
                 f"{vol_mult:.1f}x",
                 note,
+                hist_5d,
+                conf,
             )
 
     def _create_clenow_buy_table(self, signals: list[Any]) -> Table:
@@ -327,8 +423,11 @@ class ScreeningReport:
         table.add_column("回撤 (距 63 日高点)", style="yellow")
         table.add_column("放量倍数", style="blue")
         table.add_column("备注/预警", style="white")
+        table.add_column("历史 5d 收益 %", style="magenta")
+        table.add_column("信号置信度", style="yellow")
 
-        for row, s in zip(self._iter_clenow_buy_rows(signals), signals, strict=True):
+        hist = self._load_signal_history()
+        for row, s in zip(self._iter_clenow_buy_rows(signals, hist), signals, strict=True):
             alerts = (s.extras or {}).get("alerts") or []
             style = "red" if alerts else "white"
             table.add_row(*row, style=style)
