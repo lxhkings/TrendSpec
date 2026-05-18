@@ -1062,6 +1062,60 @@ class TestMinerviniTrendTemplateLogic:
 
 
 # =============================================================================
+# QullamaggieMomentumStrategy Tests
+# =============================================================================
+
+
+class TestQullamaggieMomentumInit:
+    def test_strategy_registration(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        assert get_strategy("qullamaggie_momentum") is QullamaggieMomentumStrategy
+
+    def test_default_params(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        strategy = QullamaggieMomentumStrategy()
+        assert strategy.get_param("ma_short_period", 10) == 10
+        assert strategy.get_param("ma_mid_period", 20) == 20
+        assert strategy.get_param("ma_long_period", 50) == 50
+        assert strategy.get_param("roc_period", 60) == 60
+        assert strategy.get_param("prior_move_threshold", 0.30) == 0.30
+        assert strategy.get_param("adr_period", 20) == 20
+        assert strategy.get_param("adr_pct_min", 0.04) == 0.04
+        assert strategy.get_param("dollar_volume_min", 5_000_000) == 5_000_000
+        assert strategy.get_param("consolidation_days", 5) == 5
+        assert strategy.get_param("consolidation_tightness", 1.5) == 1.5
+        assert strategy.get_param("volume_mult", 1.5) == 1.5
+        assert strategy.get_param("partial_sell_after_days", 4) == 4
+        assert strategy.get_param("partial_sell_fraction", 0.5) == 0.5
+        assert strategy.get_param("trail_ma_period", 10) == 10
+        assert strategy.get_param("risk_pct", 0.005) == 0.005
+
+    def test_invalid_risk_pct(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        with pytest.raises(ValueError, match="risk_pct"):
+            QullamaggieMomentumStrategy(params={"risk_pct": 0.0})
+        with pytest.raises(ValueError, match="risk_pct"):
+            QullamaggieMomentumStrategy(params={"risk_pct": 1.5})
+
+    def test_invalid_partial_sell_fraction(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        with pytest.raises(ValueError, match="partial_sell_fraction"):
+            QullamaggieMomentumStrategy(params={"partial_sell_fraction": -0.1})
+        with pytest.raises(ValueError, match="partial_sell_fraction"):
+            QullamaggieMomentumStrategy(params={"partial_sell_fraction": 1.1})
+
+    def test_invalid_adr_pct_min(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        with pytest.raises(ValueError, match="adr_pct_min"):
+            QullamaggieMomentumStrategy(params={"adr_pct_min": -0.01})
+
+    def test_invalid_consolidation_days(self) -> None:
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+        with pytest.raises(ValueError, match="consolidation_days"):
+            QullamaggieMomentumStrategy(params={"consolidation_days": 1})
+
+
+# =============================================================================
 # RS_RATING Indicator Tests
 # =============================================================================
 
