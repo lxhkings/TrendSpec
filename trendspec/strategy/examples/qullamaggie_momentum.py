@@ -109,5 +109,180 @@ class QullamaggieMomentumStrategy(BaseStrategy):
             f"partial_sell_after={self._partial_sell_after_days} bars"
         )
 
-    def next(self, ctx: StrategyContext) -> None:  # pragma: no cover - filled later
-        raise NotImplementedError("Tasks 4-7 implement next()")
+    def next(self, ctx: StrategyContext) -> None:
+        """
+        Per-instrument event-driven entry/exit.
+
+        Task 4: BUY path complete. SELL paths (Tasks 5-7) come next.
+        """
+        iid = ctx.instrument_id
+        d = ctx.date
+
+        # ---- Exit path (Tasks 5-7) ----
+        if ctx.has_position(iid):
+            self._handle_exit(ctx, iid, d)
+            return
+
+        # ---- Entry path ----
+        if not self._passes_universe_filter(ctx, iid, d):
+            return
+
+        cons = self._evaluate_consolidation(ctx, iid, d)
+        if cons is None:
+            return
+
+        if not self._breakout_today(ctx, iid, d, cons):
+            return
+
+        entry_price = ctx.close
+        stop = cons["low"]
+        if stop <= 0 or entry_price <= stop:
+            return
+
+        # Risk-based sizing: shares = nav * risk_pct / (entry - stop)
+        nav = ctx.available_capital
+        for held_iid, qty in ctx.positions.items():
+            held_close = self._get_close(held_iid, d)
+            if held_close is not None:
+                nav += qty * held_close
+
+        risk_per_share = entry_price - stop
+        shares = int(nav * self._risk_pct / risk_per_share)
+        if shares < 1:
+            return
+
+        sig = ctx.signal(
+            "BUY",
+            iid,
+            entry_price,
+            trigger_value=cons["range_pct"],
+            note=(
+                f"Q-BO: cons_low={stop:.2f}, cons_high={cons['high']:.2f}, "
+                f"range_pct={cons['range_pct']:.4f}, shares={shares}"
+            ),
+        )
+        sig.shares = float(shares)
+
+        self._position_state[iid] = {
+            "entry_price": entry_price,
+            "entry_date": d,
+            "shares": shares,
+            "initial_shares": shares,
+            "half_sold": False,
+            "stop": stop,
+            "bars_since_entry": 0,
+        }
+
+    # =========================================================================
+    # Entry helpers
+    # =========================================================================
+
+    def _passes_universe_filter(
+        self, ctx: StrategyContext, iid: str, d: DateType
+    ) -> bool:
+        close = ctx.close
+        volume = ctx.volume
+
+        ma_short = ctx.indicator_value("MA", iid, d, period=self._ma_short)
+        ma_mid = ctx.indicator_value("MA", iid, d, period=self._ma_mid)
+        ma_long = ctx.indicator_value("MA", iid, d, period=self._ma_long)
+        roc = ctx.indicator_value("ROC", iid, d, period=self._roc_period)
+        adr = ctx.indicator_value("ADR_PCT", iid, d, period=self._adr_period)
+
+        if any(v is None for v in (ma_short, ma_mid, ma_long, roc, adr)):
+            return False
+        if close <= ma_long:
+            return False
+        if not (ma_short > ma_mid > ma_long):
+            return False
+        if roc < self._prior_move_threshold * 100:
+            # ROC indicator output is in percent (close/close_n - 1) * 100
+            return False
+        if adr < self._adr_pct_min:
+            return False
+        if close * volume < self._dollar_volume_min:
+            return False
+        return True
+
+    def _evaluate_consolidation(
+        self, ctx: StrategyContext, iid: str, d: DateType
+    ) -> dict | None:
+        """
+        Inspect the prior `consolidation_days` bars (excluding today).
+
+        Returns a dict {high, low, range_pct} when the window is tight enough
+        AND no bar in the window violated the MA20 floor; else None.
+        """
+        df = self._full_data.filter(pl.col("instrument_id") == iid).sort("date")
+        today_idx = df["date"].search_sorted(d, side="left")
+        start = today_idx - self._consolidation_days
+        if start < 0:
+            return None
+
+        window = df.slice(start, self._consolidation_days)
+        if len(window) < self._consolidation_days:
+            return None
+
+        cons_high = float(window["high"].max())
+        cons_low = float(window["low"].min())
+        close = ctx.close
+        if close <= 0:
+            return None
+        range_pct = (cons_high - cons_low) / close
+
+        adr = ctx.indicator_value("ADR_PCT", iid, d, period=self._adr_period)
+        if adr is None or adr <= 0:
+            return None
+        if range_pct > self._consolidation_tightness * adr:
+            return None
+
+        ma_mid = ctx.indicator_value("MA", iid, d, period=self._ma_mid)
+        if ma_mid is None:
+            return None
+        if cons_low <= ma_mid:
+            return None
+
+        return {"high": cons_high, "low": cons_low, "range_pct": range_pct}
+
+    def _breakout_today(
+        self,
+        ctx: StrategyContext,
+        iid: str,
+        d: DateType,
+        cons: dict,
+    ) -> bool:
+        close = ctx.close
+        if close <= cons["high"]:
+            return False
+
+        vma = ctx.indicator_value("VMA", iid, d, period=self._ma_mid)
+        if vma is None or ctx.volume <= self._volume_mult * vma:
+            return False
+
+        # Prior close — load directly from data
+        df = self._full_data.filter(pl.col("instrument_id") == iid).sort("date")
+        today_idx = df["date"].search_sorted(d, side="left")
+        if today_idx < 1:
+            return False
+        prev_close = float(df["close"][today_idx - 1])
+        return close > prev_close
+
+    # =========================================================================
+    # Exit handler (filled in by Tasks 5-7)
+    # =========================================================================
+
+    def _handle_exit(self, ctx: StrategyContext, iid: str, d: DateType) -> None:
+        # Tasks 5-7 fill this in; a held position with no exit means HOLD.
+        return
+
+    # =========================================================================
+    # Utilities
+    # =========================================================================
+
+    def _get_close(self, iid: str, d: DateType) -> float | None:
+        rows = self._full_data.filter(
+            (pl.col("instrument_id") == iid) & (pl.col("date") == d)
+        )
+        if rows.is_empty():
+            return None
+        return float(rows["close"].item())

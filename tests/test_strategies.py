@@ -1066,6 +1066,132 @@ class TestMinerviniTrendTemplateLogic:
 # =============================================================================
 
 
+class TestQullamaggieMomentumEntry:
+    def _build_breakout_df(self) -> pl.DataFrame:
+        """
+        Single-instrument OHLCV path that satisfies every entry filter on the
+        final bar:
+          - 90 days of steady ~0.6%/day rise so close > MA50, MA10 > MA20 > MA50,
+            and ROC60 > 30%.
+          - High/low set to 3% above/below close so ADR_PCT_20 ≈ 0.06 (6%).
+          - 5-day flat consolidation at the top with tight range (~0.4% of close).
+          - Final day: close breaks above consolidation high with volume > 1.5× VMA20.
+        Dollar volume is well above 5M (price * 2_000_000 shares).
+        """
+        rows = []
+        d0 = date(2023, 1, 2)
+        # 1) 90-day uptrend
+        price = 50.0
+        for i in range(90):
+            close = price * (1.006 ** i)
+            rows.append({
+                "instrument_id": "BO", "ticker": "BO",
+                "date": d0 + timedelta(days=i),
+                "open": close * 0.99,
+                "high": close * 1.03,
+                "low": close * 0.97,
+                "close": close,
+                "volume": 2_000_000,
+                "adj_factor": 1.0,
+            })
+        last_close = rows[-1]["close"]
+
+        # 2) 5-day flat consolidation: range ≈ 0.4% << 1.5 * ADR_PCT_20 (≈ 0.09)
+        cons_low = last_close * 0.998
+        cons_high = last_close * 1.002
+        for i in range(90, 95):
+            rows.append({
+                "instrument_id": "BO", "ticker": "BO",
+                "date": d0 + timedelta(days=i),
+                "open": last_close,
+                "high": cons_high,
+                "low": cons_low,
+                "close": last_close,
+                "volume": 2_000_000,
+                "adj_factor": 1.0,
+            })
+
+        # 3) Breakout day: close > cons_high, volume > 1.5x VMA20
+        breakout_close = cons_high * 1.03
+        rows.append({
+            "instrument_id": "BO", "ticker": "BO",
+            "date": d0 + timedelta(days=95),
+            "open": last_close,
+            "high": breakout_close * 1.005,
+            "low": cons_low,
+            "close": breakout_close,
+            "volume": 5_000_000,  # >> 1.5 * 2_000_000 VMA20
+            "adj_factor": 1.0,
+        })
+        return pl.DataFrame(rows)
+
+    def _run_through_bars(
+        self,
+        df: pl.DataFrame,
+        strategy,
+        capital: float = 100_000.0,
+        positions: dict | None = None,
+        dates_subset: list | None = None,
+    ):
+        """
+        Drive strategy.next() bar-by-bar over `df`. Returns (ctx, signals_per_date).
+        Each entry in signals_per_date is (date, [Signal]) preserving emission order.
+        Positions persist across bars; the caller updates them via the returned ctx
+        if simulating engine-side fills.
+        """
+        from trendspec.strategy.context import StrategyContext
+        from unittest.mock import MagicMock
+
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+
+        mock_universe = MagicMock()
+        instrument_ids = df["instrument_id"].unique().to_list()
+        mock_universe.tickers.return_value = instrument_ids
+        ctx.set_universe(mock_universe)
+
+        ctx.update_positions(positions or {}, capital)
+
+        all_dates = sorted(df["date"].unique().to_list())
+        if dates_subset is not None:
+            all_dates = [d for d in all_dates if d in dates_subset]
+
+        signals_per_date = []
+        for d in all_dates:
+            for iid in instrument_ids:
+                row = df.filter(
+                    (pl.col("instrument_id") == iid) & (pl.col("date") == d)
+                )
+                if row.is_empty():
+                    continue
+                ctx.update_bar(d, iid, row["ticker"].item(), df)
+                strategy.next(ctx)
+            day_signals = list(ctx.pending_signals())
+            ctx.clear_signals()
+            signals_per_date.append((d, day_signals))
+        return ctx, signals_per_date
+
+    def test_breakout_emits_buy_signal(self) -> None:
+        """Crafted breakout setup → one BUY signal on the breakout bar."""
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        df = self._build_breakout_df()
+        strategy = QullamaggieMomentumStrategy()
+        _ctx, signals_per_date = self._run_through_bars(df, strategy)
+
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+        buys = [s for s in all_signals if s.is_buy()]
+        assert len(buys) == 1, f"Expected 1 BUY, got: {buys}"
+        assert buys[0].instrument_id == "BO"
+        assert buys[0].shares is not None and buys[0].shares >= 1
+
+        # BUY should land on the breakout bar (the last one)
+        breakout_date = df["date"].max()
+        last_day_signals = signals_per_date[-1][1]
+        assert any(s.is_buy() for s in last_day_signals), \
+            f"BUY expected on breakout day {breakout_date}, signals={last_day_signals}"
+
+
 class TestQullamaggieMomentumInit:
     def test_strategy_registration(self) -> None:
         from trendspec.strategy.examples import QullamaggieMomentumStrategy
