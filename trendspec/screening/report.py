@@ -108,7 +108,7 @@ class ScreeningReport:
 
         # Generate filename
         date_str = self.screening_date.strftime("%Y%m%d")
-        signals_path = output_path / f"signals_{date_str}.csv"
+        signals_path = output_path / f"signals_{self.strategy_name}_{date_str}.csv"
 
         # Export to CSV
         df = self._signals_to_dataframe()
