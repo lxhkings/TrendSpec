@@ -61,9 +61,23 @@ class ClenowMomentumStrategy(BaseStrategy):
         "rebalance_weekday": 2,
         "top_pct": 0.8,
         "max_gap": -0.15,
+        # Display-only fields (do not affect entry/exit logic)
+        "atr_stop_k": 3.0,
+        "drawdown_period": 63,
+        "volume_avg_period": 50,
+        "warn_deviation_max": 40.0,
+        "warn_vol_mult_low": 1.0,
+        "warn_vol_mult_high": 3.0,
+        "warn_drawdown_max": -15.0,
     }
 
     def _validate_dict_params(self) -> None:
+        # Merge class-level defaults into instance dict so get_param() works
+        # without callers needing to supply the default value.
+        self.params = {**self.params}
+        for key, value in self.__class__.params.items():
+            self.params.setdefault(key, value)
+
         top_pct = self.get_param("top_pct", 0.8)
         risk_factor = self.get_param("risk_factor", 0.001)
         rebalance_weekday = self.get_param("rebalance_weekday", 2)
@@ -74,6 +88,30 @@ class ClenowMomentumStrategy(BaseStrategy):
             raise ValueError(f"risk_factor ({risk_factor}) must be > 0")
         if rebalance_weekday not in range(5):
             raise ValueError(f"rebalance_weekday ({rebalance_weekday}) must be 0-4 (Mon-Fri)")
+
+        atr_stop_k = self.get_param("atr_stop_k", 3.0)
+        drawdown_period = self.get_param("drawdown_period", 63)
+        volume_avg_period = self.get_param("volume_avg_period", 50)
+        warn_deviation_max = self.get_param("warn_deviation_max", 40.0)
+        warn_vol_mult_low = self.get_param("warn_vol_mult_low", 1.0)
+        warn_vol_mult_high = self.get_param("warn_vol_mult_high", 3.0)
+        warn_drawdown_max = self.get_param("warn_drawdown_max", -15.0)
+
+        if atr_stop_k <= 0:
+            raise ValueError(f"atr_stop_k ({atr_stop_k}) must be > 0")
+        if drawdown_period < 2:
+            raise ValueError(f"drawdown_period ({drawdown_period}) must be >= 2")
+        if volume_avg_period < 2:
+            raise ValueError(f"volume_avg_period ({volume_avg_period}) must be >= 2")
+        if warn_deviation_max <= 0:
+            raise ValueError(f"warn_deviation_max ({warn_deviation_max}) must be > 0")
+        if warn_drawdown_max >= 0:
+            raise ValueError(f"warn_drawdown_max ({warn_drawdown_max}) must be < 0")
+        if warn_vol_mult_low >= warn_vol_mult_high:
+            raise ValueError(
+                f"warn_vol_mult_low ({warn_vol_mult_low}) must be < "
+                f"warn_vol_mult_high ({warn_vol_mult_high})"
+            )
 
     def init(self, ctx: StrategyContext) -> None:
         """Precompute all indicators once over the full dataset."""

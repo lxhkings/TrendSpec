@@ -854,6 +854,51 @@ class TestClenowMomentumStrategyInit:
         import trendspec.strategy.examples  # noqa: F401 — trigger registration
         assert "clenow_momentum" in list_strategies()
 
+    def test_new_display_param_defaults(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        s = ClenowMomentumStrategy()
+        assert s.get_param("atr_stop_k", None) == 3.0
+        assert s.get_param("drawdown_period", None) == 63
+        assert s.get_param("volume_avg_period", None) == 50
+        assert s.get_param("warn_deviation_max", None) == 40.0
+        assert s.get_param("warn_vol_mult_low", None) == 1.0
+        assert s.get_param("warn_vol_mult_high", None) == 3.0
+        assert s.get_param("warn_drawdown_max", None) == -15.0
+
+    def test_invalid_atr_stop_k(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="atr_stop_k"):
+            ClenowMomentumStrategy(params={"atr_stop_k": 0})
+        with pytest.raises(ValueError, match="atr_stop_k"):
+            ClenowMomentumStrategy(params={"atr_stop_k": -1.0})
+
+    def test_invalid_drawdown_period(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="drawdown_period"):
+            ClenowMomentumStrategy(params={"drawdown_period": 1})
+
+    def test_invalid_volume_avg_period(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="volume_avg_period"):
+            ClenowMomentumStrategy(params={"volume_avg_period": 1})
+
+    def test_invalid_vol_mult_threshold_ordering(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="warn_vol_mult"):
+            ClenowMomentumStrategy(params={
+                "warn_vol_mult_low": 3.0, "warn_vol_mult_high": 1.0,
+            })
+
+    def test_invalid_warn_drawdown_max_nonneg(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="warn_drawdown_max"):
+            ClenowMomentumStrategy(params={"warn_drawdown_max": 0.0})
+
+    def test_invalid_warn_deviation_max_nonpos(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="warn_deviation_max"):
+            ClenowMomentumStrategy(params={"warn_deviation_max": 0.0})
+
 
 class TestClenowMomentumStrategySignals:
     """Integration: init() precomputes indicators without error."""
