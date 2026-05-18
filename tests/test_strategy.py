@@ -562,6 +562,7 @@ class TestSMAVolumeIndicator:
         df = pl.DataFrame({
             "instrument_id": ["A"] * 5,
             "date": [date(2024, 1, i) for i in range(1, 6)],
+            "ticker": ["A"] * 5,
             "close": [10.0] * 5, "open": [10.0] * 5,
             "high": [10.0] * 5, "low": [10.0] * 5,
             "volume": [100, 200, 300, 400, 500],
