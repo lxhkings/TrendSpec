@@ -93,6 +93,28 @@ class TestSignal:
                 price=0.0,
             )
 
+    def test_signal_extras_default_empty(self) -> None:
+        """extras defaults to empty dict, not shared across instances."""
+        s1 = Signal(direction="BUY", ticker="A", instrument_id="A", price=1.0)
+        s2 = Signal(direction="BUY", ticker="B", instrument_id="B", price=2.0)
+        assert s1.extras == {}
+        assert s2.extras == {}
+        s1.extras["foo"] = 1
+        assert s2.extras == {}  # 不共享同一 dict 实例
+
+    def test_signal_extras_arbitrary_payload(self) -> None:
+        """extras accepts arbitrary keys/values."""
+        s = Signal(
+            direction="BUY",
+            ticker="X",
+            instrument_id="X",
+            price=10.0,
+            extras={"rank": 1, "sector": "Tech", "alerts": ["a", "b"]},
+        )
+        assert s.extras["rank"] == 1
+        assert s.extras["sector"] == "Tech"
+        assert s.extras["alerts"] == ["a", "b"]
+
 
 class TestSignalBatch:
     """Tests for SignalBatch."""

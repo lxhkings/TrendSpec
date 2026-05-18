@@ -6,7 +6,7 @@ The engine processes signals through the risk pipeline before broker execution.
 """
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass
@@ -45,6 +45,7 @@ class Signal:
     note: str | None = None
     shares: float | None = field(default=None, repr=False)
     timestamp: float | None = field(default=None, repr=False)
+    extras: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         """Validate signal after initialization."""
