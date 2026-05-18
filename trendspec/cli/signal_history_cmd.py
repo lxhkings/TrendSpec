@@ -65,7 +65,7 @@ def build_history(
         market_enum = Market(market.upper())
     except ValueError:
         console.print(f"[red]不支持的市场: {market}（可选: us, cn）[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     # Validate strategy exists
     strategy_class = get_strategy(strategy)
@@ -74,7 +74,7 @@ def build_history(
         console.print("[yellow]可用策略:[/yellow]")
         for name in list_strategies():
             console.print(f"  - {name}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     # Determine if incremental or full
     mode = "全量重建" if rebuild else "增量/首次构建"
@@ -111,7 +111,7 @@ def build_history(
         console.print(f"[red]构建失败: {e}[/red]")
         import traceback
         console.print(traceback.format_exc())
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @app.command("status")
@@ -145,7 +145,7 @@ def status_history(
         market_enum = Market(market.upper())
     except ValueError:
         console.print(f"[red]不支持的市场: {market}（可选: us, cn）[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     console.print("[cyan]信号历史缓存状态[/cyan]")
     console.print(f"  策略: {strategy}")

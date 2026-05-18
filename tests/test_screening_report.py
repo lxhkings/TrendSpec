@@ -1,9 +1,8 @@
 """Tests for ScreeningReport: filename + clenow-specific rendering."""
 
-from unittest.mock import patch
-
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 import polars as pl
 import pytest
@@ -42,12 +41,16 @@ class TestCSVFilename:
     def test_csv_filename_distinct_per_strategy(self, tmp_path: Path) -> None:
         sigs = [_buy_signal("AAPL", 100.0)]
         ScreeningReport(
-            signals=sigs, screening_date=date(2026, 5, 18),
-            strategy_name="ma_cross", market="us",
+            signals=sigs,
+            screening_date=date(2026, 5, 18),
+            strategy_name="ma_cross",
+            market="us",
         ).export(tmp_path)
         ScreeningReport(
-            signals=sigs, screening_date=date(2026, 5, 18),
-            strategy_name="clenow_momentum", market="us",
+            signals=sigs,
+            screening_date=date(2026, 5, 18),
+            strategy_name="clenow_momentum",
+            market="us",
         ).export(tmp_path)
         files = sorted(p.name for p in tmp_path.glob("signals_*.csv"))
         assert len(files) == 2
@@ -82,9 +85,18 @@ class TestClenowBuyTableRendering:
         assert len(table.columns) == 12
         col_headers = [c.header for c in table.columns]
         assert col_headers == [
-            "股票代码", "行业", "选股排名", "建议买入价", "初始止损线",
-            "趋势质量 (R²)", "乖离率 (距 MA200)", "回撤 (距 63 日高点)",
-            "放量倍数", "备注/预警", "历史 5d 收益 %", "信号置信度",
+            "股票代码",
+            "行业",
+            "选股排名",
+            "建议买入价",
+            "初始止损线",
+            "趋势质量 (R²)",
+            "乖离率 (距 MA200)",
+            "回撤 (距 63 日高点)",
+            "放量倍数",
+            "备注/预警",
+            "历史 5d 收益 %",
+            "信号置信度",
         ]
 
     def test_non_clenow_buy_table_keeps_6_columns(self) -> None:
@@ -101,8 +113,11 @@ class TestClenowBuyTableRendering:
     def test_clenow_sell_table_uses_default_6_columns(self) -> None:
         """SELL signals still use 6 columns even when strategy_name is clenow_momentum."""
         sell = Signal(
-            direction="SELL", ticker="LITE", instrument_id="LITE",
-            price=900.0, note="below SMA200",
+            direction="SELL",
+            ticker="LITE",
+            instrument_id="LITE",
+            price=900.0,
+            note="below SMA200",
         )
         report = ScreeningReport(
             signals=[sell],
@@ -125,10 +140,13 @@ class TestClenowBuyTableRendering:
         assert rows[0][1] == "-"  # sector column
 
     def test_clenow_alerts_renders_with_prefix(self) -> None:
-        signals = [self._clenow_signal(
-            "CIEN", 591.57,
-            alerts=["均线乖离过大", "量能萎缩"],
-        )]
+        signals = [
+            self._clenow_signal(
+                "CIEN",
+                591.57,
+                alerts=["均线乖离过大", "量能萎缩"],
+            )
+        ]
         report = ScreeningReport(
             signals=signals,
             screening_date=date(2026, 5, 18),
@@ -151,8 +169,10 @@ class TestClenowBuyTableRendering:
 
     def test_clenow_r2_label_buckets(self) -> None:
         report = ScreeningReport(
-            signals=[], screening_date=date(2026, 5, 18),
-            strategy_name="clenow_momentum", market="us",
+            signals=[],
+            screening_date=date(2026, 5, 18),
+            strategy_name="clenow_momentum",
+            market="us",
         )
         for r2, label in [(0.90, "极平稳"), (0.80, "优秀"), (0.70, "良好"), (0.50, "一般")]:
             sig = self._clenow_signal("X", 100.0, r2=r2)
@@ -163,9 +183,14 @@ class TestClenowBuyTableRendering:
 class TestClenowCSVSchema:
     def _clenow_signal(self, ticker: str, price: float, **extras_override) -> Signal:
         extras = {
-            "sector": "Technology", "rank": 1, "r2": 0.85,
-            "deviation_pct": 32.5, "drawdown_pct": -2.1, "vol_mult": 1.5,
-            "stop_loss": price * 0.77, "alerts": [],
+            "sector": "Technology",
+            "rank": 1,
+            "r2": 0.85,
+            "deviation_pct": 32.5,
+            "drawdown_pct": -2.1,
+            "vol_mult": 1.5,
+            "stop_loss": price * 0.77,
+            "alerts": [],
         }
         extras.update(extras_override)
         return _buy_signal(ticker, price, extras)
@@ -181,11 +206,25 @@ class TestClenowCSVSchema:
         out = report.export(tmp_path)
         df = pl.read_csv(out)
         assert df.columns == [
-            "股票代码", "instrument_id", "日期", "方向", "行业",
-            "选股排名", "建议买入价", "初始止损线", "趋势质量 (R²)",
-            "乖离率 (距 MA200)", "回撤 (距 63 日高点)", "放量倍数", "备注/预警",
-            "历史样本数", "历史 1d 均值收益 %", "历史 5d 均值收益 %",
-            "历史 20d 均值收益 %", "历史 5d 胜率 %", "信号置信度",
+            "股票代码",
+            "instrument_id",
+            "日期",
+            "方向",
+            "行业",
+            "选股排名",
+            "建议买入价",
+            "初始止损线",
+            "趋势质量 (R²)",
+            "乖离率 (距 MA200)",
+            "回撤 (距 63 日高点)",
+            "放量倍数",
+            "备注/预警",
+            "历史样本数",
+            "历史 1d 均值收益 %",
+            "历史 5d 均值收益 %",
+            "历史 20d 均值收益 %",
+            "历史 5d 胜率 %",
+            "信号置信度",
         ]
 
     def test_clenow_csv_buy_row_fully_populated(self, tmp_path: Path) -> None:
@@ -209,8 +248,11 @@ class TestClenowCSVSchema:
     def test_clenow_csv_sell_row_blanks_display_cols(self, tmp_path: Path) -> None:
         buy = self._clenow_signal("LITE", 1001.81)
         sell = Signal(
-            direction="SELL", ticker="OLD", instrument_id="OLD",
-            price=50.0, note="below SMA200",
+            direction="SELL",
+            ticker="OLD",
+            instrument_id="OLD",
+            price=50.0,
+            note="below SMA200",
         )
         report = ScreeningReport(
             signals=[buy, sell],
@@ -224,8 +266,15 @@ class TestClenowCSVSchema:
         assert sell_row["股票代码"] == "OLD"
         assert sell_row["建议买入价"] == pytest.approx(50.0)
         assert sell_row["备注/预警"] == "below SMA200"
-        for col in ["行业", "选股排名", "初始止损线", "趋势质量 (R²)",
-                    "乖离率 (距 MA200)", "回撤 (距 63 日高点)", "放量倍数"]:
+        for col in [
+            "行业",
+            "选股排名",
+            "初始止损线",
+            "趋势质量 (R²)",
+            "乖离率 (距 MA200)",
+            "回撤 (距 63 日高点)",
+            "放量倍数",
+        ]:
             v = sell_row[col]
             assert v is None or v == "" or v == 0
 
@@ -240,8 +289,13 @@ class TestClenowCSVSchema:
         out = report.export(tmp_path)
         df = pl.read_csv(out)
         assert df.columns == [
-            "股票代码", "instrument_id", "日期", "方向",
-            "价格", "触发指标值", "备注",
+            "股票代码",
+            "instrument_id",
+            "日期",
+            "方向",
+            "价格",
+            "触发指标值",
+            "备注",
         ]
 
 
@@ -250,9 +304,14 @@ class TestSignalHistoryIntegration:
 
     def _clenow_signal(self, ticker: str, price: float, **extras_override) -> Signal:
         extras = {
-            "sector": "Technology", "rank": 1, "r2": 0.85,
-            "deviation_pct": 32.5, "drawdown_pct": -2.1, "vol_mult": 1.5,
-            "stop_loss": price * 0.77, "alerts": [],
+            "sector": "Technology",
+            "rank": 1,
+            "r2": 0.85,
+            "deviation_pct": 32.5,
+            "drawdown_pct": -2.1,
+            "vol_mult": 1.5,
+            "stop_loss": price * 0.77,
+            "alerts": [],
         }
         extras.update(extras_override)
         return _buy_signal(ticker, price, extras)
@@ -298,14 +357,16 @@ class TestSignalHistoryIntegration:
 
     def test_signal_history_csv_columns_populated(self, tmp_path: Path) -> None:
         """When SignalHistoryStore returns data, new CSV columns are filled."""
-        hist_df = pl.DataFrame({
-            "instrument_id": ["LITE"],
-            "n_signals": [8],
-            "mean_ret_1d": [0.005],
-            "mean_ret_5d": [0.012],
-            "mean_ret_20d": [0.03],
-            "hit_rate_5d": [0.75],
-        })
+        hist_df = pl.DataFrame(
+            {
+                "instrument_id": ["LITE"],
+                "n_signals": [8],
+                "mean_ret_1d": [0.005],
+                "mean_ret_5d": [0.012],
+                "mean_ret_20d": [0.03],
+                "hit_rate_5d": [0.75],
+            }
+        )
 
         signals = [self._clenow_signal("LITE", 1001.81)]
         report = ScreeningReport(
@@ -334,14 +395,16 @@ class TestSignalHistoryIntegration:
 
     def test_signal_history_terminal_table_populated(self) -> None:
         """Terminal table shows historical data and confidence stars."""
-        hist_df = pl.DataFrame({
-            "instrument_id": ["LITE"],
-            "n_signals": [15],
-            "mean_ret_1d": [0.003],
-            "mean_ret_5d": [0.015],
-            "mean_ret_20d": [0.02],
-            "hit_rate_5d": [0.80],
-        })
+        hist_df = pl.DataFrame(
+            {
+                "instrument_id": ["LITE"],
+                "n_signals": [15],
+                "mean_ret_1d": [0.003],
+                "mean_ret_5d": [0.015],
+                "mean_ret_20d": [0.02],
+                "hit_rate_5d": [0.80],
+            }
+        )
 
         signals = [self._clenow_signal("LITE", 1000.0)]
         report = ScreeningReport(
@@ -361,11 +424,13 @@ class TestSignalHistoryIntegration:
 
     def test_signal_history_small_sample_one_star(self) -> None:
         """n_signals < 5 => one star."""
-        hist_df = pl.DataFrame({
-            "instrument_id": ["X"],
-            "n_signals": [3],
-            "mean_ret_5d": [0.01],
-        })
+        hist_df = pl.DataFrame(
+            {
+                "instrument_id": ["X"],
+                "n_signals": [3],
+                "mean_ret_5d": [0.01],
+            }
+        )
         signals = [self._clenow_signal("X", 50.0)]
         report = ScreeningReport(
             signals=signals,
@@ -378,11 +443,13 @@ class TestSignalHistoryIntegration:
 
     def test_signal_history_zero_signals_dash(self) -> None:
         """n_signals == 0 => dash for confidence."""
-        hist_df = pl.DataFrame({
-            "instrument_id": ["Y"],
-            "n_signals": [0],
-            "mean_ret_5d": [0.0],
-        })
+        hist_df = pl.DataFrame(
+            {
+                "instrument_id": ["Y"],
+                "n_signals": [0],
+                "mean_ret_5d": [0.0],
+            }
+        )
         signals = [self._clenow_signal("Y", 50.0)]
         report = ScreeningReport(
             signals=signals,

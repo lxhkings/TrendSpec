@@ -17,7 +17,8 @@ Output schema (per instrument_id):
     last_signal_date, last_built_at
 """
 
-from datetime import date, datetime, timedelta
+import logging
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import polars as pl
@@ -147,10 +148,16 @@ class SignalHistoryBuilder:
         if existing_cache is not None and not existing_cache.is_empty():
             new_instruments = set(agg_df["instrument_id"].to_list())
             old_rows = existing_cache.filter(
-                pl.col("instrument_id").is_in(list(new_instruments)).not_()
+                pl.col("instrument_id").is_in(new_instruments).not_()
             )
-            # Reorder columns to match new aggregate, then concat
-            old_rows = old_rows.select(agg_df.columns)
+            # Keep only columns that exist in both schemas
+            expected_cols = [c for c in agg_df.columns if c in existing_cache.columns]
+            if set(expected_cols) != set(agg_df.columns):
+                logging.getLogger(__name__).warning(
+                    "schema mismatch on incremental merge, extra cols in cache: %s",
+                    set(agg_df.columns) - set(expected_cols),
+                )
+            old_rows = old_rows.select(expected_cols)
             agg_df = pl.concat([old_rows, agg_df])
 
         # Step 5: Save
@@ -226,7 +233,7 @@ class SignalHistoryBuilder:
                             "rank": float(rank),
                         })
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).warning("screen failed on %s, skipping", day)
                 progress.advance(task)
 
         return records
@@ -327,7 +334,8 @@ class SignalHistoryBuilder:
 
         agg = rets_df.group_by("instrument_id").agg(agg_exprs)
 
-        now = datetime.now()
+        # Cast to naive to stay compatible with existing cache files
+        now = datetime.now(timezone.utc).replace(tzinfo=None)  # noqa: UP017
         agg = agg.with_columns(pl.lit(now).alias("last_built_at"))
         agg = agg.filter(pl.col("n_signals") >= 1)
         agg = agg.sort("n_signals", descending=True)

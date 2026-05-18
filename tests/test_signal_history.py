@@ -353,7 +353,6 @@ class TestSignalHistoryBuilder:
 
     def test_aggregate_empty_result(self, builder):
         """_aggregate_per_instrument on empty input returns empty."""
-        empty = builder._empty_aggregate()
         rets_df = pl.DataFrame({
             "signal_date": pl.Series([], dtype=pl.Date),
             "instrument_id": pl.Series([], dtype=pl.String),
