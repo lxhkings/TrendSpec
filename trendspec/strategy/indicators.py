@@ -860,6 +860,40 @@ def rs_rating(df: pl.DataFrame, period: int = 252) -> pl.DataFrame:
     ).drop("_rs_raw")
 
 
+@register_indicator("ADR_PCT")
+def adr_pct(df: pl.DataFrame, period: int = 20) -> pl.DataFrame:
+    """
+    Average Daily Range Percentage.
+
+    Per-bar daily range %  = (high - low) / close.
+    ADR_PCT_{period}       = rolling_mean(daily_range_pct, period) per instrument.
+
+    Used by Qullamaggie-style momentum strategies to filter for high-volatility
+    stocks suitable for breakout trading (typical threshold: ADR_PCT >= 0.04).
+
+    Args:
+        df: DataFrame with OHLCV data
+        period: Rolling window in trading days (default: 20)
+
+    Returns:
+        DataFrame with ADR_PCT_{period} column added
+    """
+    col_name = f"ADR_PCT_{period}"
+
+    df_sorted = df.sort("date")
+
+    df_range = df_sorted.with_columns(
+        ((pl.col("high") - pl.col("low")) / pl.col("close")).alias("_daily_range_pct")
+    )
+
+    return df_range.with_columns(
+        pl.col("_daily_range_pct")
+        .rolling_mean(window_size=period)
+        .over("instrument_id")
+        .alias(col_name)
+    ).drop("_daily_range_pct")
+
+
 # =============================================================================
 # Utility Functions
 # =============================================================================

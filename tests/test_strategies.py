@@ -763,6 +763,57 @@ class TestMinDailyReturnIndicator:
         assert (post_gap["MIN_DAILY_RETURN_90"].drop_nulls() < -0.15).any()
 
 
+class TestAdrPctIndicator:
+    def test_registered(self) -> None:
+        from trendspec.strategy.indicators import list_indicators
+        assert "ADR_PCT" in list_indicators()
+
+    def test_column_added(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(60)
+        result = compute_indicator(df, "ADR_PCT", period=20)
+        assert "ADR_PCT_20" in result.columns
+
+    def test_null_before_lookback(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(60)
+        result = compute_indicator(df, "ADR_PCT", period=20)
+        aaa = result.filter(pl.col("instrument_id") == "AAA").sort("date")
+        # First 19 rows should be null
+        assert aaa["ADR_PCT_20"][:19].is_null().all()
+        # Row at index 19 should be non-null
+        assert aaa["ADR_PCT_20"][19] is not None
+
+    def test_known_values(self) -> None:
+        """A constant 5% daily H-L range should produce ADR_PCT approx 0.05."""
+        from trendspec.strategy.indicators import compute_indicator
+        rows = []
+        for i in range(40):
+            close = 100.0
+            rows.append({
+                "instrument_id": "X", "ticker": "X",
+                "date": date(2023, 1, 1) + timedelta(days=i),
+                "open": close, "high": close * 1.025, "low": close * 0.975,
+                "close": close, "volume": 1_000_000, "adj_factor": 1.0,
+            })
+        df = pl.DataFrame(rows)
+        result = compute_indicator(df, "ADR_PCT", period=20)
+        last_val = result.sort("date").tail(1)["ADR_PCT_20"].item()
+        # (high - low) / close = (102.5 - 97.5) / 100 = 0.05
+        assert abs(last_val - 0.05) < 1e-9
+
+    def test_per_instrument_independent(self) -> None:
+        """Two instruments are computed independently (no leakage)."""
+        from trendspec.strategy.indicators import compute_indicator
+        df = _make_price_df(60)
+        result = compute_indicator(df, "ADR_PCT", period=20)
+        aaa = result.filter(pl.col("instrument_id") == "AAA").sort("date")
+        bbb = result.filter(pl.col("instrument_id") == "BBB").sort("date")
+        # Both should have null prefix of 19 rows
+        assert aaa["ADR_PCT_20"][:19].is_null().all()
+        assert bbb["ADR_PCT_20"][:19].is_null().all()
+
+
 # =============================================================================
 # ClenowMomentumStrategy Tests
 # =============================================================================
