@@ -506,3 +506,72 @@ class TestStrategyLifecycle:
         signals = ctx.pending_signals()
         # Should have generated a signal (price above MA)
         assert len(signals) >= 0  # May or may not have signal depending on MA value
+
+
+class TestHHIndicator:
+    """Highest High (rolling max of close) indicator."""
+
+    def _sample_df(self) -> pl.DataFrame:
+        from datetime import date
+        return pl.DataFrame({
+            "instrument_id": ["A"] * 5,
+            "ticker": ["A"] * 5,
+            "date": [date(2024, 1, i) for i in range(1, 6)],
+            "close": [10.0, 12.0, 11.0, 15.0, 14.0],
+            "open": [10.0] * 5, "high": [10.0] * 5,
+            "low": [10.0] * 5, "volume": [1000] * 5, "adj_factor": [1.0] * 5,
+        })
+
+    def test_hh_period_3(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = self._sample_df()
+        out = compute_indicator(df, "HH", period=3)
+        vals = out.sort("date")["HH_3"].to_list()
+        # Window 3 days: day 1/2 insufficient → None; day 3 max(10,12,11)=12;
+        # day 4 max(12,11,15)=15; day 5 max(11,15,14)=15
+        assert vals == [None, None, 12.0, 15.0, 15.0]
+
+    def test_hh_per_instrument_isolated(self) -> None:
+        """HH computed per instrument_id group, not across instruments."""
+        from datetime import date
+        from trendspec.strategy.indicators import compute_indicator
+        df = pl.DataFrame({
+            "instrument_id": ["A", "A", "A", "B", "B", "B"],
+            "ticker": ["A", "A", "A", "B", "B", "B"],
+            "date": [date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)] * 2,
+            "close": [10.0, 12.0, 11.0, 100.0, 90.0, 95.0],
+            "open": [0.0] * 6, "high": [0.0] * 6,
+            "low": [0.0] * 6, "volume": [0] * 6, "adj_factor": [1.0] * 6,
+        })
+        out = compute_indicator(df, "HH", period=2).sort(["instrument_id", "date"])
+        a_vals = out.filter(pl.col("instrument_id") == "A")["HH_2"].to_list()
+        b_vals = out.filter(pl.col("instrument_id") == "B")["HH_2"].to_list()
+        assert a_vals == [None, 12.0, 12.0]
+        assert b_vals == [None, 100.0, 95.0]
+
+# =============================================================================
+# SMA_VOLUME Indicator Tests
+# =============================================================================
+
+
+class TestSMAVolumeIndicator:
+    """SMA of volume column."""
+
+    def test_sma_volume_period_3(self) -> None:
+        from trendspec.strategy.indicators import compute_indicator
+        df = pl.DataFrame({
+            "instrument_id": ["A"] * 5,
+            "date": [date(2024, 1, i) for i in range(1, 6)],
+            "close": [10.0] * 5, "open": [10.0] * 5,
+            "high": [10.0] * 5, "low": [10.0] * 5,
+            "volume": [100, 200, 300, 400, 500],
+            "adj_factor": [1.0] * 5,
+        })
+        out = compute_indicator(df, "SMA_VOLUME", period=3).sort("date")
+        vals = out["SMA_VOLUME_3"].to_list()
+        # Day 1/2 insufficient; day 3 (100+200+300)/3=200; day 4 300; day 5 400
+        assert vals[0] is None
+        assert vals[1] is None
+        assert vals[2] == pytest.approx(200.0)
+        assert vals[3] == pytest.approx(300.0)
+        assert vals[4] == pytest.approx(400.0)

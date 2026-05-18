@@ -685,18 +685,24 @@ def rolling_min(df: pl.DataFrame, period: int = 20, column: str = "low") -> pl.D
 
 
 @register_indicator("HH")
-def highest_high(df: pl.DataFrame, period: int = 20) -> pl.DataFrame:
+def highest_high(df: pl.DataFrame, period: int = 63) -> pl.DataFrame:
     """
-    Highest High in period.
+    Rolling highest close over `period` days, per instrument.
 
     Args:
         df: DataFrame with OHLCV data
-        period: Lookback period
+        period: Lookback window
 
     Returns:
-        DataFrame with HH column added
+        DataFrame with HH_{period} column added (None for first period-1 rows)
     """
-    return rolling_max(df, period, "high").rename({f"MAX_{period}": f"HH_{period}"})
+    col_name = f"HH_{period}"
+    return df.sort("date").with_columns(
+        pl.col("close")
+        .rolling_max(window_size=period)
+        .over("instrument_id")
+        .alias(col_name)
+    )
 
 
 @register_indicator("LL")
@@ -892,6 +898,27 @@ def adr_pct(df: pl.DataFrame, period: int = 20) -> pl.DataFrame:
         .over("instrument_id")
         .alias(col_name)
     ).drop("_daily_range_pct")
+
+
+@register_indicator("SMA_VOLUME")
+def sma_volume(df: pl.DataFrame, period: int = 50) -> pl.DataFrame:
+    """
+    Simple Moving Average of volume column, per instrument.
+
+    Args:
+        df: DataFrame with OHLCV data
+        period: Lookback window
+
+    Returns:
+        DataFrame with SMA_VOLUME_{period} column added
+    """
+    col_name = f"SMA_VOLUME_{period}"
+    return df.sort("date").with_columns(
+        pl.col("volume")
+        .rolling_mean(window_size=period)
+        .over("instrument_id")
+        .alias(col_name)
+    )
 
 
 # =============================================================================
