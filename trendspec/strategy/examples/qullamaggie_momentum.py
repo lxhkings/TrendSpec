@@ -177,9 +177,7 @@ class QullamaggieMomentumStrategy(BaseStrategy):
     # Entry helpers
     # =========================================================================
 
-    def _passes_universe_filter(
-        self, ctx: StrategyContext, iid: str, d: DateType
-    ) -> bool:
+    def _passes_universe_filter(self, ctx: StrategyContext, iid: str, d: DateType) -> bool:
         close = ctx.close
         volume = ctx.volume
 
@@ -204,9 +202,7 @@ class QullamaggieMomentumStrategy(BaseStrategy):
             return False
         return True
 
-    def _evaluate_consolidation(
-        self, ctx: StrategyContext, iid: str, d: DateType
-    ) -> dict | None:
+    def _evaluate_consolidation(self, ctx: StrategyContext, iid: str, d: DateType) -> dict | None:
         """
         Inspect the prior `consolidation_days` bars (excluding today).
 
@@ -275,11 +271,17 @@ class QullamaggieMomentumStrategy(BaseStrategy):
         """
         Per-bar exit handler for a held position.
 
-        Order of evaluation each bar:
+        Evaluation order per bar:
           1. Increment bars_since_entry.
-          2. If bars_since_entry >= partial_sell_after_days and not half_sold yet,
-             emit a SELL for partial_sell_fraction of remaining shares.
-          3. (Task 7 will add trailing exit + stop-loss here.)
+          2. Hard stop: if low <= stop, full SELL and drop state.
+          3. Partial sell window: if not yet half_sold and
+             bars_since_entry >= partial_sell_after_days, emit SELL for
+             partial_sell_fraction of remaining shares.
+          4. Trailing exit: if close < MA(trail_ma_period), full SELL of remainder
+             and drop state.
+
+        Steps 3 and 4 may both fire on the same bar (partial first, then trail);
+        engine receives two SELL signals.
         """
         st = self._position_state.get(iid)
         if st is None:
@@ -287,10 +289,21 @@ class QullamaggieMomentumStrategy(BaseStrategy):
 
         st["bars_since_entry"] += 1
 
-        if (
-            not st["half_sold"]
-            and st["bars_since_entry"] >= self._partial_sell_after_days
-        ):
+        # 2. Hard stop
+        if ctx.low <= st["stop"]:
+            sig = ctx.signal(
+                "SELL",
+                iid,
+                ctx.close,
+                trigger_value=st["stop"],
+                note=f"Q stop hit: low={ctx.low:.2f} <= stop={st['stop']:.2f}",
+            )
+            sig.shares = float(st["shares"])
+            del self._position_state[iid]
+            return
+
+        # 3. Partial sell
+        if not st["half_sold"] and st["bars_since_entry"] >= self._partial_sell_after_days:
             sell_qty = int(st["shares"] * self._partial_sell_fraction)
             if sell_qty >= 1:
                 sig = ctx.signal(
@@ -298,20 +311,35 @@ class QullamaggieMomentumStrategy(BaseStrategy):
                     iid,
                     ctx.close,
                     trigger_value=float(st["bars_since_entry"]),
-                    note=f"Q partial 1/{int(1/self._partial_sell_fraction)}",
+                    note=f"Q partial 1/{int(1 / self._partial_sell_fraction)}",
                 )
                 sig.shares = float(sell_qty)
                 st["shares"] -= sell_qty
                 st["half_sold"] = True
+
+        # 4. Trailing exit
+        if st["shares"] <= 0:
+            del self._position_state[iid]
+            return
+
+        trail_ma = ctx.indicator_value("MA", iid, d, period=self._trail_ma_period)
+        if trail_ma is not None and ctx.close < trail_ma:
+            sig = ctx.signal(
+                "SELL",
+                iid,
+                ctx.close,
+                trigger_value=trail_ma,
+                note=f"Q trail: close={ctx.close:.2f} < MA{self._trail_ma_period}={trail_ma:.2f}",
+            )
+            sig.shares = float(st["shares"])
+            del self._position_state[iid]
 
     # =========================================================================
     # Utilities
     # =========================================================================
 
     def _get_close(self, iid: str, d: DateType) -> float | None:
-        rows = self._full_data.filter(
-            (pl.col("instrument_id") == iid) & (pl.col("date") == d)
-        )
+        rows = self._full_data.filter((pl.col("instrument_id") == iid) & (pl.col("date") == d))
         if rows.is_empty():
             return None
         return float(rows["close"].item())

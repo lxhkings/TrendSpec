@@ -1366,6 +1366,104 @@ class TestQullamaggieMomentumEntry:
         all_signals = [s for _, sigs in signals_per_date for s in sigs]
         assert [s for s in all_signals if s.is_buy()] == []
 
+    def test_partial_then_full_exit_after_drop(self) -> None:
+        """
+        After the partial sell on bar 4, a big drop bar exits the rest.
+        """
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        df = self._build_breakout_with_holding_period(hold_days=4)
+        d_last = df["date"].max()
+        last_close = df.tail(1)["close"].item()
+        df = pl.concat([
+            df,
+            pl.DataFrame([{
+                "instrument_id": "BO", "ticker": "BO",
+                "date": d_last + timedelta(days=1),
+                "open": last_close,
+                "high": last_close,
+                "low": last_close * 0.80,
+                "close": last_close * 0.82,
+                "volume": 3_000_000, "adj_factor": 1.0,
+            }]),
+        ])
+        strategy = QullamaggieMomentumStrategy()
+        signals_per_date = self._drive_with_engine_sim(df, strategy)
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+
+        buys = [s for s in all_signals if s.is_buy()]
+        sells = [s for s in all_signals if not s.is_buy()]
+        assert len(buys) == 1, f"Expected 1 BUY, got {buys}"
+        assert len(sells) == 2, (
+            f"Expected 2 SELLs (partial on bar 4 + full exit on drop bar), got {sells}"
+        )
+        total_sold = sum(int(s.shares) for s in sells)
+        assert total_sold == int(buys[0].shares)
+
+    def test_trailing_exit_fires_via_ma_break(self) -> None:
+        """
+        Direct trailing-MA exit: close drops below MA10 while staying above the stop.
+        """
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        df = self._build_breakout_with_holding_period(hold_days=4)
+        d_last = df["date"].max()
+        last_close = df.tail(1)["close"].item()
+
+        gentle = []
+        for i in range(1, 7):
+            close_i = last_close * (1 - 0.008 * i)
+            gentle.append({
+                "instrument_id": "BO", "ticker": "BO",
+                "date": d_last + timedelta(days=i),
+                "open": close_i * 1.001,
+                "high": close_i * 1.003,
+                "low": close_i * 0.997,
+                "close": close_i,
+                "volume": 2_000_000, "adj_factor": 1.0,
+            })
+        df = pl.concat([df, pl.DataFrame(gentle)])
+
+        strategy = QullamaggieMomentumStrategy()
+        signals_per_date = self._drive_with_engine_sim(df, strategy)
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+
+        sells = [s for s in all_signals if not s.is_buy()]
+        trail_sells = [s for s in sells if s.note and "Q trail" in s.note]
+        assert trail_sells, (
+            f"Expected a trailing-branch SELL, got: {[s.note for s in sells]}"
+        )
+
+    def test_hard_stop_hit_exits_full_position(self) -> None:
+        """If low <= consolidation_low (stop), exit the full remaining position."""
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        df = self._build_breakout_df()
+        d_last = df["date"].max()
+        cons_low = float(df.tail(6).head(5)["low"].min())
+        df = pl.concat([
+            df,
+            pl.DataFrame([{
+                "instrument_id": "BO", "ticker": "BO",
+                "date": d_last + timedelta(days=1),
+                "open": cons_low * 1.02,
+                "high": cons_low * 1.03,
+                "low": cons_low * 0.95,
+                "close": cons_low * 0.96,
+                "volume": 3_000_000, "adj_factor": 1.0,
+            }]),
+        ])
+        strategy = QullamaggieMomentumStrategy()
+        signals_per_date = self._drive_with_engine_sim(df, strategy)
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+
+        buys = [s for s in all_signals if s.is_buy()]
+        sells = [s for s in all_signals if not s.is_buy()]
+        assert len(buys) == 1
+        assert len(sells) >= 1
+        total_sold = sum(int(s.shares) for s in sells)
+        assert total_sold == int(buys[0].shares)
+
 
 class TestQullamaggieMomentumInit:
     def test_strategy_registration(self) -> None:
