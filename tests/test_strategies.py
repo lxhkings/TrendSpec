@@ -937,6 +937,24 @@ class TestClenowMomentumStrategySignals:
         assert any("ATR" in k for k in cache_keys)
         assert any("MA" in k for k in cache_keys)
 
+    def test_init_precomputes_display_indicators(self) -> None:
+        """init() also precomputes HH, SMA_VOLUME, CLENOW_R2 for display fields."""
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        from trendspec.strategy.context import StrategyContext
+
+        df = self._make_trending_df(300)
+        strategy = ClenowMomentumStrategy(params={
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+            "drawdown_period": 20, "volume_avg_period": 20,
+        })
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        strategy.init(ctx)
+
+        cache_keys = list(ctx._indicator_cache.keys())
+        assert any("HH" in k for k in cache_keys), f"HH not precomputed: {cache_keys}"
+        assert any("SMA_VOLUME" in k for k in cache_keys), f"SMA_VOLUME not precomputed: {cache_keys}"
+        assert any("CLENOW_R2" in k for k in cache_keys), f"CLENOW_R2 not precomputed: {cache_keys}"
+
     def test_next_generates_buy_with_shares_on_rebalance_day(self) -> None:
         """On a rebalance day, strategy generates BUY signals with positive shares."""
         from trendspec.strategy.examples import ClenowMomentumStrategy

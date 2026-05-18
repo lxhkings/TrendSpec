@@ -124,6 +124,9 @@ class ClenowMomentumStrategy(BaseStrategy):
         ctx.precompute_indicator("ATR", period=atr_period)
         ctx.precompute_indicator("CLENOW_SCORE", period=score_period)
         ctx.precompute_indicator("MIN_DAILY_RETURN", period=gap_period)
+        ctx.precompute_indicator("HH", period=self.get_param("drawdown_period", 63))
+        ctx.precompute_indicator("SMA_VOLUME", period=self.get_param("volume_avg_period", 50))
+        ctx.precompute_indicator("CLENOW_R2", period=score_period)
 
         self._sma_period = sma_period
         self._atr_period = atr_period
@@ -133,6 +136,13 @@ class ClenowMomentumStrategy(BaseStrategy):
         self._rebalance_weekday = self.get_param("rebalance_weekday", 2)
         self._top_pct = self.get_param("top_pct", 0.8)
         self._max_gap = self.get_param("max_gap", -0.15)
+        self._drawdown_period = self.get_param("drawdown_period", 63)
+        self._volume_avg_period = self.get_param("volume_avg_period", 50)
+        self._atr_stop_k = self.get_param("atr_stop_k", 3.0)
+        self._warn_deviation_max = self.get_param("warn_deviation_max", 40.0)
+        self._warn_vol_mult_low = self.get_param("warn_vol_mult_low", 1.0)
+        self._warn_vol_mult_high = self.get_param("warn_vol_mult_high", 3.0)
+        self._warn_drawdown_max = self.get_param("warn_drawdown_max", -15.0)
 
         self._last_rebalance_date: DateType | None = None
         self._full_data = ctx._data
