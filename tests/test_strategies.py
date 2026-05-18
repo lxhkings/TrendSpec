@@ -1191,6 +1191,81 @@ class TestQullamaggieMomentumEntry:
         assert any(s.is_buy() for s in last_day_signals), \
             f"BUY expected on breakout day {breakout_date}, signals={last_day_signals}"
 
+    def test_no_buy_when_below_ma_long(self) -> None:
+        """Slow downtrend keeps close below MA50 -> no BUY."""
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        rows = []
+        d0 = date(2023, 1, 2)
+        for i in range(95):
+            close = 100.0 * (0.998 ** i)
+            rows.append({
+                "instrument_id": "DN", "ticker": "DN",
+                "date": d0 + timedelta(days=i),
+                "open": close, "high": close * 1.03, "low": close * 0.97,
+                "close": close, "volume": 2_000_000, "adj_factor": 1.0,
+            })
+        last = rows[-1]["close"]
+        rows.append({
+            "instrument_id": "DN", "ticker": "DN",
+            "date": d0 + timedelta(days=95),
+            "open": last, "high": last * 1.06, "low": last * 0.98,
+            "close": last * 1.05, "volume": 5_000_000, "adj_factor": 1.0,
+        })
+        df = pl.DataFrame(rows)
+        strategy = QullamaggieMomentumStrategy()
+        _ctx, signals_per_date = self._run_through_bars(df, strategy)
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+        assert [s for s in all_signals if s.is_buy()] == []
+
+    def test_no_buy_when_low_adr(self) -> None:
+        """Strong uptrend but high-low band tiny -> ADR_PCT < 0.04 -> no BUY."""
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        rows = []
+        d0 = date(2023, 1, 2)
+        price = 50.0
+        for i in range(95):
+            close = price * (1.006 ** i)
+            rows.append({
+                "instrument_id": "LV", "ticker": "LV",
+                "date": d0 + timedelta(days=i),
+                "open": close * 0.999,
+                "high": close * 1.005,
+                "low": close * 0.995,
+                "close": close,
+                "volume": 2_000_000, "adj_factor": 1.0,
+            })
+        last = rows[-1]["close"]
+        rows.append({
+            "instrument_id": "LV", "ticker": "LV",
+            "date": d0 + timedelta(days=95),
+            "open": last, "high": last * 1.06, "low": last * 0.995,
+            "close": last * 1.05, "volume": 5_000_000, "adj_factor": 1.0,
+        })
+        df = pl.DataFrame(rows)
+        strategy = QullamaggieMomentumStrategy()
+        _ctx, signals_per_date = self._run_through_bars(df, strategy)
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+        assert [s for s in all_signals if s.is_buy()] == []
+
+    def test_no_buy_when_breakout_low_volume(self) -> None:
+        """Otherwise valid breakout, but breakout-day volume < 1.5x VMA20 -> no BUY."""
+        from trendspec.strategy.examples import QullamaggieMomentumStrategy
+
+        df = self._build_breakout_df()
+        last_idx = df.height - 1
+        df = df.with_columns(
+            pl.when(pl.int_range(0, df.height) == last_idx)
+              .then(pl.lit(1_000_000))
+              .otherwise(pl.col("volume"))
+              .alias("volume")
+        )
+        strategy = QullamaggieMomentumStrategy()
+        _ctx, signals_per_date = self._run_through_bars(df, strategy)
+        all_signals = [s for _, sigs in signals_per_date for s in sigs]
+        assert [s for s in all_signals if s.is_buy()] == []
+
 
 class TestQullamaggieMomentumInit:
     def test_strategy_registration(self) -> None:
