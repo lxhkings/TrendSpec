@@ -105,14 +105,15 @@ class SignalHistoryBuilder:
 
         # Incremental: check existing cache
         incremental_start = None
+        existing_cache = None
         if not rebuild:
-            existing = SignalHistoryStore.load(strategy_name, market)
-            if existing is not None and not existing.is_empty():
-                last_dt = existing["last_signal_date"].max()
+            existing_cache = SignalHistoryStore.load(strategy_name, market)
+            if existing_cache is not None and not existing_cache.is_empty():
+                last_dt = existing_cache["last_signal_date"].max()
                 if last_dt is not None:
                     if hasattr(last_dt, "date"):
                         last_dt = last_dt.date()
-                    incremental_start = last_dt
+                    incremental_start = last_dt + timedelta(days=1)
 
         if incremental_start is not None:
             start = incremental_start
@@ -142,7 +143,17 @@ class SignalHistoryBuilder:
         # Step 3: Aggregate
         agg_df = self._aggregate_per_instrument(rets_df)
 
-        # Step 4: Save
+        # Step 4: Merge with existing cache if incremental update
+        if existing_cache is not None and not existing_cache.is_empty():
+            new_instruments = set(agg_df["instrument_id"].to_list())
+            old_rows = existing_cache.filter(
+                pl.col("instrument_id").is_in(list(new_instruments)).not_()
+            )
+            # Reorder columns to match new aggregate, then concat
+            old_rows = old_rows.select(agg_df.columns)
+            agg_df = pl.concat([old_rows, agg_df])
+
+        # Step 5: Save
         SignalHistoryStore.save(agg_df, strategy_name, market)
 
         return agg_df
@@ -299,7 +310,7 @@ class SignalHistoryBuilder:
         ret_cols = [f"ret_{n}d" for n in _FORWARD_DAYS]
 
         agg_exprs = [
-            pl.len().alias("n_signals"),
+            pl.len().cast(pl.Int64).alias("n_signals"),
             pl.col("signal_date").max().alias("last_signal_date"),
         ]
 
@@ -328,7 +339,7 @@ class SignalHistoryBuilder:
         """Return an empty DataFrame with the expected schema."""
         return pl.DataFrame({
             "instrument_id": pl.Series([], dtype=pl.String),
-            "n_signals": pl.Series([], dtype=pl.UInt32),
+            "n_signals": pl.Series([], dtype=pl.Int64),
             "mean_ret_1d": pl.Series([], dtype=pl.Float64),
             "mean_ret_3d": pl.Series([], dtype=pl.Float64),
             "mean_ret_5d": pl.Series([], dtype=pl.Float64),
