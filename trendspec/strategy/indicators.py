@@ -18,12 +18,12 @@ Supported indicators:
 - Bollinger Bands
 """
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import polars as pl
 
 from trendspec.data.schema import REQUIRED_COLUMNS
-
 
 # =============================================================================
 # Indicator Registry
@@ -919,6 +919,53 @@ def sma_volume(df: pl.DataFrame, period: int = 50) -> pl.DataFrame:
         .over("instrument_id")
         .alias(col_name)
     )
+
+
+@register_indicator("CLENOW_R2")
+def clenow_r2(df: pl.DataFrame, period: int = 90) -> pl.DataFrame:
+    """
+    Rolling R² of ln(close) vs day-index linear regression.
+
+    Independent from CLENOW_SCORE to keep indicator registry single-output.
+
+    Args:
+        df: DataFrame with OHLCV data
+        period: Regression lookback window
+
+    Returns:
+        DataFrame with CLENOW_R2_{period} column added (None for first period-1 rows
+        and for windows containing non-positive prices)
+    """
+    import numpy as np
+    from scipy import stats
+
+    col_name = f"CLENOW_R2_{period}"
+    x = np.arange(period, dtype=float)
+
+    all_groups: list[pl.DataFrame] = []
+    for (_iid,), group in df.sort(["instrument_id", "date"]).group_by(
+        ["instrument_id"], maintain_order=True
+    ):
+        closes = group["close"].to_numpy()
+        n = len(closes)
+        r2s: list[float | None] = [None] * n
+
+        for i in range(period - 1, n):
+            window = closes[i - period + 1 : i + 1]
+            if np.any(window <= 0):
+                continue
+            y = np.log(window)
+            fit = stats.linregress(x, y)
+            r2s[i] = float(fit.rvalue ** 2)
+
+        all_groups.append(
+            group.with_columns(pl.Series(col_name, r2s, dtype=pl.Float64))
+        )
+
+    if not all_groups:
+        return df.with_columns(pl.lit(None).cast(pl.Float64).alias(col_name))
+
+    return pl.concat(all_groups).sort(["instrument_id", "date"])
 
 
 # =============================================================================

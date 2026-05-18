@@ -8,24 +8,23 @@ Tests:
 - Indicator computation
 """
 
-from datetime import date
 from dataclasses import dataclass
+from datetime import date
 
 import polars as pl
 import pytest
 
+from trendspec.data.markets import Market
 from trendspec.strategy import (
     BaseStrategy,
-    StrategyContext,
     Signal,
     SignalBatch,
+    StrategyContext,
     StrategyParams,
     compute_indicator,
     list_indicators,
 )
-from trendspec.strategy.indicators import ma, ema, rsi, macd, atr, bollinger_bands
-from trendspec.data.markets import Market
-
+from trendspec.strategy.indicators import atr, bollinger_bands, ema, ma, macd, rsi
 
 # =============================================================================
 # Signal Tests
@@ -534,6 +533,7 @@ class TestHHIndicator:
     def test_hh_per_instrument_isolated(self) -> None:
         """HH computed per instrument_id group, not across instruments."""
         from datetime import date
+
         from trendspec.strategy.indicators import compute_indicator
         df = pl.DataFrame({
             "instrument_id": ["A", "A", "A", "B", "B", "B"],
@@ -576,3 +576,64 @@ class TestSMAVolumeIndicator:
         assert vals[2] == pytest.approx(200.0)
         assert vals[3] == pytest.approx(300.0)
         assert vals[4] == pytest.approx(400.0)
+
+
+# =============================================================================
+# CLENOW_R2 Indicator Tests
+# =============================================================================
+
+
+class TestClenowR2Indicator:
+    """Standalone R² from log-price linear regression."""
+
+    def test_clenow_r2_range(self) -> None:
+        """R² ∈ [0, 1] for any non-degenerate window."""
+        from datetime import timedelta
+
+        import numpy as np
+
+        from trendspec.strategy.indicators import compute_indicator
+
+        rng = np.random.default_rng(42)
+        prices = [100.0]
+        for _ in range(99):
+            prices.append(max(1.0, prices[-1] * (1 + 0.002 + rng.normal(0, 0.01))))
+
+        df = pl.DataFrame({
+            "instrument_id": ["A"] * 100,
+            "ticker": ["A"] * 100,
+            "date": [date(2024, 1, 1) + timedelta(days=i) for i in range(100)],
+            "close": prices,
+            "open": prices, "high": prices, "low": prices,
+            "volume": [1000] * 100, "adj_factor": [1.0] * 100,
+        })
+        out = compute_indicator(df, "CLENOW_R2", period=60).sort("date")
+        col = out["CLENOW_R2_60"].to_list()
+        # First period-1 rows are None
+        assert all(v is None for v in col[:59])
+        # Subsequent rows ∈ [0, 1]
+        for v in col[59:]:
+            assert v is not None
+            assert 0.0 <= v <= 1.0
+
+    def test_clenow_r2_perfect_log_trend(self) -> None:
+        """Perfect log-linear sequence → R² ≈ 1.0"""
+        from datetime import timedelta
+
+        import numpy as np
+
+        from trendspec.strategy.indicators import compute_indicator
+
+        # ln(price) = a + b*i  →  price = exp(a) * exp(b*i)
+        prices = [float(np.exp(0.01 * i)) for i in range(60)]
+        df = pl.DataFrame({
+            "instrument_id": ["A"] * 60,
+            "ticker": ["A"] * 60,
+            "date": [date(2024, 1, 1) + timedelta(days=i) for i in range(60)],
+            "close": prices,
+            "open": prices, "high": prices, "low": prices,
+            "volume": [1000] * 60, "adj_factor": [1.0] * 60,
+        })
+        out = compute_indicator(df, "CLENOW_R2", period=30).sort("date")
+        last_r2 = out["CLENOW_R2_30"].to_list()[-1]
+        assert last_r2 == pytest.approx(1.0, abs=1e-6)
