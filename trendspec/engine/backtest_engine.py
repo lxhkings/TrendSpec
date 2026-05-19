@@ -302,15 +302,16 @@ class BacktestEngine(BaseEngine):
         # Clear signals from previous day
         ctx.clear_signals()
 
+        # Pre-build dict for O(1) per-instrument lookup
+        day_rows = {r["instrument_id"]: r for r in day_data.iter_rows(named=True)}
+
         # Call strategy.next() for each instrument in universe
         for instrument_id in universe_instruments:
-            # Check if instrument has data for this date
-            instrument_data = day_data.filter(pl.col("instrument_id") == instrument_id)
-            if instrument_data.is_empty():
+            row = day_rows.get(instrument_id)
+            if row is None:
                 continue
 
             # Get ticker (from data)
-            row = instrument_data.row(0, named=True)
             ticker = row.get("ticker", instrument_id)
 
             # Update context for this instrument

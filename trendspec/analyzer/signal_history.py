@@ -20,9 +20,10 @@ Output schema (per instrument_id):
 import logging
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import polars as pl
-from rich.progress import BarColumn, Progress, TextColumn
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from trendspec.config.settings import get_settings
 from trendspec.data.markets import Market
@@ -51,6 +52,8 @@ class _SignalReplayEngine(BacktestEngine):
     def __init__(self, config: EngineConfig) -> None:
         super().__init__(config)
         self._dated_buy_signals: list[dict] = []
+        self._progress: Any = None
+        self._progress_task: Any = None
 
     def create_context(self) -> StrategyContext:
         ctx = super().create_context()
@@ -68,6 +71,8 @@ class _SignalReplayEngine(BacktestEngine):
                     "instrument_id": sig.instrument_id,
                     "rank": rank,
                 })
+        if self._progress is not None and self._progress_task is not None:
+            self._progress.advance(self._progress_task)
 
 
 # =============================================================================
@@ -324,7 +329,20 @@ class SignalHistoryBuilder:
             risk_pipeline=RiskPipeline([]),
         )
         engine = _SignalReplayEngine(config)
-        engine.run(strategy_class)
+        n_days = len(engine.get_trading_days())
+
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+        )
+        with progress:
+            task = progress.add_task(f"[1/2] 回放信号 ({start}→{end})", total=n_days)
+            engine._progress = progress
+            engine._progress_task = task
+            engine.run(strategy_class)
 
         log = logging.getLogger(__name__)
         log.info(
@@ -348,14 +366,16 @@ class SignalHistoryBuilder:
         unique_instruments = signal_df["instrument_id"].unique().to_list()
 
         progress = Progress(
+            SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
         )
 
         with progress:
             task = progress.add_task(
-                "Computing forward returns",
+                f"[2/2] 计算远期收益 ({len(unique_instruments)} 支)",
                 total=len(unique_instruments),
             )
             for inst_id in unique_instruments:

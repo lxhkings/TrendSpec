@@ -80,6 +80,8 @@ class StrategyContext:
 
         # Precomputed indicator cache (populated in init())
         self._indicator_cache: dict[str, pl.DataFrame] = {}
+        # Fast O(1) lookup: {cache_key: {(instrument_id, date): value}}
+        self._indicator_fast: dict[str, dict[tuple, float]] = {}
 
         # PIT access
         self._sector_index: SectorIndex | None = None
@@ -374,6 +376,18 @@ class StrategyContext:
         result = compute_indicator(target_data, name, **params)
         cache_key = f"{name}_{params}"
         self._indicator_cache[cache_key] = result
+
+        # Build fast O(1) lookup dict from the indicator column
+        _col = f"{name}_{params.get('period', '')}" if params else name
+        if _col not in result.columns:
+            _col = name
+        if _col in result.columns:
+            self._indicator_fast[cache_key] = {
+                (inst_id, dt): val
+                for inst_id, dt, val in result.select(["instrument_id", "date", _col]).iter_rows()
+                if val is not None
+            }
+
         return result
 
     def indicator_value(
@@ -411,6 +425,12 @@ class StrategyContext:
             else:
                 return None
 
+        # O(1) fast path via pre-built dict
+        fast = self._indicator_fast.get(cache_key)
+        if fast is not None:
+            return fast.get((target, target_date))
+
+        # Fallback: DataFrame filter (covers on-demand indicators without period)
         indicator_df = self._indicator_cache[cache_key]
         filtered = indicator_df.filter(
             (pl.col("instrument_id") == target) & (pl.col("date") == target_date)
@@ -419,7 +439,6 @@ class StrategyContext:
         if filtered.is_empty():
             return None
 
-        # Indicator column is named after the indicator with params
         col_name = f"{name}_{params.get('period', '')}" if params else name
         if col_name not in filtered.columns:
             col_name = name
