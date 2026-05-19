@@ -43,6 +43,12 @@ def screen_run(
         "-o",
         help="输出目录",
     ),
+    params: Optional[list[str]] = typer.Option(
+        None,
+        "--param",
+        "-p",
+        help="策略参数，格式 KEY=VALUE，可多次传入（如 --param max_per_sector=1）",
+    ),
 ) -> None:
     """
     运行选股并输出信号列表.
@@ -87,10 +93,27 @@ def screen_run(
             console.print(f"  - {name}")
         raise typer.Exit(1)
 
+    # Parse --param KEY=VALUE pairs
+    strategy_params: dict = {}
+    for p in (params or []):
+        if "=" not in p:
+            console.print(f"[red]参数格式错误: {p!r}，应为 KEY=VALUE[/red]")
+            raise typer.Exit(1)
+        k, v = p.split("=", 1)
+        try:
+            strategy_params[k.strip()] = int(v)
+        except ValueError:
+            try:
+                strategy_params[k.strip()] = float(v)
+            except ValueError:
+                strategy_params[k.strip()] = v
+
     console.print(f"[cyan]运行选股[/cyan]")
     console.print(f"  策略: {strategy}")
     console.print(f"  市场: {market}")
     console.print(f"  日期: {target_date}")
+    if strategy_params:
+        console.print(f"  参数: {strategy_params}")
 
     try:
         # Create config
@@ -104,7 +127,7 @@ def screen_run(
         engine = ScreeningEngine(config)
 
         # Run screening
-        result = engine.run(strategy_class)
+        result = engine.run(strategy_class, params=strategy_params or None)
 
         # Create report
         report = ScreeningReport(

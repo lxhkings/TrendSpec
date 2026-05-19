@@ -118,7 +118,7 @@ uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-0
 uv run trendspec screen run --strategy clenow_momentum --market cn --date 2026-05-14
 
 # 每行业只选最高分一只
-uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-05-14 --params max_per_sector=1
+uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-05-14 --param max_per_sector=1
 
 # 其他策略
 uv run trendspec screen run --strategy ma_cross --market us --date 2026-05-14
