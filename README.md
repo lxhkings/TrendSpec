@@ -24,17 +24,23 @@ uv sync
 
 ## 配置
 
-复制 `.env.example` 到 `.env`：
+```bash
+cp .env.example .env
+```
+
+按实际情况修改 `.env`：
 
 ```
 DB_HOST=192.168.8.9
 DB_PORT=3306
 DB_USER=root
-DB_PASSWORD=...
+DB_PASSWORD=<你的密码>
 DB_NAME=stocks
 DATA_LAKE_ROOT=./data_lake
-ALLOW_ROOT_DB_USER=true
+ALLOW_ROOT_DB_USER=true   # 开发环境使用 root 账号时必须加
 ```
+
+> **注意：** `ALLOW_ROOT_DB_USER=true` 必须写在 `.env` 文件中，写在 shell 环境变量里无效（pydantic-settings 从 `.env` 读取，不读 `os.environ`）。
 
 ## 数据摄入
 
