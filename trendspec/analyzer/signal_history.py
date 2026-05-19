@@ -324,7 +324,7 @@ class SignalHistoryBuilder:
             market=market,
             start_date=start,
             end_date=end,
-            initial_capital=1.0,
+            initial_capital=10_000_000.0,
             costs_model="none",
             risk_pipeline=RiskPipeline([]),
         )
