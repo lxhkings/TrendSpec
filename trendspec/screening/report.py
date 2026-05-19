@@ -242,7 +242,7 @@ class ScreeningReport:
                 ("hit_rate_5d", "历史 5d 胜率 %"),
             ]
             pct_exprs = [
-                (pl.col(src) * 100).alias(alias) if src in available
+                (pl.col(src) * 100).round(2).alias(alias) if src in available
                 else pl.lit(None, dtype=pl.Float64).alias(alias)
                 for src, alias in pct_map
             ]
