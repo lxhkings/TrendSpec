@@ -17,11 +17,13 @@ app = typer.Typer(
 from trendspec.cli.ingest_cmd import app as ingest_app
 from trendspec.cli.backtest_cmd import app as backtest_app
 from trendspec.cli.screen_cmd import app as screen_app
+from trendspec.cli.signal_history_cmd import app as signal_history_app
 
 # Add subcommands
 app.add_typer(ingest_app, name="ingest", help="导入市场数据")
 app.add_typer(backtest_app, name="backtest", help="运行回测")
 app.add_typer(screen_app, name="screen", help="运行选股")
+app.add_typer(signal_history_app, name="signal-history", help="构建和查看信号历史缓存")
 
 
 @app.callback()

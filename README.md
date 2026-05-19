@@ -8,7 +8,8 @@
 - PIT（Point-in-Time）宇宙，避免生存者偏差
 - 本地 Parquet 数据湖，选股无需实时连接数据库
 - 行业中文显示（GICS 标准分类）
-- 选股结果输出终端 10 列决策表 + CSV 导出
+- 选股结果输出终端决策表 + CSV 导出
+- **信号历史**：策略历史信号命中率、均值收益、胜率统计，附于每次选股报告
 
 ## 环境要求
 
@@ -113,9 +114,46 @@ uv run trendspec screen run --strategy clenow_momentum --market cn --date 2026-0
 uv run trendspec screen run --strategy ma_cross --market us --date 2026-05-14
 ```
 
-选股输出包含：行业、选股排名、建议买入价、初始止损线、趋势质量（R²）、乖离率、回撤、放量倍数、预警信息。
+选股输出包含：行业、选股排名、建议买入价、初始止损线、趋势质量（R²）、乖离率、回撤、放量倍数、预警信息，以及历史信号统计（如已构建）。
 
 CSV 文件保存为 `results/screening/signals_<strategy>_<date>.csv`。
+
+## 信号历史
+
+回放策略历史信号，计算每个标的的远期收益率（T+1/3/5/10/20 交易日），聚合为命中率和均值收益，缓存为 Parquet 供选股报告实时查询。
+
+### 首次构建（慢，约 10 年历史）
+
+```bash
+uv run trendspec signal-history build --strategy clenow_momentum --market us
+uv run trendspec signal-history build --strategy clenow_momentum --market cn
+```
+
+### 日常增量更新
+
+```bash
+# 不加 --rebuild 自动增量，只补最后缓存日之后的新数据
+uv run trendspec signal-history build --strategy clenow_momentum --market us
+```
+
+### 查看缓存状态
+
+```bash
+uv run trendspec signal-history status --strategy clenow_momentum --market us
+```
+
+### 选股报告中的历史统计列
+
+| 列名 | 说明 |
+|------|------|
+| `历史样本数` | 该标的历史买入信号总次数 |
+| `历史 1d 均值收益 %` | 信号后 1 交易日平均收益 |
+| `历史 5d 均值收益 %` | 信号后 5 交易日平均收益 |
+| `历史 20d 均值收益 %` | 信号后 20 交易日平均收益 |
+| `历史 5d 胜率 %` | 信号后 5 交易日收益为正的概率 |
+| `信号置信度` | ★ < 5 次，★★ 5–9 次，★★★ ≥ 10 次 |
+
+> 未运行 `signal-history build` 前，上述列显示 `-`，选股报告仍正常工作。
 
 ## 回测
 

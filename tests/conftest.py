@@ -45,13 +45,13 @@ def temp_root() -> str:
 def mock_settings(temp_root: str) -> Settings:
     """Create mock settings with temp data_lake root."""
     settings = Settings()
-    # Override data_lake_root for tests
-    with patch(
-        "trendspec.config.settings.get_settings",
-        return_value=settings
-    ):
-        # Manually set data_lake_root
-        settings.data_lake.data_lake_root = temp_root
+    settings.data_lake.data_lake_root = temp_root
+    # Patch both the canonical location and each module's local import binding
+    # so that `from trendspec.config.settings import get_settings` references
+    # also receive the mock (Python binds the name at import time).
+    with patch("trendspec.config.settings.get_settings", return_value=settings), \
+         patch("trendspec.analyzer.signal_history.get_settings", return_value=settings), \
+         patch("trendspec.screening.report.get_settings", return_value=settings):
         yield settings
 
 
