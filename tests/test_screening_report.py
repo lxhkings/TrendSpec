@@ -7,6 +7,8 @@ from unittest.mock import patch
 import polars as pl
 import pytest
 
+from trendspec.analyzer.signal_history import SignalHistoryStore
+from trendspec.data.markets import Market
 from trendspec.screening.report import ScreeningReport
 from trendspec.strategy.signal import Signal
 
@@ -459,3 +461,26 @@ class TestSignalHistoryIntegration:
         )
         rows = list(report._iter_clenow_buy_rows(signals, hist_cache=hist_df))
         assert rows[0][11] == "-"
+
+    def test_load_signal_history_lowercase_market_does_not_raise(self) -> None:
+        """_load_signal_history must not raise for lowercase market strings.
+
+        screen_cmd.py passes market as lowercase ("us"/"cn"), which previously
+        caused Market("us") to raise ValueError, silently swallowed and returning
+        None for every real CLI invocation.
+        """
+        signals = [self._clenow_signal("LITE", 1000.0)]
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="clenow_momentum",
+            market="us",  # lowercase — what screen_cmd.py actually passes
+        )
+        # Patch Store.load directly so we don't touch the filesystem,
+        # but DO NOT mock _load_signal_history itself (that's the code under test)
+        with patch.object(SignalHistoryStore, "load", return_value=None) as mock_load:
+            result = report._load_signal_history()
+
+        assert result is None  # Store returned None, no exception
+        # Verify the Market enum was constructed with uppercase "US"
+        mock_load.assert_called_once_with("clenow_momentum", Market.US)

@@ -615,3 +615,31 @@ class TestIncrementalBuild:
         assert "SZ000001" in inst_ids, (
             "SZ000001 was in old cache but got dropped during incremental update"
         )
+
+        # SH600000: old n_signals=5 + 1 new signal = 6 total (weighted merge, not replace)
+        sh_row = result.filter(pl.col("instrument_id") == "SH600000").row(0, named=True)
+        assert sh_row["n_signals"] == 6, (
+            f"Expected 6 (5 old + 1 new), got {sh_row['n_signals']} — "
+            "incremental merge must do weighted average, not replace"
+        )
+        # SZ000001: no new signals, old n_signals=3 preserved unchanged
+        sz_row = result.filter(pl.col("instrument_id") == "SZ000001").row(0, named=True)
+        assert sz_row["n_signals"] == 3, (
+            f"Expected 3 (unchanged), got {sz_row['n_signals']}"
+        )
+
+    def test_high_failure_rate_raises(
+        self, builder, mock_strategy_class, mock_settings,
+    ):
+        """_replay_signals raises RuntimeError when failure rate > 50% over >= 3 days."""
+        days = [date(2024, 1, 2) + timedelta(days=i) for i in range(10)]
+        with patch.object(
+            builder, "_get_trading_days", return_value=days,
+        ), patch.object(
+            builder, "_run_screen",
+            side_effect=RuntimeError("data missing"),
+        ), pytest.raises(RuntimeError, match="high failure rate"):
+            builder._replay_signals(
+                mock_strategy_class, Market.CN,
+                date(2024, 1, 2), date(2024, 1, 11),
+            )
