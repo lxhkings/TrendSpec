@@ -233,25 +233,36 @@ class ScreeningReport:
             hist = hist.select(available)
             df = df.join(hist, on="instrument_id", how="left")
 
-            # Percentage columns: decimal → %
-            df = df.with_columns([
-                (pl.col("mean_ret_1d") * 100).alias("历史 1d 均值收益 %"),
-                (pl.col("mean_ret_5d") * 100).alias("历史 5d 均值收益 %"),
-                (pl.col("mean_ret_20d") * 100).alias("历史 20d 均值收益 %"),
-                (pl.col("hit_rate_5d") * 100).alias("历史 5d 胜率 %"),
-            ])
+            # Percentage columns: decimal → %. Guard against older caches that
+            # may be missing some columns (graceful degradation, not crash).
+            pct_map = [
+                ("mean_ret_1d", "历史 1d 均值收益 %"),
+                ("mean_ret_5d", "历史 5d 均值收益 %"),
+                ("mean_ret_20d", "历史 20d 均值收益 %"),
+                ("hit_rate_5d", "历史 5d 胜率 %"),
+            ]
+            pct_exprs = [
+                (pl.col(src) * 100).alias(alias) if src in available
+                else pl.lit(None, dtype=pl.Float64).alias(alias)
+                for src, alias in pct_map
+            ]
+            df = df.with_columns(pct_exprs)
 
-            # Confidence stars
-            df = df.with_columns(
-                pl.col("n_signals")
-                .map_elements(self._confidence_stars, return_dtype=pl.String)
-                .alias("信号置信度")
-            )
-
-            # Default n_signals = 0 for missing
-            df = df.with_columns(
-                pl.col("n_signals").fill_null(0).alias("历史样本数")
-            )
+            # Confidence stars (only when n_signals column is present)
+            if "n_signals" in available:
+                df = df.with_columns(
+                    pl.col("n_signals")
+                    .map_elements(self._confidence_stars, return_dtype=pl.String, skip_nulls=False)
+                    .alias("信号置信度")
+                )
+                df = df.with_columns(
+                    pl.col("n_signals").fill_null(0).alias("历史样本数")
+                )
+            else:
+                df = df.with_columns([
+                    pl.lit(0).cast(pl.Int64).alias("历史样本数"),
+                    pl.lit("-").alias("信号置信度"),
+                ])
         else:
             # Cache miss: fill blanks
             df = df.with_columns([
@@ -351,12 +362,14 @@ class ScreeningReport:
         return "★★★"
 
     def _load_signal_history(self) -> pl.DataFrame | None:
-        """Load cached signal history stats. Returns None on cache miss."""
-        try:
-            market = Market(self.market.lower())
-            return SignalHistoryStore.load(self.strategy_name, market)
-        except Exception:
-            return None
+        """Load cached signal history stats. Returns None on cache miss. Result is cached."""
+        if not hasattr(self, "_signal_history_cache"):
+            try:
+                market = Market(self.market.upper())
+                self._signal_history_cache = SignalHistoryStore.load(self.strategy_name, market)
+            except Exception:
+                self._signal_history_cache = None
+        return self._signal_history_cache
 
     @staticmethod
     def _r2_label(r2: float) -> str:

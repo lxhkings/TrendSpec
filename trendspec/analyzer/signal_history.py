@@ -59,7 +59,11 @@ class SignalHistoryStore:
         """Write signal history to cache. Returns the path written."""
         path = cls._cache_path(strategy, market)
         path.parent.mkdir(parents=True, exist_ok=True)
-        df.write_parquet(path)
+        # Write to temp file first, then atomic replace to avoid partial writes
+        # corrupting the cache if the process is interrupted.
+        tmp = path.with_suffix(".parquet.tmp")
+        df.write_parquet(tmp)
+        tmp.replace(path)
         return path
 
 
@@ -69,7 +73,92 @@ class SignalHistoryStore:
 
 
 _FORWARD_DAYS = [1, 3, 5, 10, 20]
-_PRICE_PAD_CALENDAR_DAYS = 30  # extra calendar days beyond T+20 to ensure price data
+_PRICE_PAD_CALENDAR_DAYS = 45  # extra calendar days beyond T+20 to ensure price data (covers long holidays)
+
+
+def _incremental_merge(agg_new: pl.DataFrame, cache_old: pl.DataFrame) -> pl.DataFrame:
+    """
+    Merge new incremental aggregates into the existing cache with weighted averaging.
+
+    Three categories:
+    - Only in old cache (no new signals): keep as-is, aligned to new schema.
+    - Only in new agg (never seen before): add as-is.
+    - In both: weighted average of n_signals, mean_ret_*, hit_rate_* columns;
+      last_signal_date = max; last_built_at = new value.
+    """
+    log = logging.getLogger(__name__)
+    new_ids = set(agg_new["instrument_id"].to_list())
+    old_ids = set(cache_old["instrument_id"].to_list())
+    overlap_ids = new_ids & old_ids
+
+    # New schema is the target; old cache may be missing newer columns.
+    target_cols = agg_new.columns
+
+    def _align_to_schema(df: pl.DataFrame) -> pl.DataFrame:
+        """Select target_cols from df, filling missing cols with null."""
+        exprs = []
+        for col in target_cols:
+            if col in df.columns:
+                exprs.append(pl.col(col))
+            else:
+                exprs.append(pl.lit(None).cast(agg_new[col].dtype).alias(col))
+        return df.select(exprs)
+
+    if set(target_cols) - set(cache_old.columns):
+        log.warning(
+            "schema mismatch on incremental merge, missing from cache: %s",
+            set(target_cols) - set(cache_old.columns),
+        )
+
+    only_old = _align_to_schema(cache_old.filter(~pl.col("instrument_id").is_in(new_ids)))
+    only_new = agg_new.filter(~pl.col("instrument_id").is_in(old_ids))
+
+    if not overlap_ids:
+        return pl.concat([only_old, only_new])
+
+    # Weighted merge for overlapping instruments
+    old_overlap = cache_old.filter(pl.col("instrument_id").is_in(overlap_ids))
+    new_overlap = agg_new.filter(pl.col("instrument_id").is_in(overlap_ids))
+
+    j = old_overlap.join(new_overlap, on="instrument_id", how="inner", suffix="_right")
+
+    n_old = pl.col("n_signals")
+    n_new = pl.col("n_signals_right")
+    n_total = n_old + n_new
+
+    merge_exprs: list[pl.Expr] = [
+        pl.col("instrument_id"),
+        n_total.alias("n_signals"),
+    ]
+    for col in ["mean_ret_1d", "mean_ret_3d", "mean_ret_5d", "mean_ret_10d", "mean_ret_20d",
+                "hit_rate_5d", "hit_rate_20d"]:
+        right = f"{col}_right"
+        if col in old_overlap.columns and right in j.columns:
+            weighted = (
+                (n_old * pl.col(col).fill_null(0.0) + n_new * pl.col(right).fill_null(0.0))
+                / n_total
+            )
+            merge_exprs.append(weighted.alias(col))
+        elif right in j.columns:
+            # Column exists in new but not old cache (schema evolution): use new value
+            merge_exprs.append(pl.col(right).alias(col))
+
+    if "last_signal_date" in j.columns and "last_signal_date_right" in j.columns:
+        merge_exprs.append(
+            pl.max_horizontal("last_signal_date", "last_signal_date_right").alias("last_signal_date")
+        )
+    elif "last_signal_date" in j.columns:
+        merge_exprs.append(pl.col("last_signal_date"))
+
+    if "last_built_at_right" in j.columns:
+        merge_exprs.append(pl.col("last_built_at_right").alias("last_built_at"))
+    elif "last_built_at" in j.columns:
+        merge_exprs.append(pl.col("last_built_at"))
+
+    merged_overlap = j.select(merge_exprs)
+
+    # All three parts must have identical schemas before concat
+    return pl.concat([only_old, only_new, _align_to_schema(merged_overlap)])
 
 
 class SignalHistoryBuilder:
@@ -101,7 +190,9 @@ class SignalHistoryBuilder:
         if strategy_class is None:
             raise ValueError(f"Unknown strategy: {strategy_name}")
 
-        end = date.today()
+        # Clip end so all signals have T+20 forward return data available.
+        # max(_FORWARD_DAYS)=20 trading days ≈ 28 calendar days; use 45 for safety.
+        end = date.today() - timedelta(days=45)
         start = end - timedelta(days=lookback_years * 365)
 
         # Incremental: check existing cache
@@ -146,19 +237,7 @@ class SignalHistoryBuilder:
 
         # Step 4: Merge with existing cache if incremental update
         if existing_cache is not None and not existing_cache.is_empty():
-            new_instruments = set(agg_df["instrument_id"].to_list())
-            old_rows = existing_cache.filter(
-                pl.col("instrument_id").is_in(new_instruments).not_()
-            )
-            # Keep only columns that exist in both schemas
-            expected_cols = [c for c in agg_df.columns if c in existing_cache.columns]
-            if set(expected_cols) != set(agg_df.columns):
-                logging.getLogger(__name__).warning(
-                    "schema mismatch on incremental merge, extra cols in cache: %s",
-                    set(agg_df.columns) - set(expected_cols),
-                )
-            old_rows = old_rows.select(expected_cols)
-            agg_df = pl.concat([old_rows, agg_df])
+            agg_df = _incremental_merge(agg_df, existing_cache)
 
         # Step 5: Save
         SignalHistoryStore.save(agg_df, strategy_name, market)
@@ -209,6 +288,8 @@ class SignalHistoryBuilder:
         trading_days = self._get_trading_days(market, start, end)
 
         records: list[dict] = []
+        n_failed = 0
+        log = logging.getLogger(__name__)
         progress = Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -233,8 +314,18 @@ class SignalHistoryBuilder:
                             "rank": float(rank),
                         })
                 except Exception:
-                    logging.getLogger(__name__).warning("screen failed on %s, skipping", day)
+                    n_failed += 1
+                    log.warning("screen failed on %s, skipping", day)
                 progress.advance(task)
+
+        n_days = len(trading_days)
+        if n_days >= 3 and n_failed / n_days > 0.5:
+            raise RuntimeError(
+                f"high failure rate in signal replay: {n_failed}/{n_days} days failed. "
+                "Check strategy, market, and data lake configuration."
+            )
+        if n_failed > 0:
+            log.warning("signal replay finished: %d/%d days failed", n_failed, n_days)
 
         return records
 

@@ -154,7 +154,7 @@ def status_history(
 
     df = SignalHistoryStore.load(strategy, market_enum)
 
-    if df is None or df.is_empty() or "last_built_at" not in df.columns:
+    if df is None or df.is_empty() or "last_built_at" not in df.columns or "last_signal_date" not in df.columns:
         if df is not None and "last_built_at" not in df.columns:
             console.print("[yellow]缓存格式不匹配，可能需要重建[/yellow]")
         else:
