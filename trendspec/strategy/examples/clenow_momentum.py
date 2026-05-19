@@ -62,6 +62,7 @@ class ClenowMomentumStrategy(BaseStrategy):
         "rebalance_weekday": 2,
         "top_pct": 0.8,
         "max_gap": -0.15,
+        "max_per_sector": 0,       # 0 = 不限；1 = 每行业最多1只
         # Display-only fields (do not affect entry/exit logic)
         "atr_stop_k": 3.0,
         "drawdown_period": 63,
@@ -137,6 +138,7 @@ class ClenowMomentumStrategy(BaseStrategy):
         self._rebalance_weekday = self.get_param("rebalance_weekday", 2)
         self._top_pct = self.get_param("top_pct", 0.8)
         self._max_gap = self.get_param("max_gap", -0.15)
+        self._max_per_sector = int(self.get_param("max_per_sector", 0))
         self._drawdown_period = self.get_param("drawdown_period", 63)
         self._volume_avg_period = self.get_param("volume_avg_period", 50)
         self._atr_stop_k = self.get_param("atr_stop_k", 3.0)
@@ -205,6 +207,17 @@ class ClenowMomentumStrategy(BaseStrategy):
             scores[iid] = score
 
         ranked = sorted(scores, key=lambda x: scores[x], reverse=True)
+
+        if self._max_per_sector > 0:
+            seen: dict[str, int] = {}
+            deduped = []
+            for iid in ranked:
+                sec = sector_lookup(ctx.market, iid, current_date) or ""
+                if seen.get(sec, 0) < self._max_per_sector:
+                    deduped.append(iid)
+                    seen[sec] = seen.get(sec, 0) + 1
+            ranked = deduped
+
         n_keep = max(1, int(len(ranked) * self._top_pct))
         top_set = set(ranked[:n_keep])
 
