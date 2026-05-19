@@ -10,20 +10,17 @@ Tests performance metrics calculation:
 """
 
 from datetime import date
-from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
+from trendspec.analyzer.equity_curve import DrawdownPoint, EquityCurve
 from trendspec.analyzer.metrics import (
     PerformanceMetrics,
     calculate_metrics,
 )
-from trendspec.analyzer.equity_curve import EquityCurve, DrawdownPoint
-from trendspec.analyzer.trade_log import TradeLogAnalyzer, TradeSummary
-from trendspec.engine.portfolio import EquityCurvePoint
+from trendspec.analyzer.trade_log import TradeLogAnalyzer
 from trendspec.engine.broker import Trade
-
+from trendspec.engine.portfolio import EquityCurvePoint
 
 # =============================================================================
 # Test Fixtures

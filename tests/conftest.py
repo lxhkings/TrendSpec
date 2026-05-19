@@ -13,7 +13,6 @@ Key test cases from plan:
 3. Forward adjustment - Price * (adj_factor / latest_adj_factor)
 """
 
-import os
 import tempfile
 from datetime import date
 from unittest.mock import patch
@@ -25,9 +24,8 @@ from sqlalchemy import create_engine, text
 from trendspec.config.settings import Settings
 from trendspec.data.markets import Market
 from trendspec.data.sectors import clear_sector_cache
-from trendspec.data.universe.cn import IPO_EVENT, DELIST_EVENT, HALT_EVENT, RESUME_EVENT
+from trendspec.data.universe.cn import DELIST_EVENT, HALT_EVENT, IPO_EVENT, RESUME_EVENT
 from trendspec.ingest.writer import write_parquet
-
 
 # =============================================================================
 # Basic Fixtures

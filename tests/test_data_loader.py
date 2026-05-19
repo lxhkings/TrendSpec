@@ -5,7 +5,6 @@ Tests lazy Parquet loading, OHLCV data access, and price adjustment.
 Uses temporary directories with mock Parquet files.
 """
 
-import os
 import tempfile
 from datetime import date
 
@@ -15,7 +14,7 @@ import pytest
 from trendspec.data.markets import Market
 from trendspec.data.parquet_loader import (
     ADJUSTMENT_MODES,
-    AdjustmentMode,
+    _lazyframe_is_empty,
     bars,
     bars_for_instrument,
     get_date_range,
@@ -24,10 +23,8 @@ from trendspec.data.parquet_loader import (
     read_sectors,
     scan_parquet,
     scan_parquet_glob,
-    _lazyframe_is_empty,
 )
 from trendspec.ingest.writer import write_parquet
-
 
 # =============================================================================
 # Test Fixtures

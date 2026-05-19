@@ -13,16 +13,12 @@ PIT is CRITICAL because:
 - Example: Apple was in Technology, in 2018, Communication Services after GICS reclassification
 """
 
-import tempfile
 from datetime import date
 
 import polars as pl
-import pytest
 
 from trendspec.data.markets import Market
 from trendspec.data.sectors import (
-    GICS_SECTORS,
-    SHENWAN_L1_SECTORS,
     SectorIndex,
     clear_sector_cache,
     sector,
@@ -30,7 +26,6 @@ from trendspec.data.sectors import (
     sector_universe,
 )
 from trendspec.ingest.writer import write_parquet
-
 
 # =============================================================================
 # PIT Sector Lookup Tests

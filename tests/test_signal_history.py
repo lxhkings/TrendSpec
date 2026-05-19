@@ -15,8 +15,13 @@ import pytest
 from trendspec.analyzer.signal_history import (
     SignalHistoryBuilder,
     SignalHistoryStore,
+    _SignalReplayEngine,
 )
 from trendspec.data.markets import Market
+from trendspec.engine.base_engine import EngineConfig
+from trendspec.risk.pipeline import RiskPipeline
+from trendspec.strategy.base import BaseStrategy
+from trendspec.strategy.context import StrategyContext
 from trendspec.strategy.signal import Signal
 
 # =============================================================================
@@ -586,4 +591,120 @@ class TestIncrementalBuild:
         assert sz_row["n_signals"] == 3, (
             f"Expected 3 (unchanged), got {sz_row['n_signals']}"
         )
+
+
+# =============================================================================
+# _SignalReplayEngine integration tests (real engine, injected data)
+# =============================================================================
+
+
+class TestSignalReplayEngineIntegration:
+    """
+    Direct tests for _SignalReplayEngine._run_day core logic.
+
+    Uses a real engine instance with pre-injected in-memory data and a mock
+    universe to avoid disk I/O, verifying that _dated_buy_signals is populated
+    correctly without mocking the engine itself.
+    """
+
+    _TARGET_DATE = date(2024, 1, 15)  # Monday, not a CN holiday
+
+    def _make_config(self) -> EngineConfig:
+        return EngineConfig(
+            market=Market.CN,
+            start_date=self._TARGET_DATE,
+            end_date=self._TARGET_DATE,
+            initial_capital=1.0,
+            costs_model="none",
+            risk_pipeline=RiskPipeline([]),
+        )
+
+    def _make_data(self) -> pl.DataFrame:
+        return pl.DataFrame({
+            "instrument_id": ["SH600000"],
+            "date": [self._TARGET_DATE],
+            "ticker": ["600000"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.8],
+            "close": [10.2],
+            "volume": [1_000_000],
+            "adj_factor": [1.0],
+        })
+
+    def _make_engine(self) -> _SignalReplayEngine:
+        engine = _SignalReplayEngine(self._make_config())
+        mock_universe = MagicMock()
+        mock_universe.tickers.return_value = ["SH600000"]
+        engine._universe = mock_universe
+        engine._data = self._make_data()
+        return engine
+
+    def test_run_day_collects_buy_signals_with_rank(self, mock_settings):
+        """_run_day captures BUY signals with correct signal_date and rank."""
+
+        class _AlwaysBuy(BaseStrategy):
+            name = "always_buy_stub"
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+            def next(self, ctx: StrategyContext) -> None:
+                sig = ctx.signal("BUY", ctx.instrument_id, ctx.close)
+                sig.extras = {"rank": 0.9}
+
+        engine = self._make_engine()
+        engine.run(_AlwaysBuy)
+
+        assert len(engine._dated_buy_signals) == 1
+        record = engine._dated_buy_signals[0]
+        assert record["signal_date"] == self._TARGET_DATE
+        assert record["instrument_id"] == "SH600000"
+        assert abs(record["rank"] - 0.9) < 1e-6
+
+    def test_run_day_rank_defaults_to_zero_when_no_extras(self, mock_settings):
+        """rank defaults to 0.0 when signal carries no extras dict."""
+
+        class _BuyNoRank(BaseStrategy):
+            name = "buy_no_rank_stub"
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+            def next(self, ctx: StrategyContext) -> None:
+                ctx.signal("BUY", ctx.instrument_id, ctx.close)
+
+        engine = self._make_engine()
+        engine.run(_BuyNoRank)
+
+        assert len(engine._dated_buy_signals) == 1
+        assert engine._dated_buy_signals[0]["rank"] == 0.0
+
+    def test_run_day_no_signals_when_strategy_silent(self, mock_settings):
+        """_dated_buy_signals stays empty when strategy never signals."""
+
+        class _NeverBuy(BaseStrategy):
+            name = "never_buy_stub"
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+            def next(self, ctx: StrategyContext) -> None:
+                pass
+
+        engine = self._make_engine()
+        engine.run(_NeverBuy)
+
+        assert engine._dated_buy_signals == []
+
+    def test_create_context_sets_is_screening_true(self, mock_settings):
+        """create_context() override must set ctx.is_screening = True."""
+
+        class _NopStrategy(BaseStrategy):
+            name = "nop_stub"
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+            def next(self, ctx: StrategyContext) -> None:
+                pass
+
+        engine = _SignalReplayEngine(self._make_config())
+        engine._data = self._make_data()
+        engine.instantiate_strategy(_NopStrategy)
+        ctx = engine.create_context()
+
+        assert ctx.is_screening is True
 

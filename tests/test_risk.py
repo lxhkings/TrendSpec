@@ -15,35 +15,32 @@ from datetime import date
 import polars as pl
 import pytest
 
+from trendspec.data.markets import Market
 from trendspec.risk import (
     Allow,
-    Reject,
-    Portfolio,
-    RiskRule,
-    RiskPipeline,
+    DuplicatePosition,
+    LiquidityFilter,
+    MaxPositions,
+    MaxPositionSize,
+    MinCapital,
     PipelineResult,
     PipelineStats,
-    MaxPositionSize,
-    MaxPositions,
-    MinCapital,
-    SectorConcentration,
-    LiquidityFilter,
-    DuplicatePosition,
-    UniverseMembership,
+    Portfolio,
+    Reject,
+    RiskPipeline,
     default_pipeline,
     get_rule,
     list_rules,
 )
-# New risk rule imports
-from trendspec.risk.position_limit import MaxSinglePositionSize, MaxPositionsCount
-from trendspec.risk.drawdown_halt import DrawdownHaltRule, DrawdownState
+from trendspec.risk.drawdown_halt import DrawdownHaltRule
 from trendspec.risk.liquidity import MinLiquidityRule
+
+# New risk rule imports
+from trendspec.risk.position_limit import MaxPositionsCount, MaxSinglePositionSize
 from trendspec.risk.price_limit import PriceLimitRule
 from trendspec.risk.sector_limit import SectorConcentrationLimit
 from trendspec.risk.sector_neutral import SectorNeutralRule, SectorWeights
-from trendspec.strategy import Signal, StrategyContext, BaseStrategy
-from trendspec.data.markets import Market
-
+from trendspec.strategy import BaseStrategy, Signal, StrategyContext
 
 # =============================================================================
 # Result Types Tests

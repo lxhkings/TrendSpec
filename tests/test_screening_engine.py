@@ -18,15 +18,14 @@ import pytest
 from trendspec.data.markets import Market
 from trendspec.engine.base_engine import EngineConfig
 from trendspec.engine.screening_engine import (
+    ScreeningConfig,
     ScreeningEngine,
     ScreeningResult,
-    ScreeningConfig,
     screen,
 )
 from trendspec.strategy.base import BaseStrategy
 from trendspec.strategy.context import StrategyContext
 from trendspec.strategy.signal import Signal
-
 
 # =============================================================================
 # Test Fixtures

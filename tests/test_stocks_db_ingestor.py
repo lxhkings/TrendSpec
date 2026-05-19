@@ -1,12 +1,10 @@
 """Tests for Synology stocks DB custom ingestor."""
 
 import tempfile
-from datetime import date
 
 import polars as pl
 import pytest
 from sqlalchemy import create_engine, text
-
 
 # =============================================================================
 # Fixtures
@@ -93,9 +91,9 @@ def temp_root():
 
 def test_ingest_us_daily_schema(stocks_db, temp_root):
     """US daily Parquet has correct columns and types."""
-    from trendspec.ingest.stocks_db_ingestor import ingest_us_daily
-    from trendspec.ingest.manifest import Manifest
     from trendspec.data.markets import Market
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_daily
 
     manifest = Manifest(Market.US, temp_root)
     result = ingest_us_daily(stocks_db, manifest, temp_root)
