@@ -101,6 +101,7 @@ uv run trendspec ingest status --market us
 | `rebalance_weekday` | 2 | 调仓日（0=周一…4=周五，默认周三）；选股模式自动跳过此限制 |
 | `top_pct` | 0.8 | 持有排名前多少比例（默认前 80%） |
 | `max_gap` | -0.15 | 90 日内单日最大跌幅过滤（-15%） |
+| `max_per_sector` | 0 | 每个行业最多选几只（0 = 不限；1 = 每行业只选 score 最高那只） |
 | `atr_stop_k` | 3.0 | 初始止损 = 收盘价 − k × ATR |
 | `drawdown_period` | 63 | 回撤基准窗口（日） |
 | `volume_avg_period` | 50 | 成交量均量窗口（日） |
