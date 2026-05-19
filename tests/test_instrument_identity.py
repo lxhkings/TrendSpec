@@ -12,19 +12,16 @@ CRITICAL for data integrity:
 - ticker can change due to renames, and can be reused after delisting
 """
 
-import tempfile
 from datetime import date
 
 import polars as pl
-import pytest
 
 from trendspec.data.markets import Market
-from trendspec.data.parquet_loader import bars, bars_for_instrument, get_instrument_ids
+from trendspec.data.parquet_loader import bars_for_instrument, get_instrument_ids
 from trendspec.data.schema import PRIMARY_KEY, REQUIRED_COLUMNS, validate_dataframe_schema
 from trendspec.data.universe import CNAUniverse
-from trendspec.data.universe.cn import IPO_EVENT, DELIST_EVENT
-from trendspec.ingest.writer import write_parquet, read_partition
-
+from trendspec.data.universe.cn import DELIST_EVENT, IPO_EVENT
+from trendspec.ingest.writer import read_partition, write_parquet
 
 # =============================================================================
 # Primary Key Definition Tests
@@ -773,7 +770,7 @@ class TestInstrumentIdentityIntegration:
         write_parquet(sectors_df, Market.CN, "sectors", temp_root)
         write_parquet(daily_df, Market.CN, "daily", temp_root)
 
-        from trendspec.data.sectors import sector, clear_sector_cache
+        from trendspec.data.sectors import clear_sector_cache, sector
 
         clear_sector_cache()
 

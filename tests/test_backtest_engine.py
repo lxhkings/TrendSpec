@@ -12,22 +12,20 @@ Tests the backtest execution flow:
 """
 
 from datetime import date
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
 
 from trendspec.data.markets import Market
-from trendspec.engine.base_engine import EngineConfig, EngineResult
 from trendspec.engine.backtest_engine import BacktestEngine, BacktestMetrics
-from trendspec.engine.broker import Broker, Trade, Order
-from trendspec.engine.costs import CNACostsModel, USCostsModel, NoCostsModel
-from trendspec.engine.portfolio import Portfolio, Position, EquityCurvePoint
+from trendspec.engine.base_engine import EngineConfig
+from trendspec.engine.broker import Broker, Order, Trade
+from trendspec.engine.costs import CNACostsModel, NoCostsModel, USCostsModel
+from trendspec.engine.portfolio import EquityCurvePoint, Portfolio, Position
 from trendspec.strategy.base import BaseStrategy
 from trendspec.strategy.context import StrategyContext
 from trendspec.strategy.signal import Signal
-
 
 # =============================================================================
 # Test Fixtures

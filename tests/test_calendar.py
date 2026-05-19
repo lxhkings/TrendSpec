@@ -7,17 +7,17 @@ Tests trading calendar functionality including:
 - Trading day ranges
 """
 
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 
 from trendspec.data.calendar import (
     count_trading_days,
+    get_trading_day_of_week,
     is_trading_day,
     next_trading_day,
     previous_trading_day,
     trading_days_between,
-    get_trading_day_of_week,
 )
 from trendspec.data.markets import Market
 

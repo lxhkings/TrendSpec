@@ -121,8 +121,9 @@ class TestDatabaseSettings:
         monkeypatch.setenv("DB_HOST", "localhost")
         monkeypatch.setenv("DB_USER", "root")
         monkeypatch.setenv("DB_PASSWORD", "secret")
-        from trendspec.config.settings import DatabaseSettings
         import pytest
+
+        from trendspec.config.settings import DatabaseSettings
         with pytest.raises(ValueError, match="cannot be 'root'"):
             DatabaseSettings(_env_file=None)
 

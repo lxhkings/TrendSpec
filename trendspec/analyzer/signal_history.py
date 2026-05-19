@@ -22,14 +22,53 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import polars as pl
-from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.progress import BarColumn, Progress, TextColumn
 
 from trendspec.config.settings import get_settings
-from trendspec.data.calendar import trading_days_between
 from trendspec.data.markets import Market
 from trendspec.data.parquet_loader import bars_for_instrument
-from trendspec.engine.screening_engine import screen
+from trendspec.engine.backtest_engine import BacktestEngine
+from trendspec.engine.base_engine import EngineConfig
+from trendspec.risk.pipeline import RiskPipeline
 from trendspec.strategy.base import get_strategy
+from trendspec.strategy.context import StrategyContext
+
+# =============================================================================
+# BacktestEngine 变体：专用于信号历史回放
+# =============================================================================
+
+
+class _SignalReplayEngine(BacktestEngine):
+    """
+    BacktestEngine 变体，专用于信号历史回放。
+
+    关键差异：
+    - ctx.is_screening = True：绕过 rebalance_weekday 过滤，与 screen() 行为一致
+    - _run_day() 拦截每日 BUY 信号并附加 signal_date
+    - costs_model="none"，initial_capital=1.0，无 portfolio 副作用
+    """
+
+    def __init__(self, config: EngineConfig) -> None:
+        super().__init__(config)
+        self._dated_buy_signals: list[dict] = []
+
+    def create_context(self) -> StrategyContext:
+        ctx = super().create_context()
+        ctx.is_screening = True
+        return ctx
+
+    def _run_day(self, trading_day: date) -> None:
+        before = len(self._all_signals)
+        super()._run_day(trading_day)
+        for sig in self._all_signals[before:]:
+            if sig.is_buy():
+                rank = float((sig.extras or {}).get("rank", 0.0))
+                self._dated_buy_signals.append({
+                    "signal_date": trading_day,
+                    "instrument_id": sig.instrument_id,
+                    "rank": rank,
+                })
+
 
 # =============================================================================
 # Cache store
@@ -248,18 +287,6 @@ class SignalHistoryBuilder:
     # Internal methods (patchable via patch.object for testing)
     # ----------------------------------------------------------------
 
-    def _get_trading_days(
-        self, market: Market, start: date, end: date,
-    ) -> list[date]:
-        """Get trading days between start and end. Patchable for tests."""
-        return trading_days_between(market, start, end)
-
-    def _run_screen(
-        self, market: Market, strategy_class: type, target_date: date,
-    ):
-        """Run a single-day screen. Patchable for tests."""
-        return screen(market, strategy_class, target_date)
-
     def _load_bars(
         self, market: Market, instrument_id: str,
         start_date: date, end_date: date,
@@ -281,53 +308,30 @@ class SignalHistoryBuilder:
         end: date,
     ) -> list[dict]:
         """
-        Replay the strategy over trading days and collect buy signals.
+        Replay the strategy over the date range using BacktestEngine.
+
+        One-shot data load + vectorized indicator precompute replaces
+        the previous per-day screen() loop (~60x faster for 10-year range).
 
         Returns list of dicts: {signal_date, instrument_id, rank}.
         """
-        trading_days = self._get_trading_days(market, start, end)
-
-        records: list[dict] = []
-        n_failed = 0
-        log = logging.getLogger(__name__)
-        progress = Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
+        config = EngineConfig(
+            market=market,
+            start_date=start,
+            end_date=end,
+            initial_capital=1.0,
+            costs_model="none",
+            risk_pipeline=RiskPipeline([]),
         )
+        engine = _SignalReplayEngine(config)
+        engine.run(strategy_class)
 
-        with progress:
-            task = progress.add_task(
-                f"Replaying {strategy_class.name} on {market.value}",
-                total=len(trading_days),
-            )
-            for day in trading_days:
-                try:
-                    result = self._run_screen(market, strategy_class, day)
-                    for sig in result.buy_signals:
-                        rank = sig.extras.get("rank", 0.0) if sig.extras else 0.0
-                        records.append({
-                            "signal_date": day,
-                            "instrument_id": sig.instrument_id,
-                            "rank": float(rank),
-                        })
-                except Exception:
-                    n_failed += 1
-                    log.warning("screen failed on %s, skipping", day)
-                progress.advance(task)
-
-        n_days = len(trading_days)
-        if n_days >= 3 and n_failed / n_days > 0.5:
-            raise RuntimeError(
-                f"high failure rate in signal replay: {n_failed}/{n_days} days failed. "
-                "Check strategy, market, and data lake configuration."
-            )
-        if n_failed > 0:
-            log.warning("signal replay finished: %d/%d days failed", n_failed, n_days)
-
-        return records
+        log = logging.getLogger(__name__)
+        log.info(
+            "signal replay done: %d buy signals collected",
+            len(engine._dated_buy_signals),
+        )
+        return engine._dated_buy_signals
 
     def _attach_forward_returns(
         self,

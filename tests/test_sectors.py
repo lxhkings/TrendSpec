@@ -4,7 +4,6 @@ Tests for TrendSpec sectors module.
 Tests PIT sector attribution with memory index.
 """
 
-import os
 import tempfile
 from datetime import date
 
@@ -12,7 +11,6 @@ import polars as pl
 import pytest
 
 from trendspec.data.markets import Market
-from trendspec.data.parquet_loader import scan_parquet
 from trendspec.data.sectors import (
     GICS_SECTORS,
     SHENWAN_L1_SECTORS,
@@ -25,7 +23,6 @@ from trendspec.data.sectors import (
     sector_universe,
 )
 from trendspec.ingest.writer import write_parquet
-
 
 # =============================================================================
 # Test Fixtures

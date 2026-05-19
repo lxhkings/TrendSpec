@@ -18,50 +18,53 @@ from datetime import date
 import polars as pl
 import pytest
 
+from trendspec.data.markets import Market
 from trendspec.factors import (
     Factor,
     FactorResult,
     MomentumFactor,
     VolatilityFactor,
     VolumeFactor,
-    register,
+    factor_info,
     get_factor,
     get_factor_class,
     list_factors,
-    factor_info,
-    clear_registry,
+    register,
 )
-from trendspec.factors.registry import (
-    Momentum,
-    Returns,
-    Volatility,
-    VolumeRatio,
-    PriceRange,
+from trendspec.factors.cross_sectional import (
+    DemeanBySectorFactor,
+    RankWithinSectorFactor,
 )
+
 # New factor imports
 from trendspec.factors.price import (
     MomentumFactor as PriceMomentumFactor,
+)
+from trendspec.factors.price import (
     MomentumRankFactor,
-    VolatilityFactor as PriceVolatilityFactor,
     VolatilityRankFactor,
 )
-from trendspec.factors.volume import (
-    TurnoverFactor,
-    VolumeRatioFactor,
+from trendspec.factors.price import (
+    VolatilityFactor as PriceVolatilityFactor,
 )
-from trendspec.factors.technical import (
-    MABiasFactor,
+from trendspec.factors.registry import (
+    Momentum,
+    PriceRange,
+    Returns,
+    Volatility,
+    VolumeRatio,
 )
 from trendspec.factors.sector import (
     SectorMomentumFactor,
     SectorRelativeStrengthFactor,
 )
-from trendspec.factors.cross_sectional import (
-    RankWithinSectorFactor,
-    DemeanBySectorFactor,
+from trendspec.factors.technical import (
+    MABiasFactor,
 )
-from trendspec.data.markets import Market
-
+from trendspec.factors.volume import (
+    TurnoverFactor,
+    VolumeRatioFactor,
+)
 
 # =============================================================================
 # Factor Base Tests

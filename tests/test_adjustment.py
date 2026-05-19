@@ -16,7 +16,6 @@ CRITICAL for backtest accuracy:
 - Forward adjustment ensures historical price continuity
 """
 
-import tempfile
 from datetime import date
 
 import polars as pl
@@ -27,10 +26,8 @@ from trendspec.data.parquet_loader import (
     ADJUSTMENT_MODES,
     bars,
     bars_for_instrument,
-    _apply_adjustment,
 )
 from trendspec.ingest.writer import write_parquet
-
 
 # =============================================================================
 # Adjustment Factor Correctness Tests

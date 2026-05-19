@@ -15,8 +15,13 @@ import pytest
 from trendspec.analyzer.signal_history import (
     SignalHistoryBuilder,
     SignalHistoryStore,
+    _SignalReplayEngine,
 )
 from trendspec.data.markets import Market
+from trendspec.engine.base_engine import EngineConfig
+from trendspec.risk.pipeline import RiskPipeline
+from trendspec.strategy.base import BaseStrategy
+from trendspec.strategy.context import StrategyContext
 from trendspec.strategy.signal import Signal
 
 # =============================================================================
@@ -157,23 +162,19 @@ class TestSignalHistoryBuilder:
     def test_replay_signals_collects_buy_signals(
         self, builder, mock_strategy_class, mock_settings,
     ):
-        test_date = date(2024, 1, 15)  # Monday
-        signals = [
-            _make_mock_signal("SH600000", rank=1.0),
-            _make_mock_signal("SZ000001", rank=2.0),
-        ]
 
-        with patch.object(
-            builder, "_get_trading_days", return_value=[test_date],
-        ), patch.object(
-            builder, "_run_screen",
-            return_value=_make_mock_screening_result(signals),
-        ):
+        with patch("trendspec.analyzer.signal_history._SignalReplayEngine") as MockEngine:
+            mock_instance = MockEngine.return_value
+            mock_instance._dated_buy_signals = [
+                {"signal_date": date(2024, 1, 15), "instrument_id": "SH600000", "rank": 1.0},
+                {"signal_date": date(2024, 1, 15), "instrument_id": "SZ000001", "rank": 2.0},
+            ]
+
             records = builder._replay_signals(
                 mock_strategy_class,
                 Market.CN,
-                start=test_date,
-                end=test_date,
+                start=date(2024, 1, 15),
+                end=date(2024, 1, 15),
             )
 
         assert len(records) == 2
@@ -182,51 +183,22 @@ class TestSignalHistoryBuilder:
         assert records[1]["instrument_id"] == "SZ000001"
         assert records[1]["rank"] == 2.0
 
-    def test_replay_signals_skips_days_with_errors(
-        self, builder, mock_strategy_class, mock_settings,
-    ):
-        test_date = date(2024, 1, 15)
-
-        with patch.object(
-            builder, "_get_trading_days", return_value=[test_date],
-        ), patch.object(
-            builder, "_run_screen",
-            side_effect=RuntimeError("no data"),
-        ):
-            records = builder._replay_signals(
-                mock_strategy_class,
-                Market.CN,
-                start=test_date,
-                end=test_date,
-            )
-
-        assert len(records) == 0
-
     def test_replay_signals_only_buy_signals(
         self, builder, mock_strategy_class, mock_settings,
     ):
-        test_date = date(2024, 1, 15)
 
-        buy_sig = _make_mock_signal("SH600000")
-        sell_sig = Signal(
-            direction="SELL",
-            ticker="600000",
-            instrument_id="SH600000",
-            price=10.0,
-        )
-        result = _make_mock_screening_result([buy_sig, sell_sig])
+        with patch("trendspec.analyzer.signal_history._SignalReplayEngine") as MockEngine:
+            mock_instance = MockEngine.return_value
+            # _SignalReplayEngine._run_day only collects BUY signals
+            mock_instance._dated_buy_signals = [
+                {"signal_date": date(2024, 1, 15), "instrument_id": "SH600000", "rank": 1.0},
+            ]
 
-        with patch.object(
-            builder, "_get_trading_days", return_value=[test_date],
-        ), patch.object(
-            builder, "_run_screen",
-            return_value=result,
-        ):
             records = builder._replay_signals(
                 mock_strategy_class,
                 Market.CN,
-                start=test_date,
-                end=test_date,
+                start=date(2024, 1, 15),
+                end=date(2024, 1, 15),
             )
 
         assert len(records) == 1
@@ -385,12 +357,6 @@ class TestSignalHistoryBuilder:
         """Full build pipeline with all builder methods mocked."""
         test_start = date(2024, 1, 15)  # Monday
 
-        def mock_screen_fn(_market, _strategy_cls, _target_date):
-            return _make_mock_screening_result([
-                _make_mock_signal("SH600000", rank=1.0, price=100.0),
-                _make_mock_signal("SZ000001", rank=2.0, price=50.0),
-            ])
-
         def mock_bars_fn(_market, instrument_id, _start_date, _end_date):
             return _make_price_bars(
                 instrument_id,
@@ -399,19 +365,20 @@ class TestSignalHistoryBuilder:
                 base_close=100.0,
             )
 
-        with patch.object(
-            builder, "_get_trading_days",
-            return_value=[test_start],
-        ), patch.object(
-            builder, "_run_screen",
-            side_effect=mock_screen_fn,
-        ), patch.object(
+        with patch("trendspec.analyzer.signal_history._SignalReplayEngine") as MockEngine, \
+             patch.object(
             builder, "_load_bars",
             side_effect=mock_bars_fn,
         ), patch(
             "trendspec.analyzer.signal_history.get_strategy",
             return_value=mock_strategy_class,
         ):
+            mock_instance = MockEngine.return_value
+            mock_instance._dated_buy_signals = [
+                {"signal_date": test_start, "instrument_id": "SH600000", "rank": 1.0},
+                {"signal_date": test_start, "instrument_id": "SZ000001", "rank": 2.0},
+            ]
+
             result = builder.build(
                 "test_strategy",
                 Market.CN,
@@ -429,6 +396,27 @@ class TestSignalHistoryBuilder:
         cached = SignalHistoryStore.load("test_strategy", Market.CN)
         assert cached is not None
         assert len(cached) == 2
+
+    def test_replay_signals_uses_signal_replay_engine(
+        self, builder, mock_strategy_class, mock_settings,
+    ):
+        """_replay_signals must delegate to _SignalReplayEngine, not serial screen()."""
+
+        with patch("trendspec.analyzer.signal_history._SignalReplayEngine") as MockEngine:
+            mock_instance = MockEngine.return_value
+            mock_instance._dated_buy_signals = [
+                {"signal_date": date(2024, 1, 3), "instrument_id": "AAPL", "rank": 1.0},
+            ]
+
+            result = builder._replay_signals(
+                mock_strategy_class, Market.US,
+                date(2024, 1, 1), date(2024, 1, 31),
+            )
+
+        # Engine must be created with correct config and run called
+        MockEngine.assert_called_once()
+        mock_instance.run.assert_called_once_with(mock_strategy_class)
+        assert result == [{"signal_date": date(2024, 1, 3), "instrument_id": "AAPL", "rank": 1.0}]
 
 
 # =============================================================================
@@ -468,14 +456,6 @@ class TestIncrementalBuild:
         })
         SignalHistoryStore.save(cache_df, "incr_test_strategy", Market.CN)
 
-        screened_dates = []
-
-        def mock_screen_fn(_market, _strategy_cls, target_date):
-            screened_dates.append(target_date)
-            return _make_mock_screening_result([
-                _make_mock_signal("SH600000", rank=1.0, price=100.0),
-            ])
-
         def mock_bars_fn(_market, instrument_id, start_date, _end_date):
             return _make_price_bars(
                 instrument_id,
@@ -483,24 +463,26 @@ class TestIncrementalBuild:
                 n_days=60,
             )
 
-        with patch.object(
-            builder, "_get_trading_days",
-            return_value=[date(2024, 10, 2), date(2024, 10, 3), date(2024, 10, 4)],
-        ), patch.object(
-            builder, "_run_screen",
-            side_effect=mock_screen_fn,
-        ), patch.object(
+        with patch("trendspec.analyzer.signal_history._SignalReplayEngine") as MockEngine, \
+             patch.object(
             builder, "_load_bars",
             side_effect=mock_bars_fn,
         ), patch(
             "trendspec.analyzer.signal_history.get_strategy",
             return_value=mock_strategy_class,
         ):
+            mock_instance = MockEngine.return_value
+            mock_instance._dated_buy_signals = [
+                {"signal_date": date(2024, 10, 2), "instrument_id": "SH600000", "rank": 1.0},
+            ]
+
             builder.build("incr_test_strategy", Market.CN, lookback_years=10)
 
-        # All screened dates should be >= 2024-10-02 (last_signal_date + 1 day)
-        for d in screened_dates:
-            assert d >= date(2024, 10, 2), f"Screened unexpected date: {d}"
+        # Engine must be created with start_date >= 2024-10-02
+        call_kwargs = MockEngine.call_args_list[0][1] if MockEngine.call_args_list[0].kwargs else MockEngine.call_args_list[0][0][0]
+        assert call_kwargs.start_date >= date(2024, 10, 2), (
+            f"Engine start_date should be >= 2024-10-02, got {call_kwargs.start_date}"
+        )
 
     def test_rebuild_ignores_cache(
         self, builder, mock_strategy_class, mock_settings,
@@ -521,15 +503,6 @@ class TestIncrementalBuild:
         })
         SignalHistoryStore.save(cache_df, "rebuild_test_strategy", Market.CN)
 
-        start_date_used = []
-
-        def mock_get_days(_market, start, _end):
-            start_date_used.append(start)
-            return [date(2024, 1, 15)]
-
-        def mock_screen_fn(_market, _strategy_cls, _target_date):
-            return _make_mock_screening_result([])
-
         def mock_bars_fn(_market, instrument_id, start_date, _end_date):
             return _make_price_bars(
                 instrument_id,
@@ -537,24 +510,22 @@ class TestIncrementalBuild:
                 n_days=60,
             )
 
-        with patch.object(
-            builder, "_get_trading_days",
-            side_effect=mock_get_days,
-        ), patch.object(
-            builder, "_run_screen",
-            side_effect=mock_screen_fn,
-        ), patch.object(
+        with patch("trendspec.analyzer.signal_history._SignalReplayEngine") as MockEngine, \
+             patch.object(
             builder, "_load_bars",
             side_effect=mock_bars_fn,
         ), patch(
             "trendspec.analyzer.signal_history.get_strategy",
             return_value=mock_strategy_class,
         ):
+            mock_instance = MockEngine.return_value
+            mock_instance._dated_buy_signals = []
+
             builder.build("rebuild_test_strategy", Market.CN, lookback_years=5, rebuild=True)
 
         # With rebuild=True, start should be ~5 years ago from today, not 2024-10-01
-        assert len(start_date_used) == 1
-        rebuild_start = start_date_used[0]
+        call_kwargs = MockEngine.call_args_list[0][1] if MockEngine.call_args_list[0].kwargs else MockEngine.call_args_list[0][0][0]
+        rebuild_start = call_kwargs.start_date
         assert rebuild_start < date(2024, 10, 1), (
             f"Rebuild should start before cache date, got {rebuild_start}"
         )
@@ -579,14 +550,6 @@ class TestIncrementalBuild:
         })
         SignalHistoryStore.save(cache_df, "merge_test_strategy", Market.CN)
 
-        def mock_screen_fn(_market, _strategy_cls, target_date):
-            # Only SH600000 gets a new signal; SZ000001 gets none
-            if target_date == date(2024, 10, 2):
-                return _make_mock_screening_result([
-                    _make_mock_signal("SH600000", rank=1.0, price=100.0),
-                ])
-            return _make_mock_screening_result([])
-
         def mock_bars_fn(_market, instrument_id, start_date, _end_date):
             return _make_price_bars(
                 instrument_id,
@@ -594,19 +557,20 @@ class TestIncrementalBuild:
                 n_days=60,
             )
 
-        with patch.object(
-            builder, "_get_trading_days",
-            return_value=[date(2024, 10, 2), date(2024, 10, 3)],
-        ), patch.object(
-            builder, "_run_screen",
-            side_effect=mock_screen_fn,
-        ), patch.object(
+        with patch("trendspec.analyzer.signal_history._SignalReplayEngine") as MockEngine, \
+             patch.object(
             builder, "_load_bars",
             side_effect=mock_bars_fn,
         ), patch(
             "trendspec.analyzer.signal_history.get_strategy",
             return_value=mock_strategy_class,
         ):
+            mock_instance = MockEngine.return_value
+            # Only SH600000 gets a new signal
+            mock_instance._dated_buy_signals = [
+                {"signal_date": date(2024, 10, 2), "instrument_id": "SH600000", "rank": 1.0},
+            ]
+
             result = builder.build("merge_test_strategy", Market.CN, lookback_years=10)
 
         # Both instruments should be present after incremental update
@@ -628,18 +592,119 @@ class TestIncrementalBuild:
             f"Expected 3 (unchanged), got {sz_row['n_signals']}"
         )
 
-    def test_high_failure_rate_raises(
-        self, builder, mock_strategy_class, mock_settings,
-    ):
-        """_replay_signals raises RuntimeError when failure rate > 50% over >= 3 days."""
-        days = [date(2024, 1, 2) + timedelta(days=i) for i in range(10)]
-        with patch.object(
-            builder, "_get_trading_days", return_value=days,
-        ), patch.object(
-            builder, "_run_screen",
-            side_effect=RuntimeError("data missing"),
-        ), pytest.raises(RuntimeError, match="high failure rate"):
-            builder._replay_signals(
-                mock_strategy_class, Market.CN,
-                date(2024, 1, 2), date(2024, 1, 11),
-            )
+
+# =============================================================================
+# _SignalReplayEngine integration tests (real engine, injected data)
+# =============================================================================
+
+
+class TestSignalReplayEngineIntegration:
+    """
+    Direct tests for _SignalReplayEngine._run_day core logic.
+
+    Uses a real engine instance with pre-injected in-memory data and a mock
+    universe to avoid disk I/O, verifying that _dated_buy_signals is populated
+    correctly without mocking the engine itself.
+    """
+
+    _TARGET_DATE = date(2024, 1, 15)  # Monday, not a CN holiday
+
+    def _make_config(self) -> EngineConfig:
+        return EngineConfig(
+            market=Market.CN,
+            start_date=self._TARGET_DATE,
+            end_date=self._TARGET_DATE,
+            initial_capital=1.0,
+            costs_model="none",
+            risk_pipeline=RiskPipeline([]),
+        )
+
+    def _make_data(self) -> pl.DataFrame:
+        return pl.DataFrame({
+            "instrument_id": ["SH600000"],
+            "date": [self._TARGET_DATE],
+            "ticker": ["600000"],
+            "open": [10.0],
+            "high": [10.5],
+            "low": [9.8],
+            "close": [10.2],
+            "volume": [1_000_000],
+            "adj_factor": [1.0],
+        })
+
+    def _make_engine(self) -> _SignalReplayEngine:
+        engine = _SignalReplayEngine(self._make_config())
+        mock_universe = MagicMock()
+        mock_universe.tickers.return_value = ["SH600000"]
+        engine._universe = mock_universe
+        engine._data = self._make_data()
+        return engine
+
+    def test_run_day_collects_buy_signals_with_rank(self, mock_settings):
+        """_run_day captures BUY signals with correct signal_date and rank."""
+
+        class _AlwaysBuy(BaseStrategy):
+            name = "always_buy_stub"
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+            def next(self, ctx: StrategyContext) -> None:
+                sig = ctx.signal("BUY", ctx.instrument_id, ctx.close)
+                sig.extras = {"rank": 0.9}
+
+        engine = self._make_engine()
+        engine.run(_AlwaysBuy)
+
+        assert len(engine._dated_buy_signals) == 1
+        record = engine._dated_buy_signals[0]
+        assert record["signal_date"] == self._TARGET_DATE
+        assert record["instrument_id"] == "SH600000"
+        assert abs(record["rank"] - 0.9) < 1e-6
+
+    def test_run_day_rank_defaults_to_zero_when_no_extras(self, mock_settings):
+        """rank defaults to 0.0 when signal carries no extras dict."""
+
+        class _BuyNoRank(BaseStrategy):
+            name = "buy_no_rank_stub"
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+            def next(self, ctx: StrategyContext) -> None:
+                ctx.signal("BUY", ctx.instrument_id, ctx.close)
+
+        engine = self._make_engine()
+        engine.run(_BuyNoRank)
+
+        assert len(engine._dated_buy_signals) == 1
+        assert engine._dated_buy_signals[0]["rank"] == 0.0
+
+    def test_run_day_no_signals_when_strategy_silent(self, mock_settings):
+        """_dated_buy_signals stays empty when strategy never signals."""
+
+        class _NeverBuy(BaseStrategy):
+            name = "never_buy_stub"
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+            def next(self, ctx: StrategyContext) -> None:
+                pass
+
+        engine = self._make_engine()
+        engine.run(_NeverBuy)
+
+        assert engine._dated_buy_signals == []
+
+    def test_create_context_sets_is_screening_true(self, mock_settings):
+        """create_context() override must set ctx.is_screening = True."""
+
+        class _NopStrategy(BaseStrategy):
+            name = "nop_stub"
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+            def next(self, ctx: StrategyContext) -> None:
+                pass
+
+        engine = _SignalReplayEngine(self._make_config())
+        engine._data = self._make_data()
+        engine.instantiate_strategy(_NopStrategy)
+        ctx = engine.create_context()
+
+        assert ctx.is_screening is True
+
