@@ -574,3 +574,61 @@ def ingest_cn_indices(
         instrument_count=1,
     )
     return {"row_count": len(df), "date_range": (dates.min(), dates.max()), "instrument_count": 1}
+
+
+# =============================================================================
+# US Weekly
+# =============================================================================
+
+
+def ingest_us_weekly(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """Ingest US weekly OHLCV from weekly_prices + index_constituents.
+
+    Schema mirrors prices: (ticker, date, open, high, low, close, volume).
+    date corresponds to each week's closing day per the Synology table convention.
+    """
+    last_date = "1970-01-01" if full_sync else _get_last_synced_date(manifest, "weekly")
+
+    sql = text("""
+        SELECT p.ticker, p.date, p.open, p.high, p.low, p.close, p.volume
+        FROM weekly_prices p
+        JOIN (
+            SELECT DISTINCT ticker FROM index_constituents
+            WHERE index_id IN ('SP500', 'RUSSELL1000')
+        ) AS us ON p.ticker = us.ticker
+        WHERE p.date > :last_date
+        ORDER BY p.date, p.ticker
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"last_date": last_date}).fetchall()
+
+    if not rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    df = pl.DataFrame(
+        rows,
+        schema=["ticker", "date", "open", "high", "low", "close", "volume"],
+        orient="row",
+    )
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+    df = df.with_columns([
+        pl.col("ticker").alias("instrument_id"),
+        pl.lit(1.0).alias("adj_factor"),
+    ])
+
+    write_parquet(df, Market.US, "weekly", root, overwrite=full_sync)
+
+    dates = df["date"].cast(pl.Utf8)
+    date_range = (dates.min(), dates.max())
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+
+    manifest.update_dataset_state("weekly", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
