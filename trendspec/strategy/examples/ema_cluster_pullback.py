@@ -170,8 +170,8 @@ class EMAClusterPullback(BaseStrategy):
 
         self._buy_pass_history[iid].append(all_ok)
 
-        # Check if we have enough consecutive passes
-        confirmation = self.get_param("confirmation_days")
+        # Screening mode: 1 day is enough; backtest requires confirmation_days
+        confirmation = 1 if ctx.is_screening else self.get_param("confirmation_days")
         if len(self._buy_pass_history[iid]) >= confirmation and all(self._buy_pass_history[iid]):
             # BUY signal
             ctx.signal("BUY", iid, close, note="EMA cluster pullback BUY")
@@ -180,10 +180,18 @@ class EMAClusterPullback(BaseStrategy):
     def _lookup_prev_ema(
         self, ctx: StrategyContext, iid: str, param_key: str, days_back: int
     ) -> float | None:
-        """Look up EMA value N trading days ago."""
-        from datetime import timedelta
-
-        target_date = ctx.date - timedelta(days=days_back)
+        """Look up EMA value N *trading* days ago (via DataFrame index, not calendar days)."""
+        if self._full_data is None:
+            return None
+        dates = (
+            self._full_data
+            .filter(pl.col("instrument_id") == iid)
+            .sort("date")["date"]
+        )
+        idx = dates.search_sorted(ctx.date, side="left")
+        if idx < days_back:
+            return None
+        target_date = dates[idx - days_back]
         period = self.get_param(param_key)
         return ctx.indicator_value("EMA", iid, target_date, period=period)
 
