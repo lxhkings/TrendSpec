@@ -249,6 +249,40 @@ class EMAClusterPullback(BaseStrategy):
         return adv >= threshold
 
     def _maybe_sell(self, ctx: StrategyContext) -> None:
-        """Check SELL conditions (implemented in Task 9)."""
-        # Placeholder for Task 9
-        pass
+        """Check SELL conditions and emit signal if conditions met."""
+        iid = ctx.instrument_id
+
+        if not ctx.has_position(iid):
+            return
+
+        close = ctx.close
+        ema60 = ctx.indicator_value("EMA", iid, ctx.date, period=self.get_param("ema_mid"))
+        conf = self.get_param("confirmation_days")
+
+        # Hard stop loss (immediate)
+        entry = self._entry_price.get(iid)
+        if entry is not None:
+            stop_pct = self.get_param("stop_loss_pct")
+            if close <= entry * (1.0 - stop_pct):
+                ctx.signal("SELL", iid, close, note=f"stop_loss_{stop_pct:.0%}")
+                self._cleanup_position(iid)
+                return
+
+        # Break EMA60 (needs confirmation)
+        history = self._sell_break_history.setdefault(iid, deque(maxlen=conf))
+        if ema60 is None:
+            history.append(False)
+            return
+        broken_today = close < ema60
+        history.append(broken_today)
+        if len(history) == conf and all(history):
+            ctx.signal("SELL", iid, close,
+                       note=f"break_ema{self.get_param('sell_ma_period')}_{conf}d")
+            self._cleanup_position(iid)
+            return
+
+    def _cleanup_position(self, iid: str) -> None:
+        """Clear per-iid state after SELL."""
+        self._entry_price.pop(iid, None)
+        self._sell_break_history.pop(iid, None)
+        self._buy_pass_history.pop(iid, None)
