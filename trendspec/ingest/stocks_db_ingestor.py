@@ -632,3 +632,70 @@ def ingest_us_weekly(
     manifest.update_dataset_state("weekly", row_count, date_range, instrument_count)
 
     return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
+
+
+# =============================================================================
+# CN Weekly
+# =============================================================================
+
+
+def ingest_cn_weekly(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """Ingest CN weekly OHLCV from weekly_prices joined with stocks.
+
+    instrument_id = SH{ticker} for SSE/SH, SZ{ticker} for SZSE/SZ.
+    adj_factor = 1.0 (assume Tushare backward-adjusted, same as daily).
+    """
+    last_date = "1970-01-01" if full_sync else _get_last_synced_date(manifest, "weekly")
+
+    ex_placeholders = _exchange_placeholder(_CN_EXCHANGES)
+    ex_params = _exchange_params(_CN_EXCHANGES)
+    ex_params["last_date"] = last_date
+
+    sql = text(f"""
+        SELECT p.ticker, p.date, p.open, p.high, p.low, p.close, p.volume,
+               s.exchange
+        FROM weekly_prices p
+        JOIN stocks s ON p.ticker = s.ticker
+        WHERE s.exchange IN ({ex_placeholders})
+          AND p.date > :last_date
+        ORDER BY p.date, p.ticker
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(sql, ex_params).fetchall()
+
+    if not rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    df = pl.DataFrame(
+        rows,
+        schema=["ticker", "date", "open", "high", "low", "close", "volume", "exchange"],
+        orient="row",
+    )
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+    df = df.with_columns(
+        pl.struct(["ticker", "exchange"])
+        .map_elements(
+            lambda s: _derive_cn_instrument_id(s["ticker"], s["exchange"]),
+            return_dtype=pl.Utf8,
+        )
+        .alias("instrument_id")
+    )
+    df = df.with_columns(pl.lit(1.0).alias("adj_factor"))
+    df = df.drop("exchange")
+
+    write_parquet(df, Market.CN, "weekly", root, overwrite=full_sync)
+
+    dates = df["date"].cast(pl.Utf8)
+    date_range = (dates.min(), dates.max())
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+
+    manifest.update_dataset_state("weekly", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}

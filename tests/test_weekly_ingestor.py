@@ -74,3 +74,20 @@ def test_ingest_us_weekly_writes_parquet(stocks_db_with_weekly, temp_root):
                                 "close", "volume", "adj_factor"}
     assert df["adj_factor"].unique().to_list() == [1.0]
     assert sorted(df["instrument_id"].unique().to_list()) == ["AAPL", "MSFT"]
+
+
+def test_ingest_cn_weekly_derives_instrument_id(stocks_db_with_weekly, temp_root):
+    """CN weekly produces SH/SZ-prefixed instrument_id."""
+    from trendspec.data.markets import Market
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_weekly
+
+    manifest = Manifest(Market.CN, temp_root)
+    result = ingest_cn_weekly(stocks_db_with_weekly, manifest, temp_root, full_sync=True)
+
+    assert result["row_count"] == 2
+    assert result["instrument_count"] == 2
+
+    from trendspec.data.parquet_loader import scan_parquet
+    df = scan_parquet(temp_root, Market.CN, "weekly").collect()
+    assert sorted(df["instrument_id"].unique().to_list()) == ["SH600000", "SZ000001"]
