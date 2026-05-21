@@ -49,22 +49,26 @@ ALLOW_ROOT_DB_USER=true   # 开发环境使用 root 账号时必须加
 ```bash
 # 美股：SP500 + Russell1000，全量历史
 uv run trendspec ingest daily --market us --full
+uv run trendspec ingest weekly --market us --full   # 周线数据
 uv run trendspec ingest components --market us
 uv run trendspec ingest sectors --market us
 
 # A 股：CSI800，全量历史
 uv run trendspec ingest daily --market cn --full
+uv run trendspec ingest weekly --market cn --full   # 周线数据
 uv run trendspec ingest components --market cn
 uv run trendspec ingest sectors --market cn
 ```
 
-> `components` 和 `sectors` 是低频数据（成分每年变几次，行业基本不变），首次运行后无需重复。
+> `components` 和 `sectors` 是低频数据（成分每年变几次，行业基本不变），首次运行后无需重复。周线数据可选，仅部分策略需要。
 
 ### 日常增量更新
 
 ```bash
 uv run trendspec ingest daily --market us   # 合并新数据，已有历史不覆盖
 uv run trendspec ingest daily --market cn
+uv run trendspec ingest weekly --market us  # 周线增量（可选）
+uv run trendspec ingest weekly --market cn
 ```
 
 ### 查看同步状态
@@ -85,6 +89,7 @@ uv run trendspec ingest status --market us
 | 策略名 | 类型 | 说明 |
 |--------|------|------|
 | `clenow_momentum` | 量化动量 | Clenow《Stocks on the Move》：指数回归斜率×R² 排名，ATR 仓位，每周调仓 |
+| `ema_cluster_pullback` | EMA 密集回踩 | 日 EMA20/60/120 密集缠绕 + 周线回踩 EMA20 + 多头趋势确认，连续 2 日触发 |
 | `ma_cross` | 趋势跟踪 | 双均线交叉（短期 MA 上穿长期 MA 买入） |
 | `minervini_trend` | 动量筛选 | Minervini 趋势模板：6 项纯技术指标过滤，2 日确认 |
 | `rsi_reversal` | 均值回归 | RSI 超卖买入、超买卖出 |
@@ -109,6 +114,26 @@ uv run trendspec ingest status --market us
 | `warn_vol_mult_low` | 1.0 | 放量倍数下限（低于则"量能萎缩"） |
 | `warn_vol_mult_high` | 3.0 | 放量倍数上限（高于则"放量过快"） |
 | `warn_drawdown_max` | -15.0 | 回撤预警阈值（低于则"回撤过深"） |
+
+### ema_cluster_pullback 参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `ema_short` | 20 | 短期 EMA 周期（日线） |
+| `ema_mid` | 60 | 中期 EMA 周期（日线） |
+| `ema_long` | 120 | 长期 EMA 周期（日线） |
+| `daily_cluster_threshold` | 0.04 | 日线 EMA 密集阈值：(max−min)/min < 4% |
+| `weekly_proximity_threshold` | 0.025 | 周线 proximity 阈值：|close−weekly_EMA20| / weekly_EMA20 < 2.5% |
+| `weekly_ema_period` | 20 | 周线 EMA 周期 |
+| `ema_long_slope_lookback` | 20 | EMA120 斜率回望（交易日） |
+| `adv_threshold_us` | 5_000_000 | 美股 ADV20 阈值（美元） |
+| `adv_threshold_cn` | 50_000_000 | A 股 ADV20 阈值（人民币） |
+| `market_filter_enabled` | True | 指数过滤：指数收盘 > 指数 EMA200 |
+| `confirmation_days` | 2 | 连续满足条件天数 |
+| `stop_loss_pct` | 0.08 | 硬止损：收盘 ≤ entry × (1−8%) |
+| `sell_ma_period` | 60 | SELL 条件 EMA 周期（跌破 EMA60） |
+
+> EMA 密集回踩策略需要周线数据。运行前请先执行 `uv run trendspec ingest weekly --market us`。
 
 ## 选股
 
@@ -184,6 +209,7 @@ uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-3
 | 表名 | 说明 |
 |------|------|
 | `prices` | 日线 OHLCV（美股 Yahoo 复权价，A 股 Tushare 后复权价） |
+| `weekly_prices` | 周线 OHLCV（周收盘日聚合，用于 EMA 密集回踩等策略） |
 | `stocks` | 基本信息，含 GICS 行业分类 |
 | `index_constituents` | 指数成分快照（SP500 / Russell1000 / CSI800 / HSI） |
 | `constituent_changes` | 指数成分变动历史 |
