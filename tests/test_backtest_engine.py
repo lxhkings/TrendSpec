@@ -621,3 +621,56 @@ class TestSignalProcessing:
                 instrument_id="SH600000",
                 price=-10.0,
             )
+
+
+def test_engine_loads_weekly_data_into_context(tmp_path):
+    """Engine that finds weekly Parquet injects it into StrategyContext."""
+    import polars as pl
+    from datetime import date
+    from trendspec.data.markets import Market
+    from trendspec.ingest.writer import write_parquet
+
+    # Manually craft minimal daily + weekly Parquet
+    # Weekly date should be within the query range (2024-01-02 to 2024-01-04)
+    daily = pl.DataFrame({
+        "instrument_id": ["AAPL"] * 3,
+        "date": [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)],
+        "open": [180.0, 181.0, 182.0],
+        "high": [182.0, 183.0, 184.0],
+        "low":  [179.0, 180.0, 181.0],
+        "close":[181.0, 182.0, 183.0],
+        "volume":[1_000_000]*3,
+        "adj_factor":[1.0]*3,
+    })
+    weekly = pl.DataFrame({
+        "instrument_id":["AAPL"],
+        "date":[date(2024, 1, 4)],  # Use date within range
+        "open":[180.0], "high":[185.0], "low":[179.0], "close":[183.0],
+        "volume":[5_000_000], "adj_factor":[1.0],
+    })
+    write_parquet(daily, Market.US, "daily", str(tmp_path), overwrite=True)
+    write_parquet(weekly, Market.US, "weekly", str(tmp_path), overwrite=True)
+
+    from trendspec.engine.base_engine import EngineConfig
+    from trendspec.engine.backtest_engine import BacktestEngine
+    # Minimal strategy that just records ctx
+    from trendspec.strategy.base import BaseStrategy
+    seen = {}
+    class _Spy(BaseStrategy):
+        name = "spy"
+        def init(self, ctx):
+            seen["weekly"] = ctx._weekly_data
+        def next(self, ctx): pass
+
+    config = EngineConfig(
+        market=Market.US,
+        start_date=date(2024, 1, 2),
+        end_date=date(2024, 1, 4),
+        root=str(tmp_path),
+    )
+    engine = BacktestEngine(config)
+    # Don't call load_data() before run() - run() will handle it
+    engine.run(_Spy)   # run() takes the CLASS, not an instance
+
+    assert seen["weekly"] is not None
+    assert len(seen["weekly"]) == 1

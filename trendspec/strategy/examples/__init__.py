@@ -20,6 +20,7 @@ Example usage:
 """
 
 from trendspec.strategy.examples.clenow_momentum import ClenowMomentumStrategy
+from trendspec.strategy.examples.ema_cluster_pullback import EMAClusterPullback
 from trendspec.strategy.examples.ma_cross import MACrossStrategy
 from trendspec.strategy.examples.minervini_trend_template import MinerviniTrendTemplate
 from trendspec.strategy.examples.qullamaggie_momentum import QullamaggieMomentumStrategy
@@ -28,6 +29,7 @@ from trendspec.strategy.examples.sector_momentum import SectorMomentumStrategy
 
 __all__ = [
     "ClenowMomentumStrategy",
+    "EMAClusterPullback",
     "MACrossStrategy",
     "MinerviniTrendTemplate",
     "QullamaggieMomentumStrategy",
