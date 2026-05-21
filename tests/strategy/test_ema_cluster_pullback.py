@@ -2,7 +2,6 @@
 from datetime import date
 
 import polars as pl
-import pytest
 
 
 def test_strategy_registered():
