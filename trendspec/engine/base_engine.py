@@ -139,6 +139,7 @@ class BaseEngine(ABC):
         # Lazy-loaded components
         self._universe: Universe | None = None
         self._data: pl.DataFrame | None = None
+        self._weekly_data: pl.DataFrame | None = None
         self._strategy: BaseStrategy | None = None
         self._ctx: StrategyContext | None = None
 
@@ -172,6 +173,20 @@ class BaseEngine(ABC):
                 adjustment_mode=self.config.adjustment_mode,
                 root=self.root,
             )
+            # Best-effort weekly load (may be empty if weekly ingest not run yet)
+            try:
+                self._weekly_data = bars(
+                    market=self.config.market,
+                    start_date=self.config.start_date,
+                    end_date=self.config.end_date,
+                    adjustment_mode=self.config.adjustment_mode,
+                    root=self.root,
+                    frequency="weekly",
+                )
+                if self._weekly_data.is_empty():
+                    self._weekly_data = None
+            except Exception:
+                self._weekly_data = None
         return self._data
 
     def instantiate_strategy(
@@ -215,6 +230,7 @@ class BaseEngine(ABC):
             strategy=strategy,
             data=data,
             root=self.root,
+            weekly_data=self._weekly_data,
         )
         return self._ctx
 
