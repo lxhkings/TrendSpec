@@ -161,6 +161,7 @@ def bars(
     columns: list[str] | None = None,
     adjustment_mode: AdjustmentMode = "forward",
     root: str | None = None,
+    frequency: Literal["daily", "weekly"] = "daily",
 ) -> pl.DataFrame:
     """
     Get OHLCV bars for a market with optional date range and adjustment.
@@ -173,6 +174,7 @@ def bars(
         columns: Optional list of columns to select
         adjustment_mode: Price adjustment mode
         root: Root directory for data_lake
+        frequency: 'daily' (default) or 'weekly'
 
     Returns:
         Polars DataFrame with OHLCV data
@@ -186,7 +188,7 @@ def bars(
             f"Must be one of: {ADJUSTMENT_MODES}"
         )
 
-    lf = scan_parquet(root, market, "daily")
+    lf = scan_parquet(root, market, frequency)
 
     if _lazyframe_is_empty(lf):
         return pl.DataFrame()
