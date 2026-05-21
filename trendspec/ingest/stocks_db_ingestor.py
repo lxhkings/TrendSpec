@@ -587,20 +587,21 @@ def ingest_us_weekly(
     root: str,
     full_sync: bool = False,
 ) -> dict:
-    """Ingest US weekly OHLCV from weekly_prices + index_constituents.
+    """Ingest US weekly OHLCV from prices_weekly + index_constituents.
 
-    Schema mirrors prices: (ticker, date, open, high, low, close, volume).
-    date corresponds to each week's closing day per the Synology table convention.
+    Source table: prices_weekly (id, ticker, date, open, high, low, close, volume, created_at)
+    date = week ending date as stored by the Synology sync script.
     """
     last_date = "1970-01-01" if full_sync else _get_last_synced_date(manifest, "weekly")
 
     sql = text("""
         SELECT p.ticker, p.date, p.open, p.high, p.low, p.close, p.volume
-        FROM weekly_prices p
+        FROM prices_weekly p
         JOIN (
-            SELECT DISTINCT ticker FROM index_constituents
+            SELECT DISTINCT ticker COLLATE utf8mb4_unicode_ci AS ticker
+            FROM index_constituents
             WHERE index_id IN ('SP500', 'RUSSELL1000')
-        ) AS us ON p.ticker = us.ticker
+        ) AS us ON p.ticker COLLATE utf8mb4_unicode_ci = us.ticker
         WHERE p.date > :last_date
         ORDER BY p.date, p.ticker
     """)
@@ -645,7 +646,7 @@ def ingest_cn_weekly(
     root: str,
     full_sync: bool = False,
 ) -> dict:
-    """Ingest CN weekly OHLCV from weekly_prices joined with stocks.
+    """Ingest CN weekly OHLCV from prices_weekly joined with stocks.
 
     instrument_id = SH{ticker} for SSE/SH, SZ{ticker} for SZSE/SZ.
     adj_factor = 1.0 (assume Tushare backward-adjusted, same as daily).
@@ -659,7 +660,7 @@ def ingest_cn_weekly(
     sql = text(f"""
         SELECT p.ticker, p.date, p.open, p.high, p.low, p.close, p.volume,
                s.exchange
-        FROM weekly_prices p
+        FROM prices_weekly p
         JOIN stocks s ON p.ticker = s.ticker
         WHERE s.exchange IN ({ex_placeholders})
           AND p.date > :last_date
