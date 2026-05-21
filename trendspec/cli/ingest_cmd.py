@@ -3,6 +3,7 @@ TrendSpec data ingest CLI.
 
 Commands:
     trendspec ingest daily --market us
+    trendspec ingest weekly --market us
     trendspec ingest daily --market cn
     trendspec ingest components --market us
     trendspec ingest sectors --market us
@@ -60,6 +61,49 @@ def ingest_daily(
             result = ingest_us_daily(engine, manifest, root, full_sync=full_sync)
         elif market_enum == Market.CN:
             result = ingest_cn_daily(engine, manifest, root, full_sync=full_sync)
+        else:
+            console.print(f"[red]不支持的市场: {market}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[green]完成: {result['row_count']} 行, {result['instrument_count']} 只股票[/green]")
+    except Exception as e:
+        console.print(f"[red]导入失败: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("weekly")
+def ingest_weekly(
+    market: str = typer.Option("us", "--market", help="市场代码 (cn, us)"),
+    incremental: bool = typer.Option(
+        True, "--incremental/--full",
+        help="增量同步 (默认) 或全量同步",
+    ),
+) -> None:
+    """
+    从群辉 stocks DB 导入 OHLCV 周线数据.
+
+    示例:
+        trendspec ingest weekly --market us
+        trendspec ingest weekly --market cn --full
+    """
+    from trendspec.data.markets import Market
+    from trendspec.config.settings import get_settings
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.mariadb_client import create_engine_from_settings
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_weekly, ingest_us_weekly
+
+    market_enum = Market(market.upper())
+    settings = get_settings()
+    engine = create_engine_from_settings(settings.db)
+    root = settings.data_lake.data_lake_root
+    manifest = Manifest(market_enum, root)
+    full_sync = not incremental
+
+    console.print(f"[cyan]导入 {market} 周线数据...[/cyan]")
+    try:
+        if market_enum == Market.US:
+            result = ingest_us_weekly(engine, manifest, root, full_sync=full_sync)
+        elif market_enum == Market.CN:
+            result = ingest_cn_weekly(engine, manifest, root, full_sync=full_sync)
         else:
             console.print(f"[red]不支持的市场: {market}[/red]")
             raise typer.Exit(1)
