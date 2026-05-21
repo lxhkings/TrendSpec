@@ -58,6 +58,7 @@ class StrategyContext:
         strategy: "BaseStrategy",
         data: pl.DataFrame | None = None,
         root: str | None = None,
+        weekly_data: pl.DataFrame | None = None,
     ) -> None:
         """
         Initialize strategy context.
@@ -67,11 +68,13 @@ class StrategyContext:
             strategy: The strategy instance using this context
             data: Current bar data (DataFrame with single row per instrument)
             root: Root directory for data_lake
+            weekly_data: Optional weekly OHLCV DataFrame for weekly indicators
         """
         self.market = market
         self.strategy = strategy
         self._data = data
         self._root = root
+        self._weekly_data = weekly_data
 
         # Current bar state (updated per-bar)
         self._current_date: DateType | None = None
@@ -82,6 +85,12 @@ class StrategyContext:
         self._indicator_cache: dict[str, pl.DataFrame] = {}
         # Fast O(1) lookup: {cache_key: {(instrument_id, date): value}}
         self._indicator_fast: dict[str, dict[tuple, float]] = {}
+
+        # Weekly indicator cache (populated by precompute_weekly_indicator)
+        self._weekly_indicator_cache: dict[str, pl.DataFrame] = {}
+        self._weekly_indicator_fast: dict[str, dict[tuple, float]] = {}
+        # Sorted weekly dates per instrument for binary lookup (built lazily)
+        self._weekly_dates_by_iid: dict[str, list] = {}
 
         # PIT access
         self._sector_index: SectorIndex | None = None
@@ -444,6 +453,105 @@ class StrategyContext:
             col_name = name
 
         return filtered[col_name].item()
+
+    # =========================================================================
+    # Weekly Indicator Cache Management
+    # =========================================================================
+
+    def precompute_weekly_indicator(
+        self,
+        name: str,
+        **params: Any,
+    ) -> pl.DataFrame:
+        """
+        Precompute indicator on weekly data (mirrors precompute_indicator).
+
+        Args:
+            name: Indicator name (MA, EMA, RSI, ...)
+            **params: Indicator parameters (period, etc.)
+
+        Returns:
+            Weekly DataFrame with indicator column added
+        """
+        from trendspec.strategy.indicators import compute_indicator
+
+        if self._weekly_data is None:
+            raise RuntimeError("No weekly_data; cannot precompute weekly indicator")
+
+        result = compute_indicator(self._weekly_data, name, **params)
+        cache_key = f"weekly_{name}_{params}"
+        self._weekly_indicator_cache[cache_key] = result
+
+        _col = f"{name}_{params.get('period', '')}" if params else name
+        if _col not in result.columns:
+            _col = name
+        if _col in result.columns:
+            self._weekly_indicator_fast[cache_key] = {
+                (inst_id, dt): val
+                for inst_id, dt, val in result.select(
+                    ["instrument_id", "date", _col]
+                ).iter_rows()
+                if val is not None
+            }
+
+        return result
+
+    def weekly_indicator_value(
+        self,
+        name: str,
+        instrument_id: str | None = None,
+        as_of_date: DateType | None = None,
+        **params: Any,
+    ) -> float | None:
+        """
+        Get weekly indicator value at the most recent completed weekly bar ≤ as_of_date.
+
+        Never reads an incomplete (current) week — strict no-lookahead guarantee.
+
+        Returns None if no weekly bar exists ≤ as_of_date, or weekly data missing.
+        """
+        if self._weekly_data is None:
+            return None
+
+        target_iid = instrument_id or self._current_instrument_id
+        target_date = as_of_date or self._current_date
+        if target_iid is None or target_date is None:
+            return None
+
+        cache_key = f"weekly_{name}_{params}"
+        if cache_key not in self._weekly_indicator_fast:
+            self.precompute_weekly_indicator(name, **params)
+
+        week_end = self._resolve_week_end(target_iid, target_date)
+        if week_end is None:
+            return None
+
+        return self._weekly_indicator_fast.get(cache_key, {}).get((target_iid, week_end))
+
+    def _resolve_week_end(self, iid: str, as_of_date: DateType) -> DateType | None:
+        """Binary-search largest weekly bar date ≤ as_of_date for `iid`."""
+        import bisect
+
+        if iid not in self._weekly_dates_by_iid:
+            if self._weekly_data is None:
+                return None
+            dates = (
+                self._weekly_data
+                .filter(pl.col("instrument_id") == iid)
+                .sort("date")["date"]
+                .to_list()
+            )
+            self._weekly_dates_by_iid[iid] = dates
+
+        dates = self._weekly_dates_by_iid[iid]
+        if not dates:
+            return None
+        # bisect_right gives the insertion point AFTER all equals;
+        # idx-1 → largest date ≤ as_of_date
+        idx = bisect.bisect_right(dates, as_of_date)
+        if idx == 0:
+            return None
+        return dates[idx - 1]
 
     # =========================================================================
     # Signal Generation
