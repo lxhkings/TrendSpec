@@ -37,9 +37,9 @@ def backtest_run(
         help="起始日期 (YYYY-MM-DD)",
     ),
     end: str = typer.Option(
-        "2024-12-31",
+        None,
         "--end",
-        help="结束日期 (YYYY-MM-DD)",
+        help="结束日期 (YYYY-MM-DD)，默认今日",
     ),
     capital: float = typer.Option(
         100000.0,
@@ -72,7 +72,7 @@ def backtest_run(
     # Parse dates
     try:
         start_date = date.fromisoformat(start)
-        end_date = date.fromisoformat(end)
+        end_date = date.fromisoformat(end) if end else date.today()
     except ValueError:
         console.print("[red]日期格式错误，请使用 YYYY-MM-DD 格式[/red]")
         raise typer.Exit(1)
@@ -168,7 +168,7 @@ def backtest_list() -> None:
 def backtest_compare(
     market: str = typer.Option("cn", "--market", "-m", help="市场 (cn, us)"),
     start: str = typer.Option("2020-01-01", "--start", help="起始日期"),
-    end: str = typer.Option("2024-12-31", "--end", help="结束日期"),
+    end: Optional[str] = typer.Option(None, "--end", help="结束日期 (YYYY-MM-DD)，默认今日"),
     capital: float = typer.Option(100000.0, "--capital", "-c", help="初始资金"),
     sort: str = typer.Option("sharpe", "--sort", help="排序: return|annual|mdd|sharpe|trades"),
     export: Optional[str] = typer.Option(None, "--export", help="导出: csv|json|markdown"),
@@ -185,7 +185,7 @@ def backtest_compare(
 
     try:
         start_date = date.fromisoformat(start)
-        end_date = date.fromisoformat(end)
+        end_date = date.fromisoformat(end) if end else date.today()
         market_enum = Market(market.upper())
     except ValueError as e:
         console.print(f"[red]参数错误: {e}[/red]")

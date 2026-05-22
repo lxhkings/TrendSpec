@@ -226,8 +226,21 @@ class BacktestEngine(BaseEngine):
         self._peak_nav = self.config.initial_capital
 
         # Main execution loop
-        for trading_day in trading_days:
-            self._run_day(trading_day)
+        try:
+            from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+            with Progress(
+                TextColumn("[cyan]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeRemainingColumn(),
+            ) as progress:
+                task = progress.add_task("回测中...", total=len(trading_days))
+                for trading_day in trading_days:
+                    self._run_day(trading_day)
+                    progress.advance(task)
+        except ImportError:
+            for trading_day in trading_days:
+                self._run_day(trading_day)
 
         # Calculate metrics
         metrics = self._calculate_metrics()
@@ -315,7 +328,7 @@ class BacktestEngine(BaseEngine):
             ticker = row.get("ticker", instrument_id)
 
             # Update context for this instrument
-            ctx.update_bar(trading_day, instrument_id, ticker, data)
+            ctx.update_bar(trading_day, instrument_id, ticker, data, current_row=row)
 
             # Update portfolio prices for this instrument
             current_price = row.get("close", 0.0)

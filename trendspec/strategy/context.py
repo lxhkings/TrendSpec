@@ -158,32 +158,42 @@ class StrategyContext:
 
     def _get_current_price(self, column: str) -> float:
         """Get price value for current instrument at current date."""
-        if self._data is None or self._current_instrument_id is None:
+        if self._current_instrument_id is None:
+            raise RuntimeError(f"No data available for {column}")
+
+        bar = getattr(self, "_current_bar", None)
+        if bar is not None and column in bar:
+            return float(bar[column])
+
+        if self._data is None:
             raise RuntimeError(f"No data available for {column}")
 
         filtered = self._data.filter(
             (pl.col("instrument_id") == self._current_instrument_id)
             & (pl.col("date") == self._current_date)
         )
-
         if filtered.is_empty():
             raise RuntimeError(f"No data for {self._current_instrument_id} at {self._current_date}")
-
         return filtered[column].item()
 
     def _get_current_value(self, column: str) -> Any:
         """Get value for current instrument at current date."""
-        if self._data is None or self._current_instrument_id is None:
+        if self._current_instrument_id is None:
+            raise RuntimeError(f"No data available for {column}")
+
+        bar = getattr(self, "_current_bar", None)
+        if bar is not None and column in bar:
+            return bar[column]
+
+        if self._data is None:
             raise RuntimeError(f"No data available for {column}")
 
         filtered = self._data.filter(
             (pl.col("instrument_id") == self._current_instrument_id)
             & (pl.col("date") == self._current_date)
         )
-
         if filtered.is_empty():
             raise RuntimeError(f"No data for {self._current_instrument_id} at {self._current_date}")
-
         return filtered[column].item()
 
     # =========================================================================
@@ -249,10 +259,16 @@ class StrategyContext:
         if self._indices_cache is None:
             return None
 
-        rows = self._indices_cache.filter(
-            (pl.col("instrument_id") == index_id) & (pl.col("date") == target_date)
-        )
-        return rows["close"].item() if not rows.is_empty() else None
+        # Build fast lookup dict on first use
+        if not hasattr(self, "_indices_fast"):
+            self._indices_fast: dict[tuple, float] = {
+                (iid, dt): val
+                for iid, dt, val in self._indices_cache.select(
+                    ["instrument_id", "date", "close"]
+                ).iter_rows()
+            }
+
+        return self._indices_fast.get((index_id, target_date))
 
     def sector_index(self) -> SectorIndex:
         """Get sector index for the market."""
@@ -629,6 +645,7 @@ class StrategyContext:
         instrument_id: str,
         ticker: str,
         data: pl.DataFrame,
+        current_row: dict | None = None,
     ) -> None:
         """
         Update context for a new bar.
@@ -640,11 +657,13 @@ class StrategyContext:
             instrument_id: Current instrument_id
             ticker: Current ticker
             data: Full data DataFrame (or filtered for current date)
+            current_row: Pre-extracted row dict for O(1) price access
         """
         self._current_date = current_date
         self._current_instrument_id = instrument_id
         self._current_ticker = ticker
         self._data = data
+        self._current_bar: dict | None = current_row
 
     def update_positions(self, positions: dict[str, float], available_capital: float) -> None:
         """

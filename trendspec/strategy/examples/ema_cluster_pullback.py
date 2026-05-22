@@ -20,6 +20,8 @@ from trendspec.strategy.base import BaseStrategy, register_strategy
 from trendspec.strategy.context import StrategyContext
 
 
+
+
 _DEFAULTS = {
     "ema_short": 20,
     "ema_mid": 60,
@@ -38,6 +40,8 @@ _DEFAULTS = {
     "confirmation_days": 2,
     "stop_loss_pct": 0.08,
     "sell_ma_period": 60,
+    "atr_period": 20,
+    "risk_factor": 0.001,
 }
 
 
@@ -67,11 +71,8 @@ class EMAClusterPullback(BaseStrategy):
         ctx.precompute_indicator("EMA", period=m)
         ctx.precompute_indicator("EMA", period=l)
         ctx.precompute_weekly_indicator("EMA", period=w)
-
-        # ADV20 = rolling mean of close*volume (precompute for fast lookup)
-        self._adv20_fast = self._compute_adv20_fast(
-            ctx._data, lookback=self.get_param("adv_lookback")
-        )
+        ctx.precompute_indicator("ADV", period=self.get_param("adv_lookback"))
+        ctx.precompute_indicator("ATR", period=self.get_param("atr_period"))
 
         self._market_ema_cache: dict[tuple, float | None] = {}
         self._entry_price: dict[str, float] = {}
@@ -80,26 +81,24 @@ class EMAClusterPullback(BaseStrategy):
 
         self._full_data = ctx._data
 
-    @staticmethod
-    def _compute_adv20_fast(
-        df: pl.DataFrame | None, lookback: int
-    ) -> dict[tuple, float]:
-        """Build {(iid, date): adv} dict for fast O(1) lookup."""
-        if df is None or df.is_empty():
-            return {}
-        with_adv = df.sort("date").with_columns(
-            (pl.col("close") * pl.col("volume"))
-            .rolling_mean(window_size=lookback)
-            .over("instrument_id")
-            .alias("_adv")
-        )
-        return {
-            (iid, dt): val
-            for iid, dt, val in with_adv.select(
-                ["instrument_id", "date", "_adv"]
-            ).iter_rows()
-            if val is not None
-        }
+        # Precompute per-iid sorted date arrays to avoid O(n) filter in next()
+        self._iid_dates: dict[str, "pl.Series"] = {}
+        if ctx._data is not None and not ctx._data.is_empty():
+            for (iid,), grp in ctx._data.sort(["instrument_id", "date"]).group_by(
+                ["instrument_id"], maintain_order=True
+            ):
+                self._iid_dates[iid] = grp["date"]
+
+        # Precompute per-iid weekly date lists + index for O(1) lookup
+        self._iid_weekly_dates: dict[str, list] = {}
+        self._iid_weekly_date_index: dict[str, dict] = {}
+        if ctx._weekly_data is not None and not ctx._weekly_data.is_empty():
+            for (iid,), grp in ctx._weekly_data.sort(["instrument_id", "date"]).group_by(
+                ["instrument_id"], maintain_order=True
+            ):
+                dates_list = grp["date"].to_list()
+                self._iid_weekly_dates[iid] = dates_list
+                self._iid_weekly_date_index[iid] = {d: i for i, d in enumerate(dates_list)}
 
     def next(self, ctx: StrategyContext) -> None:
         """
@@ -173,21 +172,21 @@ class EMAClusterPullback(BaseStrategy):
         # Screening mode: 1 day is enough; backtest requires confirmation_days
         confirmation = 1 if ctx.is_screening else self.get_param("confirmation_days")
         if len(self._buy_pass_history[iid]) >= confirmation and all(self._buy_pass_history[iid]):
-            # BUY signal
-            ctx.signal("BUY", iid, close, note="EMA cluster pullback BUY")
+            atr = ctx.indicator_value("ATR", iid, ctx.date, period=self.get_param("atr_period"))
+            shares = 1
+            if atr and atr > 0 and ctx.available_capital > 0:
+                shares = max(1, int(ctx.available_capital * self.get_param("risk_factor") / atr))
+            sig = ctx.signal("BUY", iid, close, note="EMA cluster pullback BUY")
+            sig.shares = float(shares)
             self._entry_price[iid] = close
 
     def _lookup_prev_ema(
         self, ctx: StrategyContext, iid: str, param_key: str, days_back: int
     ) -> float | None:
-        """Look up EMA value N *trading* days ago (via DataFrame index, not calendar days)."""
-        if self._full_data is None:
+        """Look up EMA value N *trading* days ago using precomputed date index."""
+        dates = self._iid_dates.get(iid)
+        if dates is None:
             return None
-        dates = (
-            self._full_data
-            .filter(pl.col("instrument_id") == iid)
-            .sort("date")["date"]
-        )
         idx = dates.search_sorted(ctx.date, side="left")
         if idx < days_back:
             return None
@@ -198,31 +197,23 @@ class EMAClusterPullback(BaseStrategy):
     def _lookup_prev_weekly_ema(
         self, ctx: StrategyContext, iid: str, weeks_back: int = 1
     ) -> float | None:
-        """Look up weekly EMA from N weeks before current week."""
-        if ctx._weekly_data is None:
-            return None
-
-        # Get current week's end date
+        """Look up weekly EMA from N weeks before current week using precomputed index."""
         current_week_end = ctx._resolve_week_end(iid, ctx.date)
         if current_week_end is None:
             return None
 
-        # Find the weekly bar N weeks before
-        all_weekly_dates = (
-            ctx._weekly_data
-            .filter(pl.col("instrument_id") == iid)
-            .sort("date")["date"]
-            .to_list()
-        )
-
-        try:
-            current_idx = all_weekly_dates.index(current_week_end)
-            target_idx = current_idx - weeks_back
-            if target_idx < 0:
-                return None
-            target_date = all_weekly_dates[target_idx]
-        except (ValueError, IndexError):
+        date_index = self._iid_weekly_date_index.get(iid)
+        dates_list = self._iid_weekly_dates.get(iid)
+        if date_index is None or dates_list is None:
             return None
+
+        current_idx = date_index.get(current_week_end)
+        if current_idx is None:
+            return None
+        target_idx = current_idx - weeks_back
+        if target_idx < 0:
+            return None
+        target_date = dates_list[target_idx]
 
         period = self.get_param("weekly_ema_period")
         return ctx.weekly_indicator_value("EMA", iid, target_date, period=period)
@@ -245,7 +236,7 @@ class EMAClusterPullback(BaseStrategy):
 
     def _liquid_enough(self, ctx: StrategyContext, iid: str) -> bool:
         """Check ADV20 >= threshold."""
-        adv = self._adv20_fast.get((iid, ctx.date))
+        adv = ctx.indicator_value("ADV", iid, ctx.date, period=self.get_param("adv_lookback"))
         if adv is None:
             return False
 
@@ -254,7 +245,7 @@ class EMAClusterPullback(BaseStrategy):
         else:
             threshold = self.get_param("adv_threshold_cn")
 
-        return adv >= threshold
+        return float(adv) >= threshold
 
     def _maybe_sell(self, ctx: StrategyContext) -> None:
         """Check SELL conditions and emit signal if conditions met."""

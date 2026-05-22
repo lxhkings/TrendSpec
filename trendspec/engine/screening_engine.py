@@ -280,7 +280,7 @@ class ScreeningEngine(BaseEngine):
             ticker = row.get("ticker", instrument_id)
 
             # Update context for this instrument
-            ctx.update_bar(screening_date, instrument_id, ticker, data)
+            ctx.update_bar(screening_date, instrument_id, ticker, data, current_row=row)
 
             # Call strategy.next()
             strategy.next(ctx)

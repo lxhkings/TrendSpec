@@ -31,11 +31,11 @@ class TestCSVFilename:
         report = ScreeningReport(
             signals=signals,
             screening_date=date(2026, 5, 18),
-            strategy_name="ma_cross",
+            strategy_name="ema_cluster_pullback",
             market="us",
         )
         out = report.export(tmp_path)
-        assert "ma_cross" in out.name
+        assert "ema_cluster_pullback" in out.name
         assert "20260518" in out.name
         assert out.name.endswith(".csv")
         assert out.exists()
@@ -45,7 +45,7 @@ class TestCSVFilename:
         ScreeningReport(
             signals=sigs,
             screening_date=date(2026, 5, 18),
-            strategy_name="ma_cross",
+            strategy_name="ema_cluster_pullback",
             market="us",
         ).export(tmp_path)
         ScreeningReport(
@@ -56,7 +56,7 @@ class TestCSVFilename:
         ).export(tmp_path)
         files = sorted(p.name for p in tmp_path.glob("signals_*.csv"))
         assert len(files) == 2
-        assert any("ma_cross" in f for f in files)
+        assert any("ema_cluster_pullback" in f for f in files)
         assert any("clenow_momentum" in f for f in files)
 
 
@@ -106,7 +106,7 @@ class TestClenowBuyTableRendering:
         report = ScreeningReport(
             signals=signals,
             screening_date=date(2026, 5, 18),
-            strategy_name="ma_cross",
+            strategy_name="ema_cluster_pullback",
             market="us",
         )
         table = report._create_signals_table(signals, "买入信号")
@@ -285,7 +285,7 @@ class TestClenowCSVSchema:
         report = ScreeningReport(
             signals=signals,
             screening_date=date(2026, 5, 18),
-            strategy_name="ma_cross",
+            strategy_name="ema_cluster_pullback",
             market="us",
         )
         out = report.export(tmp_path)

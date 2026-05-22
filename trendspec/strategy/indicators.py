@@ -934,6 +934,18 @@ def sma_volume(df: pl.DataFrame, period: int = 50) -> pl.DataFrame:
     )
 
 
+@register_indicator("ADV")
+def adv(df: pl.DataFrame, period: int = 20) -> pl.DataFrame:
+    """Rolling mean of close*volume (average dollar volume) per instrument."""
+    col_name = f"ADV_{period}"
+    return df.sort("date").with_columns(
+        (pl.col("close").cast(pl.Float64) * pl.col("volume").cast(pl.Float64))
+        .rolling_mean(window_size=period)
+        .over("instrument_id")
+        .alias(col_name)
+    )
+
+
 @register_indicator("CLENOW_R2")
 def clenow_r2(df: pl.DataFrame, period: int = 90) -> pl.DataFrame:
     """
