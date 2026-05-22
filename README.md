@@ -146,7 +146,7 @@ uv run trendspec screen run --strategy clenow_momentum --market cn --date 2026-0
 uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-05-14 --param max_per_sector=1
 
 # 其他策略
-uv run trendspec screen run --strategy ma_cross --market us --date 2026-05-14
+uv run trendspec screen run --strategy ema_cluster_pullback --market us --date 2026-05-14
 ```
 
 选股输出包含：行业、选股排名、建议买入价、初始止损线、趋势质量（R²）、乖离率、回撤、放量倍数、预警信息，以及历史信号统计（如已构建）。
