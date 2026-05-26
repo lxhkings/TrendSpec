@@ -474,3 +474,32 @@ def test_next_emits_sell_when_holding_and_stop_hit() -> None:
     # State cleared
     assert iid not in strat._pivot_low
     assert iid not in strat._entry_date
+
+
+# ----------------------------------------------------------------------
+# Task 7: Edge-case tests — zero-range day + insufficient history
+# ----------------------------------------------------------------------
+
+
+def test_zero_range_day_does_not_emit_buy() -> None:
+    """When high == low on T, condition 3 cannot be evaluated → no BUY."""
+    df = _make_ep_setup_bars()
+    t_date = df["date"][-1]
+    # Force high = low on T
+    high = df["high"][-1]
+    df = df.with_columns(
+        pl.when(pl.col("date") == t_date).then(pl.lit(high)).otherwise(pl.col("low")).alias("low")
+    )
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+    assert strat._check_buy(ctx, "AAPL_US", t_date) is False
+
+
+def test_insufficient_history_no_buy() -> None:
+    """With < 200 bars, EMA200 is None → no BUY."""
+    df = _make_bars("AAPL_US", n=50)  # too short for EMA200
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+    assert strat._check_buy(ctx, "AAPL_US", df["date"][-1]) is False
