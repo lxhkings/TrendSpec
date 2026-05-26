@@ -503,3 +503,50 @@ def test_insufficient_history_no_buy() -> None:
     ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
     strat.init(ctx)
     assert strat._check_buy(ctx, "AAPL_US", df["date"][-1]) is False
+
+
+# ----------------------------------------------------------------------
+# Task 8: Screening mode smoke test
+# ----------------------------------------------------------------------
+
+
+def _has_us_data_lake() -> bool:
+    """Check if data_lake/us/daily exists (requires prior ingest).
+
+    Gracefully handles missing Settings configuration by falling back to
+    default path ./data_lake.
+    """
+    from pathlib import Path
+
+    try:
+        from trendspec.config.settings import Settings
+        root = Path(Settings.get().data_lake_root)
+    except Exception:
+        # Settings initialization failed (missing DB creds), use default
+        root = Path("./data_lake")
+    return (root / "us" / "daily").exists()
+
+
+import pytest
+
+
+@pytest.mark.skipif(
+    not _has_us_data_lake(),
+    reason="requires data_lake/us daily ingest",
+)
+def test_screening_engine_smoke() -> None:
+    """ScreeningEngine runs cleanly against real data_lake (single date)."""
+    from datetime import date as D
+
+    from trendspec.engine.base_engine import EngineConfig
+    from trendspec.engine.screening_engine import ScreeningEngine
+
+    config = EngineConfig(
+        market=Market.US,
+        start_date=D(2024, 5, 15),
+        end_date=D(2024, 5, 15),
+        initial_capital=1_000_000.0,
+    )
+    engine = ScreeningEngine(config)
+    result = engine.run(EpisodicPivot)
+    assert result is not None
