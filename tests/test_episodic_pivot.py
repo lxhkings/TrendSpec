@@ -550,3 +550,30 @@ def test_screening_engine_smoke() -> None:
     engine = ScreeningEngine(config)
     result = engine.run(EpisodicPivot)
     assert result is not None
+
+
+# ----------------------------------------------------------------------
+# Task 9: Backtest smoke test (short period)
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not _has_us_data_lake(),
+    reason="requires data_lake/us daily ingest",
+)
+def test_backtest_engine_smoke() -> None:
+    """BacktestEngine runs cleanly against real data_lake (2-month window)."""
+    from datetime import date as D
+
+    from trendspec.engine.backtest_engine import BacktestEngine
+    from trendspec.engine.base_engine import EngineConfig
+
+    config = EngineConfig(
+        market=Market.US,
+        start_date=D(2024, 1, 1),
+        end_date=D(2024, 2, 29),
+        initial_capital=1_000_000.0,
+    )
+    engine = BacktestEngine(config)
+    result = engine.run(EpisodicPivot)
+    assert result is not None
