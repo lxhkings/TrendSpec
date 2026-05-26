@@ -92,6 +92,17 @@ class EpisodicPivot(BaseStrategy):
                 for row in grp.iter_rows(named=True)
             }
 
+    def _prev_bar(self, iid: str, as_of_date: DateType) -> dict[str, float] | None:
+        """Return OHLCV dict for the trading day immediately before `as_of_date`, or None."""
+        dates = self._iid_dates.get(iid)
+        if dates is None:
+            return None
+        idx = dates.search_sorted(as_of_date, side="left")
+        if idx < 1:
+            return None
+        prev_date = dates[idx - 1]
+        return self._iid_ohlcv.get(iid, {}).get(prev_date)
+
     def next(self, ctx: StrategyContext) -> None:
         """Per-bar signal generation (filled in later tasks)."""
         pass

@@ -65,3 +65,37 @@ def test_init_precomputes_indicators_and_caches() -> None:
     # ADV20 available via context (proves precompute ran)
     adv = ctx.indicator_value("ADV", "AAPL_US", df["date"][50], period=20)
     assert adv is not None and adv > 0
+
+
+def test_prev_bar_returns_t_minus_1_ohlcv() -> None:
+    """_prev_bar(iid, T) returns OHLCV dict for the previous trading day."""
+    df = _make_bars("AAPL_US", n=10)
+    ctx = StrategyContext(market=Market.US, strategy=EpisodicPivot(), data=df)
+    strat = EpisodicPivot()
+    strat.init(ctx)
+
+    t_date = df["date"][5]
+    prev_date = df["date"][4]
+    prev_bar = strat._prev_bar("AAPL_US", t_date)
+    assert prev_bar is not None
+    assert prev_bar["close"] == strat._iid_ohlcv["AAPL_US"][prev_date]["close"]
+
+
+def test_prev_bar_returns_none_at_first_bar() -> None:
+    """First bar in series has no T-1."""
+    df = _make_bars("AAPL_US", n=10)
+    ctx = StrategyContext(market=Market.US, strategy=EpisodicPivot(), data=df)
+    strat = EpisodicPivot()
+    strat.init(ctx)
+
+    first_date = df["date"][0]
+    assert strat._prev_bar("AAPL_US", first_date) is None
+
+
+def test_prev_bar_returns_none_for_unknown_iid() -> None:
+    df = _make_bars("AAPL_US", n=10)
+    ctx = StrategyContext(market=Market.US, strategy=EpisodicPivot(), data=df)
+    strat = EpisodicPivot()
+    strat.init(ctx)
+
+    assert strat._prev_bar("UNKNOWN", df["date"][5]) is None
