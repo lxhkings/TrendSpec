@@ -166,6 +166,26 @@ class EpisodicPivot(BaseStrategy):
 
         return True
 
+    def _check_sell(
+        self, ctx: StrategyContext, iid: str, as_of: DateType
+    ) -> tuple[bool, str | None]:
+        """Return (triggered, reason). Reason in {'hard_stop', 'trail_ema', None}."""
+        bar = self._iid_ohlcv.get(iid, {}).get(as_of)
+        if bar is None:
+            return (False, None)
+
+        # Hard stop: today's low <= pivot_day_low
+        pivot_low = self._pivot_low.get(iid)
+        if pivot_low is not None and bar["low"] <= pivot_low:
+            return (True, "hard_stop")
+
+        # Trailing: close < EMA10
+        ema10 = ctx.indicator_value("EMA", iid, as_of, period=self.get_param("trail_ema_period"))
+        if ema10 is not None and bar["close"] < ema10:
+            return (True, "trail_ema")
+
+        return (False, None)
+
     def next(self, ctx: StrategyContext) -> None:
         """Per-bar signal generation (filled in later tasks)."""
         pass

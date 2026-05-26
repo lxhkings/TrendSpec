@@ -298,3 +298,69 @@ def test_buy_rejected_low_liquidity() -> None:
     ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
     strat.init(ctx)
     assert strat._check_buy(ctx, "AAPL_US", df["date"][-1]) is False
+
+
+# ----------------------------------------------------------------------
+# Task 5: SELL condition tests
+# ----------------------------------------------------------------------
+
+
+def test_sell_hard_stop_triggered() -> None:
+    """When today's low <= pivot_low, SELL fires."""
+    df = _make_bars("AAPL_US", n=50)
+    iid = "AAPL_US"
+    t_date = df["date"][30]
+
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    # Simulate prior entry: pivot_low set above today's low -> stop fires
+    strat._pivot_low[iid] = strat._iid_ohlcv[iid][t_date]["low"] + 1.0
+
+    triggered, reason = strat._check_sell(ctx, iid, t_date)
+    assert triggered is True
+    assert reason == "hard_stop"
+
+
+def test_sell_trail_ema10_triggered() -> None:
+    """When close < EMA10, SELL fires (no hard-stop trigger)."""
+    df = _make_bars("AAPL_US", n=50)
+    iid = "AAPL_US"
+    t_date = df["date"][30]
+
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    # pivot_low far below today's low -> hard stop does not fire
+    strat._pivot_low[iid] = strat._iid_ohlcv[iid][t_date]["low"] * 0.5
+
+    # Force EMA10 above close by patching OHLCV cache
+    ema10 = ctx.indicator_value("EMA", iid, t_date, period=10)
+    assert ema10 is not None
+
+    # Drop today's close below EMA10
+    strat._iid_ohlcv[iid][t_date]["close"] = ema10 - 1.0
+
+    triggered, reason = strat._check_sell(ctx, iid, t_date)
+    assert triggered is True
+    assert reason == "trail_ema"
+
+
+def test_sell_no_trigger_when_above_stop_and_ema10() -> None:
+    """No SELL when both conditions not met."""
+    df = _make_bars("AAPL_US", n=50)
+    iid = "AAPL_US"
+    t_date = df["date"][30]
+
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    # pivot_low far below -> hard stop not triggered
+    strat._pivot_low[iid] = strat._iid_ohlcv[iid][t_date]["low"] * 0.5
+
+    triggered, reason = strat._check_sell(ctx, iid, t_date)
+    assert triggered is False
+    assert reason is None
