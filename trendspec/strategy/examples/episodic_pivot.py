@@ -187,5 +187,28 @@ class EpisodicPivot(BaseStrategy):
         return (False, None)
 
     def next(self, ctx: StrategyContext) -> None:
-        """Per-bar signal generation (filled in later tasks)."""
-        pass
+        """Per-bar signal generation: SELL if holding, BUY if entry conditions fire."""
+        iid = ctx.instrument_id
+        as_of = ctx.date
+
+        # If holding: check SELL exits
+        if ctx.has_position(iid):
+            triggered, reason = self._check_sell(ctx, iid, as_of)
+            if triggered:
+                ctx.signal("SELL", iid, ctx.close, note=f"episodic_pivot_{reason}")
+                self._pivot_low.pop(iid, None)
+                self._entry_date.pop(iid, None)
+            return
+
+        # Max positions cap
+        if len(ctx.positions) >= self.get_param("max_positions"):
+            return
+
+        # BUY conditions
+        if not self._check_buy(ctx, iid, as_of):
+            return
+
+        ctx.signal("BUY", iid, ctx.close, note="episodic_pivot_entry")
+        # Record pivot_low at T for hard stop reference (T+1 is entry date)
+        self._pivot_low[iid] = self._iid_ohlcv[iid][as_of]["low"]
+        self._entry_date[iid] = as_of

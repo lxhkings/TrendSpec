@@ -364,3 +364,113 @@ def test_sell_no_trigger_when_above_stop_and_ema10() -> None:
     triggered, reason = strat._check_sell(ctx, iid, t_date)
     assert triggered is False
     assert reason is None
+
+
+# ----------------------------------------------------------------------
+# Task 6: next() signal generation tests
+# ----------------------------------------------------------------------
+
+
+def test_next_emits_buy_when_conditions_met() -> None:
+    """next() emits BUY signal when all conditions fire, records pivot_low/entry_date."""
+    df = _make_ep_setup_bars()
+    iid = "AAPL_US"
+    t_date = df["date"][-1]
+
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+    ctx.update_bar(
+        current_date=t_date,
+        instrument_id=iid,
+        ticker=iid.split("_")[0],
+        data=df,
+        current_row=strat._iid_ohlcv[iid][t_date],
+    )
+    strat.next(ctx)
+    sigs = ctx.pending_signals()
+    assert len(sigs) == 1
+    assert sigs[0].direction == "BUY"
+    assert sigs[0].instrument_id == iid
+    # State recorded
+    assert iid in strat._pivot_low
+    assert iid in strat._entry_date
+
+
+def test_next_already_holding_does_not_rebuy() -> None:
+    """When already holding position, next() does not emit BUY (may emit SELL)."""
+    df = _make_ep_setup_bars()
+    iid = "AAPL_US"
+    t_date = df["date"][-1]
+
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+    ctx.update_positions(positions={iid: 100.0}, available_capital=10_000.0)
+    ctx.update_bar(
+        current_date=t_date,
+        instrument_id=iid,
+        ticker=iid.split("_")[0],
+        data=df,
+        current_row=strat._iid_ohlcv[iid][t_date],
+    )
+    strat.next(ctx)
+    sigs = ctx.pending_signals()
+    # No BUY (already holding). May or may not produce SELL (state was empty), but no BUY.
+    buys = [s for s in sigs if s.direction == "BUY"]
+    assert buys == []
+
+
+def test_next_max_positions_blocks_buy() -> None:
+    """When max_positions reached, next() skips BUY even if conditions met."""
+    df = _make_ep_setup_bars()
+    iid = "AAPL_US"
+    t_date = df["date"][-1]
+
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+    # Simulate 10 positions already held (other iids - does not block has_position check
+    # but does block max_positions cap)
+    others = {f"OTHER_{i}_US": 100.0 for i in range(10)}
+    ctx.update_positions(positions=others, available_capital=10_000.0)
+    ctx.update_bar(
+        current_date=t_date,
+        instrument_id=iid,
+        ticker=iid.split("_")[0],
+        data=df,
+        current_row=strat._iid_ohlcv[iid][t_date],
+    )
+    strat.next(ctx)
+    sigs = ctx.pending_signals()
+    buys = [s for s in sigs if s.direction == "BUY"]
+    assert buys == []
+
+
+def test_next_emits_sell_when_holding_and_stop_hit() -> None:
+    """When holding and hard stop triggered, next() emits SELL and clears state."""
+    df = _make_bars("AAPL_US", n=50)
+    iid = "AAPL_US"
+    t_date = df["date"][30]
+
+    strat = EpisodicPivot()
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+    strat._pivot_low[iid] = strat._iid_ohlcv[iid][t_date]["low"] + 1.0  # forces stop
+    strat._entry_date[iid] = df["date"][20]
+
+    ctx.update_positions(positions={iid: 100.0}, available_capital=10_000.0)
+    ctx.update_bar(
+        current_date=t_date,
+        instrument_id=iid,
+        ticker=iid.split("_")[0],
+        data=df,
+        current_row=strat._iid_ohlcv[iid][t_date],
+    )
+    strat.next(ctx)
+    sigs = ctx.pending_signals()
+    sells = [s for s in sigs if s.direction == "SELL"]
+    assert len(sells) == 1
+    # State cleared
+    assert iid not in strat._pivot_low
+    assert iid not in strat._entry_date
