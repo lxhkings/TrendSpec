@@ -103,6 +103,69 @@ class EpisodicPivot(BaseStrategy):
         prev_date = dates[idx - 1]
         return self._iid_ohlcv.get(iid, {}).get(prev_date)
 
+    def _check_buy(self, ctx: StrategyContext, iid: str, as_of: DateType) -> bool:
+        """Return True iff all 6 BUY conditions fire on bar `as_of`."""
+        # Current bar (T)
+        t_bar = self._iid_ohlcv.get(iid, {}).get(as_of)
+        if t_bar is None:
+            return False
+
+        # Previous bar (T-1)
+        prev = self._prev_bar(iid, as_of)
+        if prev is None:
+            return False
+
+        # Get date index for T-1 indicator lookups
+        dates = self._iid_dates.get(iid)
+        if dates is None:
+            return False
+        idx = dates.search_sorted(as_of, side="left")
+        if idx < 1:
+            return False
+        prev_date = dates[idx - 1]
+
+        # Indicators at T and T-1
+        adv_prev = ctx.indicator_value("ADV", iid, prev_date, period=self.get_param("adv_lookback"))
+        atr_short_prev = ctx.indicator_value("ATR", iid, prev_date, period=self.get_param("base_atr_short"))
+        atr_long_prev = ctx.indicator_value("ATR", iid, prev_date, period=self.get_param("base_atr_long"))
+        ema_short = ctx.indicator_value("EMA", iid, as_of, period=self.get_param("trend_ma_short"))
+        ema_long = ctx.indicator_value("EMA", iid, as_of, period=self.get_param("trend_ma_long"))
+
+        if any(v is None for v in (adv_prev, atr_short_prev, atr_long_prev, ema_short, ema_long)):
+            return False
+
+        # Cond 1: gap-up
+        gap = (t_bar["open"] / prev["close"]) - 1.0
+        if gap < self.get_param("gap_pct"):
+            return False
+
+        # Cond 2: dollar-volume spike (T's dollar volume >= volume_multiplier x ADV20[T-1])
+        t_dollar_volume = t_bar["close"] * t_bar["volume"]
+        if t_dollar_volume < self.get_param("volume_multiplier") * adv_prev:
+            return False
+
+        # Cond 3: close in upper portion of T's range
+        t_range = t_bar["high"] - t_bar["low"]
+        if t_range <= 0:
+            return False
+        close_in_range = (t_bar["close"] - t_bar["low"]) / t_range
+        if close_in_range < self.get_param("close_in_range_min"):
+            return False
+
+        # Cond 4: trend (close > EMA50 > EMA200)
+        if not (t_bar["close"] > ema_short > ema_long):
+            return False
+
+        # Cond 5: base compression (ATR10[T-1] < ratio x ATR30[T-1])
+        if atr_short_prev >= self.get_param("base_compression_ratio") * atr_long_prev:
+            return False
+
+        # Cond 6: liquidity (ADV20[T-1] >= $20M)
+        if adv_prev < self.get_param("adv_dollar_threshold"):
+            return False
+
+        return True
+
     def next(self, ctx: StrategyContext) -> None:
         """Per-bar signal generation (filled in later tasks)."""
         pass
