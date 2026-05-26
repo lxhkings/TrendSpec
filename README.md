@@ -90,6 +90,7 @@ uv run trendspec ingest status --market us
 |--------|------|------|
 | `clenow_momentum` | 量化动量 | Clenow《Stocks on the Move》：指数回归斜率×R² 排名，ATR 仓位，每周调仓 |
 | `ema_cluster_pullback` | EMA 密集回踩 | 日 EMA20/60/120 密集缠绕 + 周线回踩 EMA20 + 多头趋势确认，连续 2 日触发 |
+| `episodic_pivot` | 突破回踩 | Chris Flanders Episodic Pivot：缺口 + 放量 + 底部压缩突破，波动收缩后首次回踩 |
 | `ma_cross` | 趋势跟踪 | 双均线交叉（短期 MA 上穿长期 MA 买入） |
 | `minervini_trend` | 动量筛选 | Minervini 趋势模板：6 项纯技术指标过滤，2 日确认 |
 | `rsi_reversal` | 均值回归 | RSI 超卖买入、超买卖出 |
@@ -135,6 +136,23 @@ uv run trendspec ingest status --market us
 
 > EMA 密集回踩策略需要周线数据。运行前请先执行 `uv run trendspec ingest weekly --market us`。
 
+### episodic_pivot 参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `gap_min_pct` | 0.02 | 缺口下限：开盘价相对昨收涨幅 ≥ 2% |
+| `gap_max_pct` | 0.06 | 缺口上限：开盘价相对昨收涨幅 ≤ 6% |
+| `volume_mult_min` | 2.0 | 放量倍数：当日成交量 ≥ MA20 × 2 |
+| `base_period` | 20 | 底部压缩回望窗口（交易日） |
+| `base_range_max` | 0.10 | 底部波动范围：20 日高低点差距 / 低点 ≤ 10% |
+| `adv_threshold_us` | 5_000_000 | 美股 ADV20 阈值（美元） |
+| `adv_threshold_cn` | 50_000_000 | A 股 ADV20 阈值（人民币） |
+| `market_filter_enabled` | True | 指数过滤：指数收盘 > 指数 EMA200 |
+| `stop_loss_pct` | 0.08 | 硬止损：收盘 ≤ entry × (1−8%) |
+| `sell_ma_period` | 20 | SELL 条件 EMA 周期（跌破 EMA20） |
+
+> Episodic Pivot 策略捕捉波动收缩后的首次放量缺口突破，适合趋势启动点筛选。
+
 ## 选股
 
 ```bash
@@ -147,6 +165,7 @@ uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-0
 
 # 其他策略
 uv run trendspec screen run --strategy ema_cluster_pullback --market us --date 2026-05-14
+uv run trendspec screen run --strategy episodic_pivot --market us --date 2026-05-14
 ```
 
 选股输出包含：行业、选股排名、建议买入价、初始止损线、趋势质量（R²）、乖离率、回撤、放量倍数、预警信息，以及历史信号统计（如已构建）。
@@ -196,6 +215,7 @@ uv run trendspec signal-history status --strategy clenow_momentum --market us
 uv run trendspec backtest list
 
 uv run trendspec backtest run --strategy clenow_momentum --market us --start 2020-01-01 --end 2024-12-31
+uv run trendspec backtest run --strategy episodic_pivot --market us --start 2020-01-01 --end 2024-12-31
 
 uv run trendspec backtest run --strategy clenow_momentum --market us --start 2023-01-01 --capital 1000000
 
