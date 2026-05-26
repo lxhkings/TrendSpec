@@ -1,10 +1,11 @@
 """Tests for episodic_pivot strategy (Chris Flanders EP)."""
 
-import polars as pl
 from datetime import date, timedelta
 
-import trendspec.strategy.examples  # noqa: F401 — triggers @register_strategy decorators
+import polars as pl
+import pytest
 
+import trendspec.strategy.examples  # noqa: F401 — triggers @register_strategy decorators
 from trendspec.data.markets import Market
 from trendspec.strategy.base import create_strategy, get_strategy
 from trendspec.strategy.context import StrategyContext
@@ -31,17 +32,19 @@ def _make_bars(iid: str, n: int = 250, start_close: float = 100.0) -> pl.DataFra
     ticker = iid.split("_")[0]
     for i in range(n):
         bd = date(2024, 1, 1) + timedelta(days=i)
-        rows.append({
-            "instrument_id": iid,
-            "date": bd,
-            "ticker": ticker,
-            "open": close,
-            "high": close * 1.01,
-            "low": close * 0.99,
-            "close": close,
-            "volume": 1_000_000,
-            "adj_factor": 1.0,
-        })
+        rows.append(
+            {
+                "instrument_id": iid,
+                "date": bd,
+                "ticker": ticker,
+                "open": close,
+                "high": close * 1.01,
+                "low": close * 0.99,
+                "close": close,
+                "volume": 1_000_000,
+                "adj_factor": 1.0,
+            }
+        )
         close *= 1.001
     return pl.DataFrame(rows)
 
@@ -123,39 +126,43 @@ def _make_ep_setup_bars(iid: str = "AAPL_US") -> pl.DataFrame:
         close_i = base_price * drift
         # Very tight intraday range for last 30 bars (base compression)
         range_factor = 0.005 if i >= 190 else 0.015
-        rows.append({
-            "instrument_id": iid,
-            "date": d,
-            "ticker": ticker,
-            "open": close_i,
-            "high": close_i * (1 + range_factor),
-            "low": close_i * (1 - range_factor),
-            "close": close_i,
-            "volume": 1_000_000,
-            "adj_factor": 1.0,
-        })
+        rows.append(
+            {
+                "instrument_id": iid,
+                "date": d,
+                "ticker": ticker,
+                "open": close_i,
+                "high": close_i * (1 + range_factor),
+                "low": close_i * (1 - range_factor),
+                "close": close_i,
+                "volume": 1_000_000,
+                "adj_factor": 1.0,
+            }
+        )
 
     # T bar (gap day): index 221
     t_date = start + timedelta(days=221)
     prev_close = rows[-1]["close"]
-    gap_open = prev_close * 1.06       # 6% gap up
+    gap_open = prev_close * 1.06  # 6% gap up
     t_high = gap_open * 1.03
     t_low = gap_open
     # close_in_range = (t_close - t_low) / (t_high - t_low) >= 0.80
     # Set t_close near high: close_in_range = 0.97
     t_range = t_high - t_low
     t_close = t_low + 0.97 * t_range
-    rows.append({
-        "instrument_id": iid,
-        "date": t_date,
-        "ticker": ticker,
-        "open": gap_open,
-        "high": t_high,
-        "low": t_low,
-        "close": t_close,
-        "volume": 6_000_000,           # 6x the 1M baseline
-        "adj_factor": 1.0,
-    })
+    rows.append(
+        {
+            "instrument_id": iid,
+            "date": t_date,
+            "ticker": ticker,
+            "open": gap_open,
+            "high": t_high,
+            "low": t_low,
+            "close": t_close,
+            "volume": 6_000_000,  # 6x the 1M baseline
+            "adj_factor": 1.0,
+        }
+    )
 
     return pl.DataFrame(rows)
 
@@ -232,31 +239,35 @@ def test_buy_rejected_no_trend() -> None:
         d = start + timedelta(days=i)
         # Downtrend: price drops over time -> EMA50 < EMA200
         close_i = base_price * (1 - i * 0.001)
-        rows.append({
-            "instrument_id": "AAPL_US",
-            "date": d,
-            "ticker": ticker,
-            "open": close_i,
-            "high": close_i * 1.005,
-            "low": close_i * 0.995,
-            "close": close_i,
-            "volume": 1_000_000,
-            "adj_factor": 1.0,
-        })
+        rows.append(
+            {
+                "instrument_id": "AAPL_US",
+                "date": d,
+                "ticker": ticker,
+                "open": close_i,
+                "high": close_i * 1.005,
+                "low": close_i * 0.995,
+                "close": close_i,
+                "volume": 1_000_000,
+                "adj_factor": 1.0,
+            }
+        )
     # Same EP-style T bar
     t_date = start + timedelta(days=221)
     prev_close = rows[-1]["close"]
-    rows.append({
-        "instrument_id": "AAPL_US",
-        "date": t_date,
-        "ticker": ticker,
-        "open": prev_close * 1.06,
-        "high": prev_close * 1.09,
-        "low": prev_close * 1.06,
-        "close": prev_close * 1.085,
-        "volume": 6_000_000,
-        "adj_factor": 1.0,
-    })
+    rows.append(
+        {
+            "instrument_id": "AAPL_US",
+            "date": t_date,
+            "ticker": ticker,
+            "open": prev_close * 1.06,
+            "high": prev_close * 1.09,
+            "low": prev_close * 1.06,
+            "close": prev_close * 1.085,
+            "volume": 6_000_000,
+            "adj_factor": 1.0,
+        }
+    )
     df = pl.DataFrame(rows)
 
     strat = EpisodicPivot()
@@ -273,7 +284,7 @@ def test_buy_rejected_no_base_compression() -> None:
     new_rows = df.to_dicts()
     for i in range(n - 31, n - 1):
         close_i = new_rows[i]["close"]
-        new_rows[i]["high"] = close_i * 1.04   # wide range
+        new_rows[i]["high"] = close_i * 1.04  # wide range
         new_rows[i]["low"] = close_i * 0.96
     df2 = pl.DataFrame(new_rows)
     strat = EpisodicPivot()
@@ -520,14 +531,12 @@ def _has_us_data_lake() -> bool:
 
     try:
         from trendspec.config.settings import Settings
+
         root = Path(Settings.get().data_lake_root)
     except Exception:
         # Settings initialization failed (missing DB creds), use default
         root = Path("./data_lake")
     return (root / "us" / "daily").exists()
-
-
-import pytest
 
 
 @pytest.mark.skipif(

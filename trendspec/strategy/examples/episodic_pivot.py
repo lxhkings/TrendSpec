@@ -15,29 +15,23 @@ import polars as pl
 from trendspec.strategy.base import BaseStrategy, register_strategy
 from trendspec.strategy.context import StrategyContext
 
-
 _DEFAULTS: dict[str, Any] = {
     # Catalyst / pivot detection
     "gap_pct": 0.05,
     "volume_multiplier": 3.0,
     "close_in_range_min": 0.80,
-
     # Trend filter
     "trend_ma_short": 50,
     "trend_ma_long": 200,
-
     # Base compression filter
     "base_atr_short": 10,
     "base_atr_long": 30,
     "base_compression_ratio": 0.70,
-
     # Liquidity filter
     "adv_lookback": 20,
     "adv_dollar_threshold": 20_000_000,
-
     # Exit
     "trail_ema_period": 10,
-
     # Sizing
     "max_positions": 10,
     "position_pct": 0.10,
@@ -126,8 +120,12 @@ class EpisodicPivot(BaseStrategy):
 
         # Indicators at T and T-1
         adv_prev = ctx.indicator_value("ADV", iid, prev_date, period=self.get_param("adv_lookback"))
-        atr_short_prev = ctx.indicator_value("ATR", iid, prev_date, period=self.get_param("base_atr_short"))
-        atr_long_prev = ctx.indicator_value("ATR", iid, prev_date, period=self.get_param("base_atr_long"))
+        atr_short_prev = ctx.indicator_value(
+            "ATR", iid, prev_date, period=self.get_param("base_atr_short")
+        )
+        atr_long_prev = ctx.indicator_value(
+            "ATR", iid, prev_date, period=self.get_param("base_atr_long")
+        )
         ema_short = ctx.indicator_value("EMA", iid, as_of, period=self.get_param("trend_ma_short"))
         ema_long = ctx.indicator_value("EMA", iid, as_of, period=self.get_param("trend_ma_long"))
 
@@ -161,10 +159,7 @@ class EpisodicPivot(BaseStrategy):
             return False
 
         # Cond 6: liquidity (ADV20[T-1] >= $20M)
-        if adv_prev < self.get_param("adv_dollar_threshold"):
-            return False
-
-        return True
+        return adv_prev >= self.get_param("adv_dollar_threshold")
 
     def _check_sell(
         self, ctx: StrategyContext, iid: str, as_of: DateType
