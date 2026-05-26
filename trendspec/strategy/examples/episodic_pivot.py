@@ -64,9 +64,33 @@ class EpisodicPivot(BaseStrategy):
         self._iid_ohlcv: dict[str, dict[DateType, dict[str, float]]] = {}
 
     def init(self, ctx: StrategyContext) -> None:
-        """Precompute indicators (filled in later tasks)."""
-        # Placeholder — Task 2 fills in indicator precompute + per-iid caches
-        pass
+        """Vectorized precompute of indicators + per-iid lookup caches."""
+        # Precompute indicators (cached by StrategyContext, looked up via indicator_value)
+        ctx.precompute_indicator("ADV", period=self.get_param("adv_lookback"))
+        ctx.precompute_indicator("ATR", period=self.get_param("base_atr_short"))
+        ctx.precompute_indicator("ATR", period=self.get_param("base_atr_long"))
+        ctx.precompute_indicator("EMA", period=self.get_param("trail_ema_period"))
+        ctx.precompute_indicator("EMA", period=self.get_param("trend_ma_short"))
+        ctx.precompute_indicator("EMA", period=self.get_param("trend_ma_long"))
+
+        # Build per-iid sorted date arrays + OHLCV dict for O(1) T-1 lookup
+        if ctx._data is None or ctx._data.is_empty():
+            return
+
+        for (iid,), grp in ctx._data.sort(["instrument_id", "date"]).group_by(
+            ["instrument_id"], maintain_order=True
+        ):
+            self._iid_dates[iid] = grp["date"]
+            self._iid_ohlcv[iid] = {
+                row["date"]: {
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": float(row["volume"]),
+                }
+                for row in grp.iter_rows(named=True)
+            }
 
     def next(self, ctx: StrategyContext) -> None:
         """Per-bar signal generation (filled in later tasks)."""
