@@ -17,6 +17,31 @@ app = typer.Typer(help="运行回测")
 console = Console()
 
 
+def _print_diagnostics(diag: dict) -> None:
+    """Render strategy.report_diagnostics() as a Rich table."""
+    from rich.table import Table
+
+    total = diag.get("candidates_evaluated", 0)
+    ablated = diag.get("ablated_filters") or []
+    rejections: dict = diag.get("rejections", {})
+
+    table = Table(title="策略诊断 — 过滤器命中分布")
+    table.add_column("阶段", style="cyan")
+    table.add_column("数量", justify="right")
+    table.add_column("占比", justify="right")
+
+    for stage, n in rejections.items():
+        pct = (n / total * 100) if total > 0 else 0.0
+        style = "green" if stage == "pass" else None
+        table.add_row(stage, f"{n:,}", f"{pct:.2f}%", style=style)
+
+    console.print()
+    console.print(table)
+    console.print(f"  候选评估总数: {total:,}")
+    if ablated:
+        console.print(f"  已消融过滤器: {ablated}")
+
+
 @app.command("run")
 def backtest_run(
     strategy: str = typer.Option(
@@ -52,6 +77,17 @@ def backtest_run(
         "--output",
         "-o",
         help="输出目录",
+    ),
+    ablate: Optional[str] = typer.Option(
+        None,
+        "--ablate",
+        help="逗号分隔的过滤器名称，将被跳过 (策略需支持 ablate_filters 参数)",
+    ),
+    param: list[str] = typer.Option(
+        None,
+        "--param",
+        "-p",
+        help="覆盖策略参数 key=value (可多次), 例: -p gap_pct=0.03 -p volume_multiplier=2.0",
     ),
 ) -> None:
     """
@@ -112,8 +148,37 @@ def backtest_run(
         # Create engine
         engine = BacktestEngine(config)
 
+        # Optional ablation + param overrides
+        run_params: dict = {}
+        if ablate:
+            run_params["ablate_filters"] = [s.strip() for s in ablate.split(",") if s.strip()]
+            console.print(f"  消融过滤器: {run_params['ablate_filters']}")
+        if param:
+            for kv in param:
+                if "=" not in kv:
+                    console.print(f"[yellow]忽略无效 --param {kv} (需 key=value)[/yellow]")
+                    continue
+                key, raw = kv.split("=", 1)
+                key, raw = key.strip(), raw.strip()
+                # Coerce to int/float when possible, else string
+                value: object = raw
+                try:
+                    value = int(raw)
+                except ValueError:
+                    try:
+                        value = float(raw)
+                    except ValueError:
+                        pass
+                run_params[key] = value
+            console.print(f"  策略参数覆盖: { {k: v for k, v in run_params.items() if k != 'ablate_filters'} }")
+
         # Run backtest
-        result = engine.run(strategy_class)
+        result = engine.run(strategy_class, params=run_params or None)
+
+        # Print strategy-level diagnostics if available
+        strat = getattr(engine, "_strategy", None)
+        if strat is not None and hasattr(strat, "report_diagnostics"):
+            _print_diagnostics(strat.report_diagnostics())
 
         # Create report
         report = BacktestReport(

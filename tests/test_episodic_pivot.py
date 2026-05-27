@@ -277,7 +277,7 @@ def test_buy_rejected_no_trend() -> None:
 
 
 def test_buy_rejected_no_base_compression() -> None:
-    """Force ATR10 approx ATR30 (no compression)."""
+    """Force ATR10 approx ATR30 (no compression). Requires opting into the rule."""
     df = _make_ep_setup_bars()
     # Replace last 30 bars' range to be wide (no compression)
     n = df.height
@@ -287,7 +287,8 @@ def test_buy_rejected_no_base_compression() -> None:
         new_rows[i]["high"] = close_i * 1.04  # wide range
         new_rows[i]["low"] = close_i * 0.96
     df2 = pl.DataFrame(new_rows)
-    strat = EpisodicPivot()
+    # Compression filter is opt-in (None by default); enable explicitly for this test.
+    strat = EpisodicPivot(params={"base_compression_ratio": 0.70})
     ctx = StrategyContext(market=Market.US, strategy=strat, data=df2)
     strat.init(ctx)
     assert strat._check_buy(ctx, "AAPL_US", df2["date"][-1]) is False
