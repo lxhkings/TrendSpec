@@ -35,3 +35,28 @@ def build_combo_score(df: pl.DataFrame, factors: list[dict[str, Any]]) -> pl.Dat
     return score_df.with_columns(sum(weight_cols).alias("combo_score")).select(
         ["instrument_id", "date", "combo_score"]
     )
+
+
+def _key(name: str, params: dict[str, Any]) -> tuple:
+    return (name, tuple(sorted(params.items())))
+
+
+class FactorCache:
+    """按 (name, frozenset(params)) memoize 单因子面板。底层 compute_full 只算一次。"""
+
+    def __init__(self, df: pl.DataFrame) -> None:
+        self._df = df
+        self._cache: dict[tuple, pl.DataFrame] = {}
+        self.compute_count = 0
+
+    def get(self, name: str, params: dict[str, Any]) -> pl.DataFrame:
+        k = _key(name, params or {})
+        hit = self._cache.get(k)
+        if hit is not None:
+            return hit
+        factor = get_factor(name, params or {})
+        result = factor.compute_full(self._df)
+        panel = result.values.rename({result.name: "value"})
+        self._cache[k] = panel
+        self.compute_count += 1
+        return panel

@@ -1,7 +1,7 @@
 import datetime as dt
 import polars as pl
 import trendspec.factors  # noqa: F401 触发注册
-from trendspec.research.factor_cache import build_combo_score
+from trendspec.research.factor_cache import build_combo_score, FactorCache
 
 
 def _panel():
@@ -27,3 +27,14 @@ def test_build_combo_score_matches_inline_zscore():
     last = score.filter(pl.col("combo_score").is_not_null())
     assert last.height > 0
     assert last["combo_score"].is_finite().all()
+
+
+def test_factor_cache_memoizes_by_name_params():
+    df = _panel()
+    cache = FactorCache(df)
+    a = cache.get("momentum", {"period": 5})
+    b = cache.get("momentum", {"period": 5})
+    assert a is b  # 命中同一对象
+    c = cache.get("momentum", {"period": 10})
+    assert c is not a  # 不同参数不命中
+    assert cache.compute_count == 2  # 只真正算了两次
