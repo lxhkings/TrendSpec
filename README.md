@@ -222,6 +222,70 @@ uv run trendspec backtest run --strategy clenow_momentum --market us --start 202
 uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31 --sort sharpe --export csv
 ```
 
+## AI 因子研究闭环
+
+自动化量化策略研究：LLM 提因子假设 → 机械扫参 → walk-forward 样本外验证 → 达标策略写成 Markdown 建议书。配备实时监控面板。
+
+### 配置 LLM（DeepSeek V4 Pro / 任意 OpenAI 兼容接口）
+
+在 `.env` 追加：
+
+```
+RESEARCH_LLM_BASE_URL=https://api.deepseek.com/v1
+RESEARCH_LLM_API_KEY=sk-...
+RESEARCH_LLM_MODEL=deepseek-chat
+RESEARCH_OUT_DIR=./research_out
+```
+
+### 跑研究闭环
+
+```bash
+# 真实 LLM（需填 API_KEY）
+uv run trendspec research run --market us \
+    --start 2015-01-01 --end 2023-12-31 \
+    --rounds 10 --max-candidates 200 \
+    --out ./research_out
+
+# 测试用（不连真 LLM，注入一段假设 JSON）
+uv run trendspec research run --market us \
+    --start 2015-01-01 --end 2023-12-31 \
+    --rounds 1 --out ./research_out \
+    --mock-llm '{"market":"us","factors":[{"name":"momentum","direction":"high","weight":1.0,"param_grid":{"period":[60,120]}}],"top_k_grid":[20],"rebalance_grid":[5],"rationale":"动量优选"}'
+```
+
+达标策略（OOS Sharpe ≥ 1.0 且最大回撤 ≤ 20%）自动保存为 `research_out/strategy-r<轮>-<时间>.md`。
+
+### 实时监控面板
+
+另开终端：
+
+```bash
+uv run trendspec research serve --out ./research_out --port 8800
+```
+
+浏览器打开 `http://127.0.0.1:8800`，每 2 秒刷新显示：当前轮次、扫参进度、top 候选 OOS Sharpe 排行、累计赢家数。面板与研究进程解耦，研究中断后面板仍显示最后状态。
+
+### 参数说明
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `--market` | `us` | 市场（MVP 仅 us） |
+| `--start` / `--end` | - | 回测日期范围 |
+| `--rounds` | 10 | 最大假设轮数 |
+| `--max-candidates` | 200 | 每轮参数网格扫描上限 |
+| `--windows` | 4 | Walk-forward 窗口数 |
+| `--capital` | 100000 | 初始资金 |
+| `--out` | `./research_out` | 输出目录（建议书 + 状态文件） |
+| `--mock-llm` | - | 注入假设 JSON，不连真 LLM（测试用） |
+
+### 输出文件
+
+| 文件 | 内容 |
+|------|------|
+| `research_out/strategy-r<N>-<ts>.md` | 达标策略建议书（因子/参数/OOS 绩效/持仓条件） |
+| `research_out/ledger.jsonl` | 逐轮研究日志（LLM 记忆/去重用） |
+| `research_out/state.json` | 当前运行状态（面板轮询用） |
+
 ## 数据源
 
 数据来自群辉 NAS `stocks` 数据库（入库后即可离线使用）：
