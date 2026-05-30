@@ -257,28 +257,24 @@ uv run trendspec research run --market us \
 
 ### 实时监控面板
 
-**方式一：另开终端（推荐）**
+**方式一：另开终端前台运行（推荐，开发用）**
 
 ```bash
-# 新终端前台运行，Ctrl+C 中止
+# 新终端运行，Ctrl+C 中止
 uv run trendspec research serve --out ./research_out --port 8800
 ```
 
-**方式二：后台运行**
+**方式二：后台持久运行（关终端不死）**
 
 ```bash
-# 后台启动
-uv run trendspec research serve --out ./research_out --port 8800 &
+# nohup 后台挂载，日志写入 serve.log
+nohup uv run trendspec research serve --out ./research_out --port 8800 > serve.log 2>&1 &
 
-# 查看后台任务号
-jobs
-
-# 中止（按任务号）
-kill %1
-
-# 或按进程名中止
+# 中止
 pkill -f "trendspec research serve"
 ```
+
+> 仅用 `&` 不加 `nohup`：后台运行但关掉终端进程会被杀死。
 
 浏览器打开 `http://127.0.0.1:8800`，每 2 秒刷新显示：当前轮次、扫参进度、top 候选 OOS Sharpe 排行、累计赢家数。面板与研究进程解耦，研究中断后面板仍显示最后状态。
 
