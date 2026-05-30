@@ -16,7 +16,7 @@ class MockLLMClient:
         self._responses = list(responses)
         self._i = 0
 
-    def complete(self, system: str, user: str) -> str:
+    def complete(self, system: str, user: str) -> str:  # noqa: ARG002
         r = self._responses[min(self._i, len(self._responses) - 1)]
         self._i += 1
         return r

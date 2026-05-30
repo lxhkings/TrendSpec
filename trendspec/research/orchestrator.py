@@ -1,8 +1,9 @@
 """研究闭环主编排。"""
 
+from collections.abc import Callable
 from datetime import date as DateType
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from trendspec.research.agent import HypothesisParseError
 from trendspec.research.ledger import append_ledger, read_ledger, write_state
@@ -69,10 +70,15 @@ class ResearchOrchestrator:
         winners_total = 0
         for rnd in range(1, self._max_rounds + 1):
             ledger_rows = read_ledger(self._ledger_path)
-            write_state(self._state_path, {
-                "phase": "running", "round": rnd,
-                "max_rounds": self._max_rounds, "winners": winners_total,
-            })
+            write_state(
+                self._state_path,
+                {
+                    "phase": "running",
+                    "round": rnd,
+                    "max_rounds": self._max_rounds,
+                    "winners": winners_total,
+                },
+            )
 
             try:
                 hypo = self._agent.propose(ledger_rows)
@@ -84,11 +90,17 @@ class ResearchOrchestrator:
             results: list[dict] = []
             for i, spec_dict in enumerate(candidates, start=1):
                 results.append(self._evaluate(spec_dict))
-                write_state(self._state_path, {
-                    "phase": "running", "round": rnd,
-                    "sweep_done": i, "sweep_total": len(candidates),
-                    "hypothesis": hypo, "winners": winners_total,
-                })
+                write_state(
+                    self._state_path,
+                    {
+                        "phase": "running",
+                        "round": rnd,
+                        "sweep_done": i,
+                        "sweep_total": len(candidates),
+                        "hypothesis": hypo,
+                        "winners": winners_total,
+                    },
+                )
 
             results.sort(key=lambda r: r.get("oos_sharpe", 0.0), reverse=True)
             top = results[: self._top_n]
@@ -98,10 +110,15 @@ class ResearchOrchestrator:
                 write_advice(self._out, w, round_no=rnd)
             winners_total += len(round_winners)
 
-            append_ledger(self._ledger_path, {
-                "round": rnd, "hypothesis": hypo,
-                "top_candidates": top, "winners": len(round_winners),
-            })
+            append_ledger(
+                self._ledger_path,
+                {
+                    "round": rnd,
+                    "hypothesis": hypo,
+                    "top_candidates": top,
+                    "winners": len(round_winners),
+                },
+            )
 
             if round_winners and self._stop_on_first:
                 break

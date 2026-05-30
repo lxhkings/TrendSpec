@@ -1,8 +1,9 @@
 """Walk-forward 滚动样本外评估（固定 spec，不逐窗重拟合）。"""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date as DateType
-from typing import Any, Callable
+from typing import Any
 
 from trendspec.data.calendar import trading_days_between
 from trendspec.data.markets import Market
@@ -81,7 +82,5 @@ def run_walkforward(
     out.oos_max_drawdown = max(
         (float(w.metrics.get("max_drawdown", 0.0)) for w in out.windows), default=0.0
     )
-    out.oos_total_return = sum(
-        float(w.metrics.get("total_return", 0.0)) for w in out.windows
-    )
+    out.oos_total_return = sum(float(w.metrics.get("total_return", 0.0)) for w in out.windows)
     return out

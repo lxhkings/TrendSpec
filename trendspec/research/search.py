@@ -21,32 +21,43 @@ def expand_grid(
     for term in factors:
         grid = term.get("param_grid", {})
         if not grid:
-            per_factor_options.append([{"name": term["name"], "params": {},
-                                        "direction": term["direction"],
-                                        "weight": term.get("weight", 1.0)}])
+            per_factor_options.append(
+                [
+                    {
+                        "name": term["name"],
+                        "params": {},
+                        "direction": term["direction"],
+                        "weight": term.get("weight", 1.0),
+                    }
+                ]
+            )
             continue
         keys = list(grid.keys())
         opts = []
         for combo in itertools.product(*(grid[k] for k in keys)):
-            opts.append({
-                "name": term["name"],
-                "params": dict(zip(keys, combo)),
-                "direction": term["direction"],
-                "weight": term.get("weight", 1.0),
-            })
+            opts.append(
+                {
+                    "name": term["name"],
+                    "params": dict(zip(keys, combo, strict=True)),
+                    "direction": term["direction"],
+                    "weight": term.get("weight", 1.0),
+                }
+            )
         per_factor_options.append(opts)
 
     candidates: list[dict] = []
     for factor_combo in itertools.product(*per_factor_options):
         for top_k in top_k_grid:
             for rebalance in rebalance_grid:
-                candidates.append({
-                    "market": market,
-                    "factors": [dict(f) for f in factor_combo],
-                    "top_k": top_k,
-                    "rebalance": rebalance,
-                    "rationale": rationale,
-                })
+                candidates.append(
+                    {
+                        "market": market,
+                        "factors": [dict(f) for f in factor_combo],
+                        "top_k": top_k,
+                        "rebalance": rebalance,
+                        "rationale": rationale,
+                    }
+                )
 
     if len(candidates) > max_candidates:
         rng = random.Random(rng_seed)

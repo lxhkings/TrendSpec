@@ -23,9 +23,7 @@ def write_advice(out_dir: str | Path, winner: dict[str, Any], round_no: int) -> 
     path = out / fname
 
     win_sharpes = winner.get("window_sharpes", [])
-    win_table = "\n".join(
-        f"| {i + 1} | {s:.2f} |" for i, s in enumerate(win_sharpes)
-    )
+    win_table = "\n".join(f"| {i + 1} | {s:.2f} |" for i, s in enumerate(win_sharpes))
 
     md = f"""# 策略建议书 — 第 {round_no} 轮
 
@@ -33,7 +31,7 @@ def write_advice(out_dir: str | Path, winner: dict[str, Any], round_no: int) -> 
 
 ## 市场逻辑
 
-{spec.get('rationale', '(无)')}
+{spec.get("rationale", "(无)")}
 
 ## 因子组合
 
@@ -43,15 +41,15 @@ def write_advice(out_dir: str | Path, winner: dict[str, Any], round_no: int) -> 
 
 ## 参数
 
-- 市场: {spec['market']}
-- top_k: {spec['top_k']}
-- 调仓周期(交易日): {spec['rebalance']}
+- 市场: {spec["market"]}
+- top_k: {spec["top_k"]}
+- 调仓周期(交易日): {spec["rebalance"]}
 
 ## 样本外绩效 (walk-forward)
 
-- OOS Sharpe: {winner['oos_sharpe']:.2f}
-- OOS 最大回撤: {winner['oos_max_drawdown']:.2%}
-- OOS 累计收益(各窗口求和): {winner['oos_total_return']:.2%}
+- OOS Sharpe: {winner["oos_sharpe"]:.2f}
+- OOS 最大回撤: {winner["oos_max_drawdown"]:.2%}
+- OOS 累计收益(各窗口求和): {winner["oos_total_return"]:.2%}
 
 ### 各窗口 Sharpe
 
@@ -61,7 +59,7 @@ def write_advice(out_dir: str | Path, winner: dict[str, Any], round_no: int) -> 
 
 ## 持仓 / 调仓条件
 
-- 每 {spec['rebalance']} 个交易日按因子合成分截面重排，持有 top {spec['top_k']}。
+- 每 {spec["rebalance"]} 个交易日按因子合成分截面重排，持有 top {spec["top_k"]}。
 - 掉出 top_k 即卖出，新进 top_k 即买入。
 """
     path.write_text(md, encoding="utf-8")

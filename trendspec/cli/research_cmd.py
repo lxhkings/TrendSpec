@@ -1,7 +1,6 @@
 """研究闭环 CLI：run（跑闭环）/ serve（起面板）。"""
 
 from datetime import date
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -19,8 +18,8 @@ def research_run(
     max_candidates: int = typer.Option(200, "--max-candidates", help="每轮扫参上限"),
     n_windows: int = typer.Option(4, "--windows", help="walk-forward 窗口数"),
     capital: float = typer.Option(100000.0, "--capital", "-c", help="初始资金"),
-    out: Optional[str] = typer.Option(None, "--out", help="输出目录"),
-    mock_llm: Optional[str] = typer.Option(
+    out: str | None = typer.Option(None, "--out", help="输出目录"),
+    mock_llm: str | None = typer.Option(
         None, "--mock-llm", help="测试用：注入一段假设 JSON 取代真 LLM"
     ),
 ) -> None:
@@ -49,8 +48,11 @@ def research_run(
     agent = HypothesisAgent(client)
     evaluate_fn = default_evaluate_fn(market, start_date, end_date, n_windows, capital)
     orch = ResearchOrchestrator(
-        agent=agent, evaluate_fn=evaluate_fn, out_dir=out_dir,
-        max_rounds=rounds, max_candidates=max_candidates,
+        agent=agent,
+        evaluate_fn=evaluate_fn,
+        out_dir=out_dir,
+        max_rounds=rounds,
+        max_candidates=max_candidates,
     )
     console.print(f"[cyan]研究开始[/cyan] market={market} out={out_dir}")
     orch.run()
@@ -60,7 +62,7 @@ def research_run(
 @app.command("serve")
 def research_serve(
     port: int = typer.Option(8800, "--port", "-p", help="端口"),
-    out: Optional[str] = typer.Option(None, "--out", help="研究输出目录(读 state/ledger)"),
+    out: str | None = typer.Option(None, "--out", help="研究输出目录(读 state/ledger)"),
 ) -> None:
     """起实时监控面板（只读输出目录，与研究进程解耦）。"""
     import uvicorn

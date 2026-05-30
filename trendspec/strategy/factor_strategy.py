@@ -48,9 +48,7 @@ class FactorStrategy(BaseStrategy):
             score_df = score_df.join(vals, on=["instrument_id", "date"], how="left")
             weight_cols.append(pl.col(zcol).fill_null(0.0) * term.weight)
 
-        score_df = score_df.with_columns(
-            sum(weight_cols).alias("combo_score")
-        )
+        score_df = score_df.with_columns(sum(weight_cols).alias("combo_score"))
 
         # 缓存：每日按分降序 iid 列表 + (date,iid)->score
         self._ranked_by_date: dict[DateType, list[str]] = {}
@@ -59,7 +57,7 @@ class FactorStrategy(BaseStrategy):
             g_sorted = g.sort("combo_score", descending=True, nulls_last=True)
             iids = g_sorted["instrument_id"].to_list()
             self._ranked_by_date[d] = iids
-            for iid, sc in zip(iids, g_sorted["combo_score"].to_list()):
+            for iid, sc in zip(iids, g_sorted["combo_score"].to_list(), strict=True):
                 if sc is not None:
                     self._score_by_date[(d, iid)] = sc
 
@@ -116,7 +114,9 @@ class FactorStrategy(BaseStrategy):
             if price is None or price <= 0:
                 continue
             sig = ctx.signal(
-                "BUY", iid, price,
+                "BUY",
+                iid,
+                price,
                 trigger_value=self._score_by_date.get((current_date, iid)),
                 note=f"rank={rank_pos}",
             )
