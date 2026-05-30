@@ -143,6 +143,16 @@ class BaseEngine(ABC):
         self._strategy: BaseStrategy | None = None
         self._ctx: StrategyContext | None = None
 
+    def inject(self, data=None, universe=None) -> None:
+        """注入预加载数据 / universe,短路 load_data / load_universe 的重复读盘。
+
+        data: 预 load 的 OHLCV DataFrame;universe: 预构建的 Universe 实例。
+        """
+        if data is not None:
+            self._data = data
+        if universe is not None:
+            self._universe = universe
+
     # =========================================================================
     # Component Loading
     # =========================================================================
