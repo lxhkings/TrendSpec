@@ -48,15 +48,17 @@ class ResearchOrchestrator:
     def __init__(
         self,
         agent,
-        evaluate_fn: EvaluateFn,
-        out_dir: str,
+        evaluate_fn=None,
+        out_dir: str = "./research_out",
         max_rounds: int = 10,
         max_candidates: int = 200,
         top_n: int = 5,
         stop_on_first: bool = True,
+        batch_evaluator=None,
     ) -> None:
         self._agent = agent
         self._evaluate = evaluate_fn
+        self._batch = batch_evaluator
         self._out = Path(out_dir)
         self._out.mkdir(parents=True, exist_ok=True)
         self._ledger_path = self._out / "ledger.jsonl"
@@ -87,20 +89,20 @@ class ResearchOrchestrator:
                 continue
 
             candidates = expand_grid(hypo, max_candidates=self._max_candidates)
-            results: list[dict] = []
-            for i, spec_dict in enumerate(candidates, start=1):
-                results.append(self._evaluate(spec_dict))
-                write_state(
-                    self._state_path,
-                    {
-                        "phase": "running",
-                        "round": rnd,
-                        "sweep_done": i,
-                        "sweep_total": len(candidates),
-                        "hypothesis": hypo,
-                        "winners": winners_total,
-                    },
-                )
+
+            def _progress(done: int, total: int, _hypo=hypo, _rnd=rnd) -> None:
+                write_state(self._state_path, {
+                    "phase": "running", "round": _rnd,
+                    "sweep_done": done, "sweep_total": total,
+                    "hypothesis": _hypo, "winners": winners_total})
+
+            if self._batch is not None:
+                results = self._batch.evaluate_batch(candidates, progress_cb=_progress)
+            else:
+                results = []
+                for i, spec_dict in enumerate(candidates, start=1):
+                    results.append(self._evaluate(spec_dict))
+                    _progress(i, len(candidates))
 
             results.sort(key=lambda r: r.get("oos_sharpe", 0.0), reverse=True)
             top = results[: self._top_n]
