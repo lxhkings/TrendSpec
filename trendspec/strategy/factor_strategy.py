@@ -30,25 +30,28 @@ class FactorStrategy(BaseStrategy):
             self._full_data = df
             return
 
-        score_df = df.select(["instrument_id", "date"])
-        weight_cols: list[pl.Expr] = []
-
-        for i, term in enumerate(spec.factors):
-            factor = get_factor(term.name, term.params)
-            result = factor.compute_full(df)  # values: instrument_id, date, <term.name>
-            sign = 1.0 if term.direction == "high" else -1.0
-            zcol = f"_z_{i}"
-            vals = result.values.with_columns(
-                (
-                    sign
-                    * (pl.col(term.name) - pl.col(term.name).mean().over("date"))
-                    / pl.col(term.name).std().over("date")
-                ).alias(zcol)
-            ).select(["instrument_id", "date", zcol])
-            score_df = score_df.join(vals, on=["instrument_id", "date"], how="left")
-            weight_cols.append(pl.col(zcol).fill_null(0.0) * term.weight)
-
-        score_df = score_df.with_columns(sum(weight_cols).alias("combo_score"))
+        precomputed = self.get_param("precomputed_scores")
+        if precomputed is not None:
+            score_df = precomputed  # (instrument_id,date,combo_score)
+        else:
+            score_df = df.select(["instrument_id", "date"])
+            weight_cols: list[pl.Expr] = []
+            for i, term in enumerate(spec.factors):
+                factor = get_factor(term.name, term.params)
+                result = factor.compute_full(df)
+                col = result.name
+                sign = 1.0 if term.direction == "high" else -1.0
+                zcol = f"_z_{i}"
+                vals = result.values.with_columns(
+                    (
+                        sign
+                        * (pl.col(col) - pl.col(col).mean().over("date"))
+                        / pl.col(col).std().over("date")
+                    ).alias(zcol)
+                ).select(["instrument_id", "date", zcol])
+                score_df = score_df.join(vals, on=["instrument_id", "date"], how="left")
+                weight_cols.append(pl.col(zcol).fill_null(0.0) * term.weight)
+            score_df = score_df.with_columns(sum(weight_cols).alias("combo_score"))
 
         # 缓存：每日按分降序 iid 列表 + (date,iid)->score
         self._ranked_by_date: dict[DateType, list[str]] = {}
