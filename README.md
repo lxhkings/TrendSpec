@@ -226,6 +226,8 @@ uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-3
 
 自动化量化策略研究：LLM 提因子假设 → 机械扫参 → walk-forward 样本外验证 → 达标策略写成 Markdown 建议书。配备实时监控面板。
 
+**性能优化（2026-05）**：ResearchEvaluator 替代逐候选全回测，panel 数据共享 + mmap IPC 零拷贝 + 并行执行，大幅降低墙钟时间，数值结果完全等价。
+
 ### 配置 LLM（DeepSeek V4 Pro / 任意 OpenAI 兼容接口）
 
 在 `.env` 追加：
@@ -300,6 +302,26 @@ pkill -f "trendspec research serve"
 | `research_out/strategy-r<N>-<ts>.md` | 达标策略建议书（因子/参数/OOS 绩效/持仓条件） |
 | `research_out/ledger.jsonl` | 逐轮研究日志（LLM 记忆/去重用） |
 | `research_out/state.json` | 当前运行状态（面板轮询用） |
+
+### 性能优化架构
+
+ResearchEvaluator 实现 batch 评估，替代原来逐候选全回测：
+
+| 层级 | 优化 | 说明 |
+|------|------|------|
+| Tier 1 | MarketPanel | OHLCV 数据 load 一次，窗口内存切片 |
+| Tier 1 | FactorCache | 按 `(name,params)` memoize 因子面板 |
+| Tier 2 | combo 去重 | 同因子组合的 `top_k/rebalance` 变体共享排名面板 |
+| Tier 3 | mmap IPC | Arrow IPC 零拷贝，子进程只读共享 panel |
+| Tier 3 | ProcessPool | 候选并行执行，自适应线程防超订 |
+| Tier 0 | 数值等价 | 测试验证 `fast_eval` == `default_evaluate_fn`（容差 < 1e-9） |
+
+基准测速脚本：
+
+```bash
+uv run python scripts/bench_research.py
+# 输出：baseline 逐候选 / evaluator 串行 / evaluator 并行 墙钟对比
+```
 
 ## 数据源
 
