@@ -65,3 +65,56 @@ def test_direction_low_inverts_rank():
     last_date = df["date"].max()
     # direction=low → 弱动量股反而排第一
     assert strat._ranked_by_date[last_date][0] == "SLOW_US"
+
+
+def _run_next_once(strat, ctx, df, target_date):
+    """模拟引擎：对某交易日逐 instrument 调 next()，收集信号。"""
+    universe = df["instrument_id"].unique().to_list()
+    ctx.set_universe(_StubUniverse(universe))
+    day = df.filter(pl.col("date") == target_date)
+    rows = {r["instrument_id"]: r for r in day.iter_rows(named=True)}
+    ctx.clear_signals()
+    for iid in universe:
+        row = rows.get(iid)
+        if row is None:
+            continue
+        ctx.update_bar(target_date, iid, row["ticker"], df, current_row=row)
+        strat.next(ctx)
+    return ctx.pending_signals()
+
+
+class _StubUniverse:
+    def __init__(self, ids):
+        self._ids = ids
+
+    def tickers(self, _as_of_date):
+        return self._ids
+
+
+def test_next_emits_buy_for_top_k_on_rebalance():
+    df = _two_stock_data()
+    strat = FactorStrategy(params=_spec_dict())  # top_k=1
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    last_date = df["date"].max()
+    sigs = _run_next_once(strat, ctx, df, last_date)
+    buys = [s for s in sigs if s.direction == "BUY"]
+    # top_k=1 → 只买强动量股
+    assert len(buys) == 1
+    assert buys[0].instrument_id == "FAST_US"
+
+
+def test_next_respects_rebalance_interval():
+    df = _two_stock_data()
+    strat = FactorStrategy(params=_spec_dict())  # rebalance=5
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    all_dates = sorted(df["date"].unique().to_list())
+    # 第一次调仓日（day index 60）出信号
+    sigs1 = _run_next_once(strat, ctx, df, all_dates[60])
+    assert len(sigs1) >= 1
+    # 紧邻下一日（间隔 1 < 5）不再调仓
+    sigs2 = _run_next_once(strat, ctx, df, all_dates[61])
+    assert sigs2 == []

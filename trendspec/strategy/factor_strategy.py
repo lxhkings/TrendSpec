@@ -70,4 +70,54 @@ class FactorStrategy(BaseStrategy):
         self._full_data = df
 
     def next(self, ctx: StrategyContext) -> None:
-        pass
+        current_date = ctx.date
+        if current_date == self._last_processed_date:
+            return  # 一天只处理一次（首个 instrument 调用做全部工作）
+
+        idx = self._date_index.get(current_date)
+        if idx is None:
+            return
+
+        # 周期调仓闸门
+        if (
+            self._last_rebalance_idx is not None
+            and idx - self._last_rebalance_idx < self._spec.rebalance
+        ):
+            self._last_processed_date = current_date
+            return
+
+        self._last_rebalance_idx = idx
+        self._last_processed_date = current_date
+
+        universe = set(ctx.pit_universe(current_date))
+        ranked = [iid for iid in self._ranked_by_date.get(current_date, []) if iid in universe]
+        top = ranked[: self._spec.top_k]
+        top_set = set(top)
+
+        day = self._full_data.filter(pl.col("date") == current_date)
+        close_of = {r["instrument_id"]: r["close"] for r in day.iter_rows(named=True)}
+        ticker_of = {r["instrument_id"]: r["ticker"] for r in day.iter_rows(named=True)}
+
+        # SELL: 持仓掉出 top_set
+        for iid in list(ctx.positions.keys()):
+            if iid in top_set:
+                continue
+            price = close_of.get(iid)
+            if price is None:
+                continue
+            sig = ctx.signal("SELL", iid, price, note="掉出 top_k")
+            sig.ticker = ticker_of.get(iid, iid)
+
+        # BUY: top_set 中未持仓
+        for rank_pos, iid in enumerate(top, start=1):
+            if ctx.has_position(iid):
+                continue
+            price = close_of.get(iid)
+            if price is None or price <= 0:
+                continue
+            sig = ctx.signal(
+                "BUY", iid, price,
+                trigger_value=self._score_by_date.get((current_date, iid)),
+                note=f"rank={rank_pos}",
+            )
+            sig.ticker = ticker_of.get(iid, iid)
