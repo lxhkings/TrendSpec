@@ -8,16 +8,17 @@ runner = CliRunner()
 
 
 def test_run_with_mock_llm_writes_winner(tmp_path: Path, monkeypatch):
-    import trendspec.research.orchestrator as orch_mod
+    import trendspec.research.fast_eval as fe_mod
 
-    def fake_default_evaluate_fn(market, start, end, n_windows, capital):
-        def _fn(spec_dict):
-            return {"spec": spec_dict, "oos_sharpe": 1.5, "oos_max_drawdown": 0.1,
-                    "worst_window_sharpe": 0.6, "window_sharpes": [1.4, 1.6],
-                    "oos_total_return": 0.3}
-        return _fn
+    def fake_evaluate_batch(self, candidates, progress_cb=None):
+        return [
+            {"spec": c, "oos_sharpe": 1.5, "oos_max_drawdown": 0.1,
+             "worst_window_sharpe": 0.6, "window_sharpes": [1.4, 1.6],
+             "oos_total_return": 0.3}
+            for c in candidates
+        ]
 
-    monkeypatch.setattr(orch_mod, "default_evaluate_fn", fake_default_evaluate_fn)
+    monkeypatch.setattr(fe_mod.ResearchEvaluator, "evaluate_batch", fake_evaluate_batch)
 
     good = ('{"market":"us","factors":[{"name":"momentum","direction":"high",'
             '"weight":1.0,"param_grid":{"period":[60]}}],'

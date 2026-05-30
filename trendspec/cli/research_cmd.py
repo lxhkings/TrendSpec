@@ -29,7 +29,8 @@ def research_run(
     from trendspec.research.agent import HypothesisAgent
     from trendspec.research.config import ResearchSettings
     from trendspec.research.llm_client import MockLLMClient, OpenAICompatClient
-    from trendspec.research.orchestrator import ResearchOrchestrator, default_evaluate_fn
+    from trendspec.research.orchestrator import ResearchOrchestrator
+    from trendspec.research.fast_eval import ResearchEvaluator
 
     settings = ResearchSettings()
     out_dir = out or settings.out_dir
@@ -46,13 +47,17 @@ def research_run(
         )
 
     agent = HypothesisAgent(client)
-    evaluate_fn = default_evaluate_fn(market, start_date, end_date, n_windows, capital)
+    evaluator = ResearchEvaluator(
+        market=market, start=start_date, end=end_date,
+        n_windows=n_windows, capital=capital, parallel=True,
+    )
     orch = ResearchOrchestrator(
         agent=agent,
-        evaluate_fn=evaluate_fn,
+        evaluate_fn=None,
         out_dir=out_dir,
         max_rounds=rounds,
         max_candidates=max_candidates,
+        batch_evaluator=evaluator,
     )
     console.print(f"[cyan]研究开始[/cyan] market={market} out={out_dir}")
     orch.run()
