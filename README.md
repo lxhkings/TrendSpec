@@ -257,15 +257,32 @@ uv run trendspec research run --market us \
 
 ### 实时监控面板
 
-另开终端挂载面板：
+**方式一：另开终端（推荐）**
 
 ```bash
+# 新终端前台运行，Ctrl+C 中止
 uv run trendspec research serve --out ./research_out --port 8800
+```
+
+**方式二：后台运行**
+
+```bash
+# 后台启动
+uv run trendspec research serve --out ./research_out --port 8800 &
+
+# 查看后台任务号
+jobs
+
+# 中止（按任务号）
+kill %1
+
+# 或按进程名中止
+pkill -f "trendspec research serve"
 ```
 
 浏览器打开 `http://127.0.0.1:8800`，每 2 秒刷新显示：当前轮次、扫参进度、top 候选 OOS Sharpe 排行、累计赢家数。面板与研究进程解耦，研究中断后面板仍显示最后状态。
 
-中止研究进程或面板：终端按 `Ctrl+C` 即可。研究进程中止后 `ledger.jsonl` 与已生成建议书保留，下次 `research run` 会从新一轮继续（LLM 读取历史 ledger 避免重复假设）。
+研究进程中止后 `ledger.jsonl` 与已生成建议书保留，下次 `research run` 会从新一轮继续（LLM 读取历史 ledger 避免重复假设）。
 
 ### 参数说明
 
