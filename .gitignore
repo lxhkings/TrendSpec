@@ -20,6 +20,8 @@ data_lake/
 results/
 logs/
 *.log
+research_out/
+.codegraph/
 
 # OS / Editor
 .DS_Store
