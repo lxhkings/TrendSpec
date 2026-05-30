@@ -1,0 +1,55 @@
+import json
+
+import pytest
+
+from trendspec.research.agent import HypothesisAgent, HypothesisParseError
+from trendspec.research.llm_client import MockLLMClient
+
+
+def _good_hypo_json():
+    return json.dumps({
+        "market": "us",
+        "factors": [{"name": "momentum", "direction": "high", "weight": 1.0,
+                     "param_grid": {"period": [20, 60]}}],
+        "top_k_grid": [10, 20],
+        "rebalance_grid": [5],
+        "rationale": "动量",
+    })
+
+
+def test_propose_parses_plain_json():
+    agent = HypothesisAgent(MockLLMClient([_good_hypo_json()]))
+    hypo = agent.propose(ledger_rows=[])
+    assert hypo["market"] == "us"
+    assert hypo["factors"][0]["name"] == "momentum"
+
+
+def test_propose_strips_code_fence():
+    fenced = "```json\n" + _good_hypo_json() + "\n```"
+    agent = HypothesisAgent(MockLLMClient([fenced]))
+    hypo = agent.propose(ledger_rows=[])
+    assert hypo["top_k_grid"] == [10, 20]
+
+
+def test_propose_retries_once_then_succeeds():
+    agent = HypothesisAgent(MockLLMClient(["not json at all", _good_hypo_json()]))
+    hypo = agent.propose(ledger_rows=[])
+    assert hypo["factors"][0]["name"] == "momentum"
+
+
+def test_propose_raises_after_retry_fails():
+    agent = HypothesisAgent(MockLLMClient(["garbage", "still garbage"]))
+    with pytest.raises(HypothesisParseError):
+        agent.propose(ledger_rows=[])
+
+
+def test_propose_rejects_unknown_factor():
+    bad = json.dumps({
+        "market": "us",
+        "factors": [{"name": "no_such", "direction": "high", "weight": 1.0,
+                     "param_grid": {}}],
+        "top_k_grid": [10], "rebalance_grid": [5], "rationale": "x",
+    })
+    agent = HypothesisAgent(MockLLMClient([bad, bad]))
+    with pytest.raises(HypothesisParseError):
+        agent.propose(ledger_rows=[])

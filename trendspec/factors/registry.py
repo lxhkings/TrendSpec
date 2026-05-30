@@ -113,7 +113,8 @@ def factor_info(name: str) -> dict[str, Any] | None:
         "class_name": cls.__name__,
         "description": getattr(cls, "description", ""),
         "category": getattr(cls, "category", "general"),
-        "params": getattr(cls, "__init__", lambda: {}).__code__.co_varnames[1:],  # Skip 'self'
+        "params": getattr(getattr(cls, "__init__", None), "__code__", None) and
+                  cls.__init__.__code__.co_varnames[1:] or (),  # Skip 'self'
     }
 
 
