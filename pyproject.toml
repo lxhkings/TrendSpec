@@ -26,6 +26,8 @@ dependencies = [
     "pymysql>=1.1.0",
     "holidays>=0.40.0",
     "scipy>=1.11.0",
+    "httpx>=0.28.1",
+    "fastapi>=0.136.3",
 ]
 
 [project.optional-dependencies]
