@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import numpy as np
 import polars as pl
 
 from trendspec.data.markets import Market
@@ -160,6 +161,64 @@ def aggregate(trades: pl.DataFrame) -> dict:
         "profit_factor": (gross_win / gross_loss) if gross_loss > 0 else float("inf"),
         "avg_bars_held": trades["bars_held"].mean(),
     }
+
+
+def monte_carlo(
+    trades: pl.DataFrame,
+    sims: int = 100,
+    capital: float = 1_000_000,
+    seed: int | None = None,
+) -> dict:
+    """
+    Bootstrap 随机回测：放回抽样 sims 笔历史交易，每次 capital 全仓，记单笔 P&L。
+    各次独立、不复利。返回 detail / summary / percentiles。
+    """
+    if trades.is_empty():
+        raise RuntimeError(
+            "Empty trade pool. Need golden→death trades first "
+            "(run winrate ema-cross)."
+        )
+
+    rng = np.random.default_rng(seed)
+    n = trades.height
+    idx = rng.integers(0, n, size=sims)
+
+    sampled = trades[idx.tolist()]
+    rets = sampled["ret"].to_numpy()
+    pnl = capital * rets
+    equity = capital * (1.0 + rets)
+
+    detail = pl.DataFrame({
+        "sim_id": list(range(1, sims + 1)),
+        "instrument_id": sampled["instrument_id"].to_list(),
+        "entry_dt": sampled["entry_dt"].to_list(),
+        "exit_dt": sampled["exit_dt"].to_list(),
+        "ret": rets.tolist(),
+        "pnl_usd": pnl.tolist(),
+        "final_equity": equity.tolist(),
+    })
+
+    summary = {
+        "sims": sims,
+        "capital": capital,
+        "mean_equity": float(equity.mean()),
+        "median_equity": float(np.median(equity)),
+        "best_equity": float(equity.max()),
+        "worst_equity": float(equity.min()),
+        "win_rate": float((rets > 0).mean()),
+        "std_equity": float(equity.std()),
+        "total_pnl": float(pnl.sum()),
+        "mean_ret": float(rets.mean()),
+    }
+
+    def _pcts(arr):
+        ps = np.percentile(arr, [5, 25, 50, 75, 95])
+        return {"p5": float(ps[0]), "p25": float(ps[1]), "p50": float(ps[2]),
+                "p75": float(ps[3]), "p95": float(ps[4])}
+
+    percentiles = {"equity": _pcts(equity), "ret": _pcts(rets)}
+
+    return {"detail": detail, "summary": summary, "percentiles": percentiles}
 
 
 def per_ticker(trades: pl.DataFrame) -> pl.DataFrame:
