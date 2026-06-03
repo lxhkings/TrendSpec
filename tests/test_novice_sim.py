@@ -62,16 +62,33 @@ def test_compound_two_trades():
 
 
 def test_ignore_golden_while_in_position():
-    """持倉期間其他金叉忽略"""
+    """持倉期間其他金叉忽略（不同 bar）"""
     cross = _cross([
         ("A", 1, 9,  100.0, "golden"),
-        ("B", 1, 10, 50.0,  "golden"),
+        ("B", 1, 10, 50.0,  "golden"),   # 不同 bar，A 已持倉，B 忽略
         ("A", 3, 9,  90.0,  "death"),
     ])
     rng = np.random.default_rng(0)
     res = simulate_novice(cross, capital=1_000_000, rng=rng)
     assert res["n_trades"] == 1
     assert res["trades"][0]["instrument_id"] == "A"
+
+
+def test_same_bar_golden_only_one_chosen():
+    """同一 bar 多支金叉：選一支後另一支被忽略（持倉鎖定）"""
+    # A、B 同 bar 金叉，noice 選其中一支後，另一支在同 bar 被忽略
+    cross = _cross([
+        ("A", 1, 9, 100.0, "golden"),
+        ("B", 1, 9, 200.0, "golden"),   # 同一 bar (day=1, hour=9)
+        ("A", 2, 9, 110.0, "death"),
+        ("B", 2, 9, 180.0, "death"),
+    ])
+    rng = np.random.default_rng(0)
+    res = simulate_novice(cross, capital=1_000_000, rng=rng)
+    # 只能持1支 → 只有1筆交易
+    assert res["n_trades"] == 1
+    # 持倉股的死叉觸發賣出
+    assert res["trades"][0]["instrument_id"] in ("A", "B")
 
 
 def test_no_signal_no_trade():

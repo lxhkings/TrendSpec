@@ -8,6 +8,7 @@ EMA 金叉胜率事件研究（1h）。
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, timedelta
 
 import numpy as np
@@ -243,13 +244,12 @@ def simulate_novice(
     # 取每個 instrument_id 的最後收盤（強制平倉用），從完整 cross 取
     last_closes = {
         row["instrument_id"]: row["close"]
-        for row in cross.sort("datetime").group_by("instrument_id").agg(
-            pl.col("close").last().alias("close"),
+        for row in cross.group_by("instrument_id").agg(
+            pl.col("close").sort_by(pl.col("datetime")).last().alias("close"),
         ).iter_rows(named=True)
     }
 
     # Pre-group by datetime for O(1) lookup instead of O(N*M) repeated filters
-    from collections import defaultdict
     grouped: dict = defaultdict(list)
     for row in events.iter_rows(named=True):
         grouped[row["datetime"]].append(row)
