@@ -131,17 +131,24 @@ CSV 输出：`results/screening/signals_<strategy>_<date>.csv`
 基于 1h intraday 数据，计算 EMA 金叉/死叉信号胜率：
 
 ```bash
-# 计算胜率 + 当前金叉态选股
+# 计算胜率 + 当前金叉态选股 + 新金叉信号
 uv run trendspec winrate ema-cross --market us --csv ./winrate_out
 
-# 自定义 EMA 周期
-uv run trendspec winrate ema-cross --market us --ema-short 60 --ema-long 120 --csv ./winrate_out
+# 自定义 EMA 周期 + 流动性过滤
+uv run trendspec winrate ema-cross --market us --ema-short 60 --ema-long 120 --min-adv-us 100000000 --csv ./winrate_out
 ```
+
+参数：
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--max-bars-since` | 20 | 新金叉信号 bars_since 上限 |
+| `--min-adv-us` | 5000万 | 日均成交额阈值（美元），过滤低流动性 |
 
 输出：
 - 终端汇总表（总交易数、胜率、平均盈利/亏损、盈亏比、平均持有 1h 根数）
 - 当前金叉态选股表（浮动收益降序，前 20）
-- CSV：`<csv>_trades.csv`、`<csv>_summary.csv`、`<csv>_screen.csv`
+- 新金叉信号表（bars_since ≤ 20 + ADV ≥ 阈值）
+- CSV：`<csv>_trades.csv`、`<csv>_summary.csv`、`<csv>_screen.csv`、`<csv>_recent.csv`
 
 > **前置**：需先摄入 intraday 数据：
 > ```bash
