@@ -23,15 +23,17 @@ def winrate_ema_cross(
     ema_long: int = typer.Option(120, "--ema-long", help="长 EMA 周期"),
     start: Optional[str] = typer.Option(None, "--start", help="起始 YYYY-MM-DD"),
     end: Optional[str] = typer.Option(None, "--end", help="结束 YYYY-MM-DD"),
+    max_bars_since: int = typer.Option(20, "--max-bars-since", help="新金叉信号 bars_since 上限"),
     csv: Optional[str] = typer.Option(
-        None, "--csv", help="CSV 输出前缀，写 <csv>_trades/_summary/_screen.csv"
+        None, "--csv", help="CSV 输出前缀，写 <csv>_trades/_summary/_screen/_recent.csv"
     ),
 ) -> None:
     """
-    EMA 金叉进/死叉出 胜率报告 + 当前金叉态选股。
+    EMA 金叉进/死叉出 胜率报告 + 当前金叉态选股 + 新金叉信号。
 
     示例:
         trendspec winrate ema-cross --market us --csv ./winrate_out
+        trendspec winrate ema-cross --market us --max-bars-since 10
     """
     from trendspec.data.markets import Market
     from trendspec.research.ema_cross_winrate import run_winrate
@@ -45,7 +47,7 @@ def winrate_ema_cross(
     )
     res = run_winrate(
         market_enum, ema_short=ema_short, ema_long=ema_long,
-        start=start_dt, end=end_dt,
+        start=start_dt, end=end_dt, max_bars_since=max_bars_since,
     )
     s = res["summary"]
 
@@ -61,7 +63,7 @@ def winrate_ema_cross(
     console.print(t)
     console.print("[dim]注: 毛收益, raw 未复权价[/dim]")
 
-    # 选股表（前 20）
+    # 当前金叉态选股表（前 20）
     screen = res["screen"]
     st = Table(title="当前金叉态 (按浮动收益降序, 前 20)")
     for c in ["ticker", "金叉时间", "持有根数", "浮动收益", "现价"]:
@@ -74,8 +76,22 @@ def winrate_ema_cross(
         )
     console.print(st)
 
+    # 新金叉信号表（≤ max_bars_since）
+    recent = res["recent_screen"]
+    rt = Table(title=f"新金叉信号 (bars_since ≤ {max_bars_since})")
+    for c in ["ticker", "金叉时间", "持有根数", "浮动收益", "现价"]:
+        rt.add_column(c)
+    for r in recent.iter_rows(named=True):
+        rt.add_row(
+            r["instrument_id"], str(r["cross_dt"]),
+            str(r["bars_since"]), f"{r['unrealized_ret']:.2%}",
+            f"{r['last_close']:.2f}",
+        )
+    console.print(rt)
+
     if csv:
         res["trades"].write_csv(f"{csv}_trades.csv")
         pl.DataFrame([s]).write_csv(f"{csv}_summary.csv")
         screen.write_csv(f"{csv}_screen.csv")
-        console.print(f"[green]CSV 已写: {csv}_trades/_summary/_screen.csv[/green]")
+        recent.write_csv(f"{csv}_recent.csv")
+        console.print(f"[green]CSV 已写: {csv}_trades/_summary/_screen/_recent.csv[/green]")
