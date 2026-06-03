@@ -8,8 +8,7 @@
 - PIT（Point-in-Time）宇宙，避免生存者偏差
 - 本地 Parquet 数据湖，选股无需实时连接数据库
 - 行业中文显示（GICS 标准分类）
-- 选股结果输出终端决策表 + CSV 导出
-- **信号历史**：策略历史信号命中率、均值收益、胜率统计，附于每次选股报告
+- 信号历史：策略历史信号命中率、均值收益、胜率统计
 
 ## 环境要求
 
@@ -28,244 +27,155 @@ uv sync
 cp .env.example .env
 ```
 
-按实际情况修改 `.env`：
+编辑 `.env`：
 
 ```
 DB_HOST=192.168.8.9
 DB_PORT=3306
 DB_USER=root
-DB_PASSWORD=<你的密码>
+DB_PASSWORD=<密码>
 DB_NAME=stocks
 DATA_LAKE_ROOT=./data_lake
-ALLOW_ROOT_DB_USER=true   # 开发环境使用 root 账号时必须加
+ALLOW_ROOT_DB_USER=true
 ```
 
-> **注意：** `ALLOW_ROOT_DB_USER=true` 必须写在 `.env` 文件中，写在 shell 环境变量里无效（pydantic-settings 从 `.env` 读取，不读 `os.environ`）。
+> `ALLOW_ROOT_DB_USER=true` 必须写在 `.env` 文件（shell 环境变量无效）。
+
+## CLI 命令一览
+
+| 命令 | 说明 |
+|------|------|
+| `trendspec ingest` | 数据摄入 |
+| `trendspec backtest` | 回测 |
+| `trendspec screen` | 选股 |
+| `trendspec winrate` | 胜率研究 |
+| `trendspec signal-history` | 信号历史 |
+| `trendspec research` | AI 因子研究 |
+
+---
 
 ## 数据摄入
 
-### 首次初始化（只需一次）
+### 首次初始化
 
 ```bash
-# 美股：SP500 + Russell1000，全量历史
+# 美股日线 + 周线
 uv run trendspec ingest daily --market us --full
-uv run trendspec ingest weekly --market us --full   # 周线数据
+uv run trendspec ingest weekly --market us --full
 uv run trendspec ingest components --market us
 uv run trendspec ingest sectors --market us
 
-# A 股：CSI800，全量历史
+# A 股日线 + 周线
 uv run trendspec ingest daily --market cn --full
-uv run trendspec ingest weekly --market cn --full   # 周线数据
+uv run trendspec ingest weekly --market cn --full
 uv run trendspec ingest components --market cn
 uv run trendspec ingest sectors --market cn
+
+# 1h intraday（胜率研究前置）
+uv run trendspec ingest intraday --market us --full
 ```
 
-> `components` 和 `sectors` 是低频数据（成分每年变几次，行业基本不变），首次运行后无需重复。周线数据可选，仅部分策略需要。
-
-### 日常增量更新
+### 日常增量
 
 ```bash
-uv run trendspec ingest daily --market us   # 合并新数据，已有历史不覆盖
+uv run trendspec ingest daily --market us
 uv run trendspec ingest daily --market cn
-uv run trendspec ingest weekly --market us  # 周线增量（可选）
-uv run trendspec ingest weekly --market cn
+uv run trendspec ingest intraday --market us   # 1h 增量
 ```
 
-### 查看同步状态
+### 查看状态
 
 ```bash
 uv run trendspec ingest status --market us
 ```
 
-## 股票池范围
-
-| 市场 | 来源 | 只数 |
-|------|------|------|
-| 美股 | SP500 + Russell1000（`index_constituents`） | ~1017 |
-| A 股 | CSI800（`index_constituents`） | ~800 |
-
-## 可用策略
-
-| 策略名 | 类型 | 说明 |
-|--------|------|------|
-| `clenow_momentum` | 量化动量 | Clenow《Stocks on the Move》：指数回归斜率×R² 排名，ATR 仓位，每周调仓 |
-| `ema_cluster_pullback` | EMA 密集回踩 | 日 EMA20/60/120 密集缠绕 + 周线回踩 EMA20 + 多头趋势确认，连续 2 日触发 |
-| `episodic_pivot` | 突破回踩 | Chris Flanders Episodic Pivot：缺口 + 放量 + 底部压缩突破，波动收缩后首次回踩 |
-| `rs_ema_cross` | 相对强度 | Top-N 周度轮动：相对基准走强的股票按强度排序，等权持有最强若干只 |
-| `ma_cross` | 趋势跟踪 | 双均线交叉（短期 MA 上穿长期 MA 买入） |
-| `minervini_trend` | 动量筛选 | Minervini 趋势模板：6 项纯技术指标过滤，2 日确认 |
-| `rsi_reversal` | 均值回归 | RSI 超卖买入、超买卖出 |
-| `sector_momentum` | 行业动量 | 行业内相对动量排名，买入前 10% |
-
-### clenow_momentum 参数
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `score_period` | 90 | 指数回归回望窗口（交易日） |
-| `sma_period` | 200 | 趋势过滤均线（价格须在此均线上方） |
-| `atr_period` | 20 | ATR 周期，用于仓位计算 |
-| `risk_factor` | 0.001 | 每单位 ATR 分配的权益比例 |
-| `rebalance_weekday` | 2 | 调仓日（0=周一…4=周五，默认周三）；选股模式自动跳过此限制 |
-| `top_pct` | 0.8 | 持有排名前多少比例（默认前 80%） |
-| `max_gap` | -0.15 | 90 日内单日最大跌幅过滤（-15%） |
-| `max_per_sector` | 0 | 每个行业最多选几只（0 = 不限；1 = 每行业只选 score 最高那只） |
-| `atr_stop_k` | 3.0 | 初始止损 = 收盘价 − k × ATR |
-| `drawdown_period` | 63 | 回撤基准窗口（日） |
-| `volume_avg_period` | 50 | 成交量均量窗口（日） |
-| `warn_deviation_max` | 40.0 | 乖离率预警阈值（超过则标注"均线乖离过大"） |
-| `warn_vol_mult_low` | 1.0 | 放量倍数下限（低于则"量能萎缩"） |
-| `warn_vol_mult_high` | 3.0 | 放量倍数上限（高于则"放量过快"） |
-| `warn_drawdown_max` | -15.0 | 回撤预警阈值（低于则"回撤过深"） |
-
-### ema_cluster_pullback 参数
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `ema_short` | 20 | 短期 EMA 周期（日线） |
-| `ema_mid` | 60 | 中期 EMA 周期（日线） |
-| `ema_long` | 120 | 长期 EMA 周期（日线） |
-| `daily_cluster_threshold` | 0.04 | 日线 EMA 密集阈值：(max−min)/min < 4% |
-| `weekly_proximity_threshold` | 0.025 | 周线 proximity 阈值：|close−weekly_EMA20| / weekly_EMA20 < 2.5% |
-| `weekly_ema_period` | 20 | 周线 EMA 周期 |
-| `ema_long_slope_lookback` | 20 | EMA120 斜率回望（交易日） |
-| `adv_threshold_us` | 5_000_000 | 美股 ADV20 阈值（美元） |
-| `adv_threshold_cn` | 50_000_000 | A 股 ADV20 阈值（人民币） |
-| `market_filter_enabled` | True | 指数过滤：指数收盘 > 指数 EMA200 |
-| `confirmation_days` | 2 | 连续满足条件天数 |
-| `stop_loss_pct` | 0.08 | 硬止损：收盘 ≤ entry × (1−8%) |
-| `sell_ma_period` | 60 | SELL 条件 EMA 周期（跌破 EMA60） |
-
-> EMA 密集回踩策略需要周线数据。运行前请先执行 `uv run trendspec ingest weekly --market us`。
-
-### episodic_pivot 参数
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `gap_min_pct` | 0.02 | 缺口下限：开盘价相对昨收涨幅 ≥ 2% |
-| `gap_max_pct` | 0.06 | 缺口上限：开盘价相对昨收涨幅 ≤ 6% |
-| `volume_mult_min` | 2.0 | 放量倍数：当日成交量 ≥ MA20 × 2 |
-| `base_period` | 20 | 底部压缩回望窗口（交易日） |
-| `base_range_max` | 0.10 | 底部波动范围：20 日高低点差距 / 低点 ≤ 10% |
-| `adv_threshold_us` | 5_000_000 | 美股 ADV20 阈值（美元） |
-| `adv_threshold_cn` | 50_000_000 | A 股 ADV20 阈值（人民币） |
-| `market_filter_enabled` | True | 指数过滤：指数收盘 > 指数 EMA200 |
-| `stop_loss_pct` | 0.08 | 硬止损：收盘 ≤ entry × (1−8%) |
-| `sell_ma_period` | 20 | SELL 条件 EMA 周期（跌破 EMA20） |
-
-> Episodic Pivot 策略捕捉波动收缩后的首次放量缺口突破，适合趋势启动点筛选。
-
-### rs_ema_cross — 相对强度 Top-N 周度轮动
-
-每周在「相对基准（默认 QQQ）走强」的股票中选最强的若干只等权持有：
-
-1. 比值 `ratio = 股票收盘 / 基准收盘`，取 EMA60/EMA120。
-2. 候选 = 金叉态（`EMA60 > EMA120`）∧ 流动性达标（`ADV20 ≥ min_adv`）。
-3. 按相对强度 `EMA60/EMA120 - 1` 降序取 **Top-N**，等权 `NAV/N` 建仓。
-4. 持仓跌出 Top-N 或转死叉 → 卖出。
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `top_n` | 20 | 持仓数量上限 |
-| `rebalance_weekday` | 0 | 调仓日（0=周一…4=周五） |
-| `min_adv_us` | 1e8 | 美股 ADV20 阈值（美元） |
-| `min_adv_cn` | 0 | A 股 ADV20 阈值（人民币） |
-| `ema_short` | 60 | 比值短期 EMA 周期 |
-| `ema_long` | 120 | 比值长期 EMA 周期 |
-| `benchmark_id` | QQQ | 基准指数 instrument_id |
-
-回测/选股双模式通用。选股模式自动跳过 weekday 限制。
-
-> **前置**：基准价须先摄入一次：
->
-> ```bash
-> uv run trendspec ingest indices --market us
-> ```
-
-示例：
-
-```bash
-uv run trendspec backtest run --strategy rs_ema_cross --market us --start 2020-01-01 --end 2026-05-31
-uv run trendspec screen run --strategy rs_ema_cross --market us --date 2024-05-15
-```
-
-## 选股
-
-```bash
-# Clenow 动量选股（任意日期，自动用当天数据）
-uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-05-14
-uv run trendspec screen run --strategy clenow_momentum --market cn --date 2026-05-14
-
-# 每行业只选最高分一只
-uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-05-14 --param max_per_sector=1
-
-# 其他策略
-uv run trendspec screen run --strategy ema_cluster_pullback --market us --date 2026-05-14
-uv run trendspec screen run --strategy episodic_pivot --market us --date 2026-05-14
-```
-
-选股输出包含：行业、选股排名、建议买入价、初始止损线、趋势质量（R²）、乖离率、回撤、放量倍数、预警信息，以及历史信号统计（如已构建）。
-
-CSV 文件保存为 `results/screening/signals_<strategy>_<date>.csv`。
-
-## 信号历史
-
-回放策略历史信号，计算每个标的的远期收益率（T+1/3/5/10/20 交易日），聚合为命中率和均值收益，缓存为 Parquet 供选股报告实时查询。
-
-### 首次构建（慢，约 10 年历史）
-
-```bash
-uv run trendspec signal-history build --strategy clenow_momentum --market us
-uv run trendspec signal-history build --strategy clenow_momentum --market cn
-```
-
-### 日常增量更新
-
-```bash
-# 不加 --rebuild 自动增量，只补最后缓存日之后的新数据
-uv run trendspec signal-history build --strategy clenow_momentum --market us
-```
-
-### 查看缓存状态
-
-```bash
-uv run trendspec signal-history status --strategy clenow_momentum --market us
-```
-
-### 选股报告中的历史统计列
-
-| 列名 | 说明 |
-|------|------|
-| `历史样本数` | 该标的历史买入信号总次数 |
-| `历史 1d 均值收益 %` | 信号后 1 交易日平均收益 |
-| `历史 5d 均值收益 %` | 信号后 5 交易日平均收益 |
-| `历史 20d 均值收益 %` | 信号后 20 交易日平均收益 |
-| `历史 5d 胜率 %` | 信号后 5 交易日收益为正的概率 |
-| `信号置信度` | ★ < 5 次，★★ 5–9 次，★★★ ≥ 10 次 |
-
-> 未运行 `signal-history build` 前，上述列显示 `-`，选股报告仍正常工作。
+---
 
 ## 回测
 
 ```bash
+# 查看可用策略
 uv run trendspec backtest list
 
+# 运行回测
 uv run trendspec backtest run --strategy clenow_momentum --market us --start 2020-01-01 --end 2024-12-31
-uv run trendspec backtest run --strategy episodic_pivot --market us --start 2020-01-01 --end 2024-12-31
 
-uv run trendspec backtest run --strategy clenow_momentum --market us --start 2023-01-01 --capital 1000000
+# 指定初始资金
+uv run trendspec backtest run --strategy rs_ema_cross --market us --start 2020-01-01 --capital 1000000
 
-uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31 --sort sharpe --export csv
+# 策略对比
+uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31 --sort sharpe
 ```
+
+---
+
+## 选股
+
+```bash
+# Clenow 动量选股
+uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-05-14
+
+# EMA 密集回踩
+uv run trendspec screen run --strategy ema_cluster_pullback --market us --date 2026-05-14
+
+# 传参数
+uv run trendspec screen run --strategy clenow_momentum --market us --date 2026-05-14 --param max_per_sector=1
+```
+
+CSV 输出：`results/screening/signals_<strategy>_<date>.csv`
+
+---
+
+## 胜率研究
+
+基于 1h intraday 数据，计算 EMA 金叉/死叉信号胜率：
+
+```bash
+# 计算胜率 + 当前金叉态选股
+uv run trendspec winrate ema-cross --market us --csv ./winrate_out
+
+# 自定义 EMA 周期
+uv run trendspec winrate ema-cross --market us --ema-short 60 --ema-long 120 --csv ./winrate_out
+```
+
+输出：
+- 终端汇总表（总交易数、胜率、平均盈利/亏损、盈亏比、平均持有 1h 根数）
+- 当前金叉态选股表（浮动收益降序，前 20）
+- CSV：`<csv>_trades.csv`、`<csv>_summary.csv`、`<csv>_screen.csv`
+
+> **前置**：需先摄入 intraday 数据：
+> ```bash
+> uv run trendspec ingest intraday --market us --full
+> ```
+
+---
+
+## 信号历史
+
+回放策略历史信号，计算远期收益率（T+1/3/5/10/20）：
+
+```bash
+# 首次构建
+uv run trendspec signal-history build --strategy clenow_momentum --market us
+
+# 增量更新
+uv run trendspec signal-history build --strategy clenow_momentum --market us
+
+# 查看状态
+uv run trendspec signal-history status --strategy clenow_momentum --market us
+```
+
+选股报告自动附带历史统计列（样本数、均值收益、胜率、置信度）。
+
+---
 
 ## AI 因子研究闭环
 
-自动化量化策略研究：LLM 提因子假设 → 机械扫参 → walk-forward 样本外验证 → 达标策略写成 Markdown 建议书。配备实时监控面板。
+自动化策略研究：LLM 提假设 → 扫参 → walk-forward 验证 → 建议书。
 
-**性能优化（2026-05）**：ResearchEvaluator 替代逐候选全回测，panel 数据共享 + mmap IPC 零拷贝 + 并行执行，大幅降低墙钟时间，数值结果完全等价。
+### 配置 LLM
 
-### 配置 LLM（DeepSeek V4 Pro / 任意 OpenAI 兼容接口）
-
-在 `.env` 追加：
+`.env` 追加：
 
 ```
 RESEARCH_LLM_BASE_URL=https://api.deepseek.com/v1
@@ -274,106 +184,84 @@ RESEARCH_LLM_MODEL=deepseek-chat
 RESEARCH_OUT_DIR=./research_out
 ```
 
-### 跑研究闭环
+### 运行研究
 
 ```bash
-# 真实 LLM（需填 API_KEY）
-uv run trendspec research run --market us \
-    --start 2015-01-01 --end 2023-12-31 \
-    --rounds 10 --max-candidates 200 \
-    --out ./research_out
+uv run trendspec research run --market us --start 2015-01-01 --end 2023-12-31 --rounds 10 --out ./research_out
 
-# 测试用（不连真 LLM，注入一段假设 JSON）
-uv run trendspec research run --market us \
-    --start 2015-01-01 --end 2023-12-31 \
-    --rounds 1 --out ./research_out \
-    --mock-llm '{"market":"us","factors":[{"name":"momentum","direction":"high","weight":1.0,"param_grid":{"period":[60,120]}}],"top_k_grid":[20],"rebalance_grid":[5],"rationale":"动量优选"}'
+# 测试模式（不连 LLM）
+uv run trendspec research run --market us --start 2015-01-01 --end 2023-12-31 --rounds 1 --mock-llm '{"market":"us","factors":[{"name":"momentum","direction":"high","weight":1.0}],"top_k_grid":[20]}'
 ```
 
-达标策略（OOS Sharpe ≥ 1.0 且最大回撤 ≤ 20%）自动保存为 `research_out/strategy-r<轮>-<时间>.md`。
-
-### 实时监控面板
-
-**方式一：另开终端前台运行（推荐，开发用）**
+### 监控面板
 
 ```bash
-# 新终端运行，Ctrl+C 中止
+# 前台运行（Ctrl+C 中止）
 uv run trendspec research serve --out ./research_out --port 8800
-```
 
-**方式二：后台持久运行（关终端不死）**
-
-```bash
-# nohup 后台挂载，日志写入 serve.log
+# 后台运行
 nohup uv run trendspec research serve --out ./research_out --port 8800 > serve.log 2>&1 &
-
-# 中止
-pkill -f "trendspec research serve"
 ```
 
-> 仅用 `&` 不加 `nohup`：后台运行但关掉终端进程会被杀死。
+浏览器打开 `http://127.0.0.1:8800`。
 
-浏览器打开 `http://127.0.0.1:8800`，每 2 秒刷新显示：当前轮次、扫参进度、top 候选 OOS Sharpe 排行、累计赢家数。面板与研究进程解耦，研究中断后面板仍显示最后状态。
+---
 
-研究进程中止后 `ledger.jsonl` 与已生成建议书保留，下次 `research run` 会从新一轮继续（LLM 读取历史 ledger 避免重复假设）。
+## 可用策略
 
-### 参数说明
+| 策略名 | 类型 | 说明 |
+|--------|------|------|
+| `clenow_momentum` | 量化动量 | Clenow《Stocks on the Move》：指数回归斜率×R² 排名 |
+| `ema_cluster_pullback` | EMA 密集回踩 | 日 EMA 密集 + 周线回踩 + 多头趋势 |
+| `episodic_pivot` | 突破回踩 | 缺口 + 放量 + 底部压缩突破 |
+| `rs_ema_cross` | 相对强度 | Top-N 周度轮动，相对基准走强 |
+| `ma_cross` | 趋势跟踪 | 双均线交叉 |
+| `minervini_trend` | 动量筛选 | Minervini 趋势模板 6 项过滤 |
+| `rsi_reversal` | 均值回归 | RSI 超卖买入 |
+| `sector_momentum` | 行业动量 | 行业内相对动量排名 |
 
-| 参数 | 默认 | 说明 |
+策略参数详见 CLAUDE.md 或各策略源码。
+
+---
+
+## 股票池
+
+| 市场 | 来源 | 只数 |
 |------|------|------|
-| `--market` | `us` | 市场（MVP 仅 us） |
-| `--start` / `--end` | - | 回测日期范围 |
-| `--rounds` | 10 | 最大假设轮数 |
-| `--max-candidates` | 200 | 每轮参数网格扫描上限 |
-| `--windows` | 4 | Walk-forward 窗口数 |
-| `--capital` | 100000 | 初始资金 |
-| `--out` | `./research_out` | 输出目录（建议书 + 状态文件） |
-| `--mock-llm` | - | 注入假设 JSON，不连真 LLM（测试用） |
+| 美股 | SP500 + Russell1000 | ~1017 |
+| A 股 | CSI800 | ~800 |
 
-### 输出文件
+---
 
-| 文件 | 内容 |
-|------|------|
-| `research_out/strategy-r<N>-<ts>.md` | 达标策略建议书（因子/参数/OOS 绩效/持仓条件） |
-| `research_out/ledger.jsonl` | 逐轮研究日志（LLM 记忆/去重用） |
-| `research_out/state.json` | 当前运行状态（面板轮询用） |
-
-### 性能优化架构
-
-ResearchEvaluator 实现 batch 评估，替代原来逐候选全回测：
-
-| 层级 | 优化 | 说明 |
-|------|------|------|
-| Tier 1 | MarketPanel | OHLCV 数据 load 一次，窗口内存切片 |
-| Tier 1 | FactorCache | 按 `(name,params)` memoize 因子面板 |
-| Tier 2 | combo 去重 | 同因子组合的 `top_k/rebalance` 变体共享排名面板 |
-| Tier 3 | mmap IPC | Arrow IPC 零拷贝，子进程只读共享 panel |
-| Tier 3 | ProcessPool | 候选并行执行，自适应线程防超订 |
-| Tier 0 | 数值等价 | 测试验证 `fast_eval` == `default_evaluate_fn`（容差 < 1e-9） |
-
-基准测速脚本：
+## 开发
 
 ```bash
-uv run python scripts/bench_research.py
-# 输出：baseline 逐候选 / evaluator 串行 / evaluator 并行 墙钟对比
+uv run pytest          # 测试
+uv run ruff check .    # lint
+uv run ruff format .   # 格式化
 ```
+
+---
 
 ## 数据源
 
-数据来自群辉 NAS `stocks` 数据库（入库后即可离线使用）：
+群辉 NAS `stocks` 数据库：
 
 | 表名 | 说明 |
 |------|------|
-| `prices` | 日线 OHLCV（美股 Yahoo 复权价，A 股 Tushare 后复权价） |
-| `weekly_prices` | 周线 OHLCV（周收盘日聚合，用于 EMA 密集回踩等策略） |
-| `stocks` | 基本信息，含 GICS 行业分类 |
-| `index_constituents` | 指数成分快照（SP500 / Russell1000 / CSI800 / HSI） |
-| `constituent_changes` | 指数成分变动历史 |
-| `index_prices` | 指数日线价格 |
+| `prices` | 日线 OHLCV |
+| `prices_weekly` | 周线 OHLCV |
+| `prices_intraday` | 1h OHLCV |
+| `stocks` | 基本信息 + GICS 行业 |
+| `index_constituents` | 指数成分快照 |
+| `constituent_changes` | 成分变动历史 |
+| `index_prices` | 指数日线 |
+
+---
 
 ## 编写自定义策略
 
-继承 `BaseStrategy`，实现 `init()` 和 `next()`：
+继承 `BaseStrategy`，实现 `init()` + `next()`：
 
 ```python
 from trendspec.strategy import BaseStrategy, register_strategy, StrategyContext
@@ -384,20 +272,12 @@ class MyStrategy(BaseStrategy):
     params = {"period": 20}
 
     def init(self, ctx: StrategyContext) -> None:
-        ctx.precompute_indicator("MA", period=self.get_param("period", 20))
+        ctx.precompute_indicator("MA", period=self.params["period"])
 
     def next(self, ctx: StrategyContext) -> None:
-        ma = ctx.indicator_value("MA", ctx.instrument_id, ctx.date, period=self.get_param("period", 20))
+        ma = ctx.indicator_value("MA", ctx.instrument_id, ctx.date, period=self.params["period"])
         if ma and ctx.close > ma and not ctx.has_position():
             ctx.signal("BUY", ctx.instrument_id, ctx.close)
 ```
 
-参考 `trendspec/strategy/examples/` 下的示例策略。
-
-## 开发
-
-```bash
-uv run pytest          # 运行测试
-uv run ruff check .    # 代码检查
-uv run ruff format .   # 代码格式化
-```
+参考 `trendspec/strategy/examples/`。
