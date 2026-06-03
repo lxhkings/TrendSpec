@@ -91,6 +91,7 @@ uv run trendspec ingest status --market us
 | `clenow_momentum` | 量化动量 | Clenow《Stocks on the Move》：指数回归斜率×R² 排名，ATR 仓位，每周调仓 |
 | `ema_cluster_pullback` | EMA 密集回踩 | 日 EMA20/60/120 密集缠绕 + 周线回踩 EMA20 + 多头趋势确认，连续 2 日触发 |
 | `episodic_pivot` | 突破回踩 | Chris Flanders Episodic Pivot：缺口 + 放量 + 底部压缩突破，波动收缩后首次回踩 |
+| `rs_ema_cross` | 相对强度 | 股票/基准比值 EMA60/EMA120 交叉，比值走强买入、走弱卖出 |
 | `ma_cross` | 趋势跟踪 | 双均线交叉（短期 MA 上穿长期 MA 买入） |
 | `minervini_trend` | 动量筛选 | Minervini 趋势模板：6 项纯技术指标过滤，2 日确认 |
 | `rsi_reversal` | 均值回归 | RSI 超卖买入、超买卖出 |
@@ -152,6 +153,34 @@ uv run trendspec ingest status --market us
 | `sell_ma_period` | 20 | SELL 条件 EMA 周期（跌破 EMA20） |
 
 > Episodic Pivot 策略捕捉波动收缩后的首次放量缺口突破，适合趋势启动点筛选。
+
+### rs_ema_cross 参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `benchmark_id` | `QQQ` | 基准指数 instrument_id |
+| `ema_short` | 60 | 比值短期 EMA 周期 |
+| `ema_long` | 120 | 比值长期 EMA 周期 |
+
+计算每只股票相对基准的比值 `ratio = 股票收盘 / 基准收盘`，在比值序列上取 EMA：
+
+- **BUY**：`EMA_short > EMA_long` 且空仓（相对基准走强）
+- **SELL**：`EMA_short <= EMA_long` 且持仓（相对基准走弱）
+
+状态型信号，回测/选股双模式通用。
+
+> **前置**：基准价来自 `data_lake/us/indices/`，使用前须先摄入：
+>
+> ```bash
+> uv run trendspec ingest indices --market us
+> ```
+
+示例：
+
+```bash
+uv run trendspec backtest run --strategy rs_ema_cross --market us --start 2020-01-01 --end 2024-12-31
+uv run trendspec screen run --strategy rs_ema_cross --market us --date 2024-05-15
+```
 
 ## 选股
 
