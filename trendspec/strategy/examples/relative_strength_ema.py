@@ -92,5 +92,15 @@ class RelativeStrengthEMACross(BaseStrategy):
                 self._rs_short[(iid, dt)] = es
                 self._rs_long[(iid, dt)] = el
 
-    def next(self, ctx: StrategyContext) -> None:  # noqa: D401
-        return
+    def next(self, ctx: StrategyContext) -> None:
+        iid = ctx.instrument_id
+        d = ctx.date
+        es = self._rs_short.get((iid, d))
+        el = self._rs_long.get((iid, d))
+        if es is None or el is None:
+            return
+
+        if not ctx.has_position() and es > el:
+            ctx.signal("BUY", iid, ctx.close, trigger_value=es - el, note="rs_ema_cross BUY")
+        elif ctx.has_position() and es <= el:
+            ctx.signal("SELL", iid, ctx.close, trigger_value=es - el, note="rs_ema_cross SELL")

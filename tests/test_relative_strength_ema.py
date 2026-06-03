@@ -102,3 +102,60 @@ def test_init_raises_when_benchmark_missing(temp_root) -> None:
     ctx = StrategyContext(market=Market.US, strategy=strat, data=stock_df, root=temp_root)
     with pytest.raises(RuntimeError, match="ingest indices"):
         strat.init(ctx)
+
+
+def _ctx_at(strat, iid, d, close, position=0.0):
+    """构造定位到 (iid, d) 的 ctx，注入持仓。"""
+    df = pl.DataFrame(
+        {"instrument_id": [iid], "ticker": [iid.split("_")[0]], "date": [d], "close": [close]}
+    )
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    ctx.update_bar(d, iid, iid, df, current_row={"close": close})
+    ctx.update_positions({iid: position} if position else {}, available_capital=10_000.0)
+    return ctx
+
+
+def test_buy_when_short_above_long_and_flat() -> None:
+    """EMA_short > EMA_long 且空仓 → BUY。"""
+    d = date(2023, 6, 1)
+    strat = RelativeStrengthEMACross()
+    strat._rs_short = {("AAPL_US", d): 1.20}
+    strat._rs_long = {("AAPL_US", d): 1.10}
+    ctx = _ctx_at(strat, "AAPL_US", d, close=150.0, position=0.0)
+    strat.next(ctx)
+    sigs = ctx.pending_signals()
+    assert len(sigs) == 1 and sigs[0].direction == "BUY"
+
+
+def test_sell_when_short_below_long_and_holding() -> None:
+    """EMA_short <= EMA_long 且持仓 → SELL。"""
+    d = date(2023, 6, 1)
+    strat = RelativeStrengthEMACross()
+    strat._rs_short = {("AAPL_US", d): 1.05}
+    strat._rs_long = {("AAPL_US", d): 1.10}
+    ctx = _ctx_at(strat, "AAPL_US", d, close=150.0, position=10.0)
+    strat.next(ctx)
+    sigs = ctx.pending_signals()
+    assert len(sigs) == 1 and sigs[0].direction == "SELL"
+
+
+def test_hold_when_short_above_long_and_already_holding() -> None:
+    """已持仓且仍金叉 → 不发新信号。"""
+    d = date(2023, 6, 1)
+    strat = RelativeStrengthEMACross()
+    strat._rs_short = {("AAPL_US", d): 1.20}
+    strat._rs_long = {("AAPL_US", d): 1.10}
+    ctx = _ctx_at(strat, "AAPL_US", d, close=150.0, position=10.0)
+    strat.next(ctx)
+    assert ctx.pending_signals() == []
+
+
+def test_no_signal_when_emas_missing() -> None:
+    """该 (iid,date) 无比值 EMA（QQQ 缺数据/预热不足）→ 不发信号。"""
+    d = date(2023, 6, 1)
+    strat = RelativeStrengthEMACross()
+    strat._rs_short = {}
+    strat._rs_long = {}
+    ctx = _ctx_at(strat, "AAPL_US", d, close=150.0, position=0.0)
+    strat.next(ctx)
+    assert ctx.pending_signals() == []
