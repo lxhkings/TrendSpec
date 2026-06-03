@@ -221,6 +221,156 @@ def monte_carlo(
     return {"detail": detail, "summary": summary, "percentiles": percentiles}
 
 
+def simulate_novice(
+    cross: pl.DataFrame,
+    capital: float,
+    rng: np.random.Generator,
+) -> dict:
+    """
+    模擬一個小白交易員跑完完整時間軸。
+    看到金叉隨機選股全倉買入，死叉賣出，複利累積。
+    末尾仍持倉則按最後收盤價強制平倉。
+    """
+    events = (
+        cross.filter(pl.col("signal").is_not_null())
+        .sort(["datetime", "instrument_id"])
+    )
+
+    current_capital = capital
+    position = None  # (instrument_id, entry_close, entry_capital, entry_dt)
+    trades = []
+
+    # 取每個 instrument_id 的最後收盤（強制平倉用），從完整 cross 取
+    last_closes = {
+        row["instrument_id"]: row["close"]
+        for row in cross.sort("datetime").group_by("instrument_id").agg(
+            pl.col("close").last().alias("close"),
+        ).iter_rows(named=True)
+    }
+
+    for dt_val in events["datetime"].unique(maintain_order=False).sort().to_list():
+        group = events.filter(pl.col("datetime") == dt_val)
+
+        # 步驟1：持倉股有死叉 → 賣出
+        if position is not None:
+            held_id, entry_close, entry_cap, entry_dt = position
+            death = group.filter(
+                (pl.col("instrument_id") == held_id) & (pl.col("signal") == "death")
+            )
+            if death.height > 0:
+                exit_close = float(death["close"][0])
+                ret = exit_close / entry_close - 1.0
+                current_capital = entry_cap * (1.0 + ret)
+                trades.append({
+                    "instrument_id": held_id,
+                    "entry_dt": entry_dt,
+                    "exit_dt": dt_val,
+                    "entry_close": entry_close,
+                    "exit_close": exit_close,
+                    "ret": ret,
+                    "capital_after": current_capital,
+                })
+                position = None
+
+        # 步驟2：無持倉且本 bar 有金叉 → 隨機選一支買入
+        if position is None:
+            golden = group.filter(pl.col("signal") == "golden")
+            if golden.height > 0:
+                idx = int(rng.integers(0, golden.height))
+                chosen = golden.row(idx, named=True)
+                position = (
+                    chosen["instrument_id"],
+                    float(chosen["close"]),
+                    current_capital,
+                    dt_val,
+                )
+
+    # 強制平倉
+    if position is not None:
+        held_id, entry_close, entry_cap, entry_dt = position
+        exit_close = float(last_closes.get(held_id, entry_close))
+        ret = exit_close / entry_close - 1.0
+        current_capital = entry_cap * (1.0 + ret)
+        trades.append({
+            "instrument_id": held_id,
+            "entry_dt": entry_dt,
+            "exit_dt": None,
+            "entry_close": entry_close,
+            "exit_close": exit_close,
+            "ret": ret,
+            "capital_after": current_capital,
+        })
+
+    return {
+        "final_capital": current_capital,
+        "total_ret": current_capital / capital - 1.0,
+        "n_trades": len(trades),
+        "trades": trades,
+    }
+
+
+def run_novice_simulations(
+    cross: pl.DataFrame,
+    sims: int = 100,
+    capital: float = 1_000_000,
+    seed: int | None = None,
+) -> dict:
+    """
+    跑 sims 個獨立小白交易員模擬，返回 detail / summary / percentiles。
+    隨機性僅在同一 bar 多支股票同時金叉時選哪支。
+    """
+    golden_count = cross.filter(pl.col("signal") == "golden").height
+    if golden_count == 0:
+        raise RuntimeError(
+            "No golden cross signals in data. "
+            "Novice trader has nothing to buy."
+        )
+
+    master_rng = np.random.default_rng(seed)
+    seeds = master_rng.integers(0, 2**31, size=sims)
+
+    rows = []
+    for i, s in enumerate(seeds):
+        r = simulate_novice(cross, capital, np.random.default_rng(int(s)))
+        rows.append({
+            "sim_id": i + 1,
+            "n_trades": r["n_trades"],
+            "final_equity": r["final_capital"],
+            "total_ret": r["total_ret"],
+        })
+
+    detail = pl.DataFrame(rows)
+    equities = detail["final_equity"].to_numpy()
+    rets = detail["total_ret"].to_numpy()
+    n_trades_arr = detail["n_trades"].to_numpy()
+
+    def _pcts(arr):
+        ps = np.percentile(arr, [5, 25, 50, 75, 95])
+        return {
+            "p5": float(ps[0]), "p25": float(ps[1]), "p50": float(ps[2]),
+            "p75": float(ps[3]), "p95": float(ps[4]),
+        }
+
+    summary = {
+        "sims": sims,
+        "capital": capital,
+        "mean_equity": float(equities.mean()),
+        "median_equity": float(np.median(equities)),
+        "best_equity": float(equities.max()),
+        "worst_equity": float(equities.min()),
+        "win_rate": float((equities > capital).mean()),
+        "std_equity": float(equities.std()),
+        "mean_ret": float(rets.mean()),
+        "median_n_trades": float(np.median(n_trades_arr)),
+    }
+
+    return {
+        "detail": detail,
+        "summary": summary,
+        "percentiles": {"equity": _pcts(equities), "ret": _pcts(rets)},
+    }
+
+
 def per_ticker(trades: pl.DataFrame) -> pl.DataFrame:
     """每 ticker 一行聚合（含中位数统计）。"""
     if trades.is_empty():
