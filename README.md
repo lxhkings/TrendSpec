@@ -91,7 +91,7 @@ uv run trendspec ingest status --market us
 | `clenow_momentum` | 量化动量 | Clenow《Stocks on the Move》：指数回归斜率×R² 排名，ATR 仓位，每周调仓 |
 | `ema_cluster_pullback` | EMA 密集回踩 | 日 EMA20/60/120 密集缠绕 + 周线回踩 EMA20 + 多头趋势确认，连续 2 日触发 |
 | `episodic_pivot` | 突破回踩 | Chris Flanders Episodic Pivot：缺口 + 放量 + 底部压缩突破，波动收缩后首次回踩 |
-| `rs_ema_cross` | 相对强度 | 股票/基准比值 EMA60/EMA120 交叉，比值走强买入、走弱卖出 |
+| `rs_ema_cross` | 相对强度 | Top-N 周度轮动：相对基准走强的股票按强度排序，等权持有最强若干只 |
 | `ma_cross` | 趋势跟踪 | 双均线交叉（短期 MA 上穿长期 MA 买入） |
 | `minervini_trend` | 动量筛选 | Minervini 趋势模板：6 项纯技术指标过滤，2 日确认 |
 | `rsi_reversal` | 均值回归 | RSI 超卖买入、超买卖出 |
@@ -154,22 +154,28 @@ uv run trendspec ingest status --market us
 
 > Episodic Pivot 策略捕捉波动收缩后的首次放量缺口突破，适合趋势启动点筛选。
 
-### rs_ema_cross 参数
+### rs_ema_cross — 相对强度 Top-N 周度轮动
+
+每周在「相对基准（默认 QQQ）走强」的股票中选最强的若干只等权持有：
+
+1. 比值 `ratio = 股票收盘 / 基准收盘`，取 EMA60/EMA120。
+2. 候选 = 金叉态（`EMA60 > EMA120`）∧ 流动性达标（`ADV20 ≥ min_adv`）。
+3. 按相对强度 `EMA60/EMA120 - 1` 降序取 **Top-N**，等权 `NAV/N` 建仓。
+4. 持仓跌出 Top-N 或转死叉 → 卖出。
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `benchmark_id` | `QQQ` | 基准指数 instrument_id |
+| `top_n` | 20 | 持仓数量上限 |
+| `rebalance_weekday` | 0 | 调仓日（0=周一…4=周五） |
+| `min_adv_us` | 1e8 | 美股 ADV20 阈值（美元） |
+| `min_adv_cn` | 0 | A 股 ADV20 阈值（人民币） |
 | `ema_short` | 60 | 比值短期 EMA 周期 |
 | `ema_long` | 120 | 比值长期 EMA 周期 |
+| `benchmark_id` | QQQ | 基准指数 instrument_id |
 
-计算每只股票相对基准的比值 `ratio = 股票收盘 / 基准收盘`，在比值序列上取 EMA：
+回测/选股双模式通用。选股模式自动跳过 weekday 限制。
 
-- **BUY**：`EMA_short > EMA_long` 且空仓（相对基准走强）
-- **SELL**：`EMA_short <= EMA_long` 且持仓（相对基准走弱）
-
-状态型信号，回测/选股双模式通用。
-
-> **前置**：基准价来自 `data_lake/us/indices/`，使用前须先摄入：
+> **前置**：基准价须先摄入一次：
 >
 > ```bash
 > uv run trendspec ingest indices --market us
@@ -178,7 +184,7 @@ uv run trendspec ingest status --market us
 示例：
 
 ```bash
-uv run trendspec backtest run --strategy rs_ema_cross --market us --start 2020-01-01 --end 2024-12-31
+uv run trendspec backtest run --strategy rs_ema_cross --market us --start 2020-01-01 --end 2026-05-31
 uv run trendspec screen run --strategy rs_ema_cross --market us --date 2024-05-15
 ```
 
