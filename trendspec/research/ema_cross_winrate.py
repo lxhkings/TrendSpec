@@ -258,7 +258,7 @@ def recent_golden_cross(
             (pl.col("unrealized_ret") / pl.col("median_mfe")).alias("overheat_pct"),
         ])
         .filter((pl.col("N") == 0) | (pl.col("N") >= min_samples))
-        .sort("median_ret", descending=True, nulls_last=True)
+        .sort("total_return", descending=True, nulls_last=True)
     )
     return enriched
 

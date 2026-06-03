@@ -90,7 +90,7 @@ def winrate_ema_cross(
         return "-" if v is None else f"{v:.0%}"
 
     recent = res["recent_screen"]
-    rt = Table(title=f"新金叉信号 (bars_since ≤ {max_bars_since}, 按历史中位收益排序)")
+    rt = Table(title=f"新金叉信号 (bars_since ≤ {max_bars_since}, 按总收益排序)")
     for c in ["ticker", "金叉时间", "持有根数", "浮动收益", "现价",
               "N", "总收益", "中位收益", "进度%", "过热%"]:
         rt.add_column(c)
