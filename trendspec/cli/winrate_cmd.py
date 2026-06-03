@@ -16,6 +16,25 @@ app = typer.Typer()
 console = Console()
 
 
+def _ascii_histogram(values: list[float], bins: int = 20, width: int = 40) -> str:
+    """终值分布 ASCII 直方图，固定 bins 档。"""
+    lo, hi = min(values), max(values)
+    if hi == lo:
+        return f"{lo:,.0f} | {'#' * width} ({len(values)})"
+    step = (hi - lo) / bins
+    counts = [0] * bins
+    for v in values:
+        b = min(int((v - lo) / step), bins - 1)
+        counts[b] += 1
+    peak = max(counts) or 1
+    lines = []
+    for i, c in enumerate(counts):
+        edge = lo + i * step
+        bar = "#" * round(c / peak * width)
+        lines.append(f"{edge:>14,.0f} | {bar} {c}")
+    return "\n".join(lines)
+
+
 @app.command("ema-cross")
 def winrate_ema_cross(
     market: str = typer.Option("us", "--market", help="市场代码 (目前仅 us)"),
@@ -120,3 +139,80 @@ def winrate_ema_cross(
         screen.write_csv(f"{prefix}_screen.csv")
         recent.write_csv(f"{prefix}_recent.csv")
         console.print(f"[green]CSV 已写: {prefix}_*.csv[/green]")
+
+
+@app.command("montecarlo")
+def winrate_montecarlo(
+    market: str = typer.Option("us", "--market", help="市场代码 (目前仅 us)"),
+    ema_short: int = typer.Option(60, "--ema-short", help="短 EMA 周期"),
+    ema_long: int = typer.Option(120, "--ema-long", help="长 EMA 周期"),
+    start: str | None = typer.Option(None, "--start", help="起始 YYYY-MM-DD"),
+    end: str | None = typer.Option(None, "--end", help="结束 YYYY-MM-DD"),
+    sims: int = typer.Option(100, "--sims", help="模拟次数"),
+    capital: float = typer.Option(1_000_000, "--capital", help="每次全仓本金（美元）"),
+    seed: int | None = typer.Option(None, "--seed", help="随机种子（复现用）"),
+    csv: bool = typer.Option(True, "--csv/--no-csv", help="导出明细 CSV"),
+) -> None:
+    """
+    EMA 金叉→死叉 蒙特卡洛随机回测：bootstrap 抽样历史交易，
+    每次全仓 capital 抽一笔、记单笔 P&L，跑 sims 次看分布。
+
+    示例:
+        trendspec winrate montecarlo --market us
+        trendspec winrate montecarlo --market us --sims 500 --seed 42
+    """
+    from trendspec.data.markets import Market
+    from trendspec.research.ema_cross_winrate import monte_carlo, run_winrate
+
+    market_enum = Market(market.upper())
+    start_dt = datetime.fromisoformat(start) if start else None
+    end_dt = datetime.fromisoformat(end) if end else None
+
+    console.print(
+        f"[cyan]EMA{ema_short}/{ema_long} 蒙特卡洛 ({market}, sims={sims})...[/cyan]"
+    )
+    wr = run_winrate(
+        market_enum, ema_short=ema_short, ema_long=ema_long,
+        start=start_dt, end=end_dt,
+    )
+    res = monte_carlo(wr["trades"], sims=sims, capital=capital, seed=seed)
+    s = res["summary"]
+    pct = res["percentiles"]
+
+    # 汇总表
+    t = Table(title=f"EMA{ema_short}/{ema_long} 蒙特卡洛汇总 ({sims} 次)")
+    t.add_column("指标")
+    t.add_column("值", justify="right")
+    t.add_row("模拟次数", f"{s['sims']:,}")
+    t.add_row("本金", f"${s['capital']:,.0f}")
+    t.add_row("终值均值", f"${s['mean_equity']:,.0f}")
+    t.add_row("终值中位", f"${s['median_equity']:,.0f}")
+    t.add_row("终值最好", f"${s['best_equity']:,.0f}")
+    t.add_row("终值最差", f"${s['worst_equity']:,.0f}")
+    t.add_row("胜率", f"{s['win_rate']:.2%}")
+    t.add_row("终值标准差", f"${s['std_equity']:,.0f}")
+    t.add_row("总 P&L", f"${s['total_pnl']:,.0f}")
+    t.add_row("平均收益", f"{s['mean_ret']:.2%}")
+    console.print(t)
+
+    # 百分位表
+    pt = Table(title="百分位 (终值 / 收益)")
+    pt.add_column("分位")
+    pt.add_column("终值", justify="right")
+    pt.add_column("收益", justify="right")
+    for k in ["p5", "p25", "p50", "p75", "p95"]:
+        pt.add_row(k.upper(), f"${pct['equity'][k]:,.0f}", f"{pct['ret'][k]:.2%}")
+    console.print(pt)
+
+    # ASCII 直方图（终值分布）
+    console.print("[bold]终值分布[/bold]")
+    console.print(_ascii_histogram(res["detail"]["final_equity"].to_list(), bins=20))
+    console.print("[dim]注: 毛收益, raw 未复权价, 各次独立不复利[/dim]")
+
+    if csv:
+        today = date.today().isoformat()
+        out_dir = "results/montecarlo"
+        os.makedirs(out_dir, exist_ok=True)
+        path = f"{out_dir}/ema{ema_short}_{ema_long}_{today}_montecarlo.csv"
+        res["detail"].write_csv(path)
+        console.print(f"[green]CSV 已写: {path}[/green]")
