@@ -248,17 +248,21 @@ def simulate_novice(
         ).iter_rows(named=True)
     }
 
-    for dt_val in events["datetime"].unique(maintain_order=False).sort().to_list():
-        group = events.filter(pl.col("datetime") == dt_val)
+    # Pre-group by datetime for O(1) lookup instead of O(N*M) repeated filters
+    from collections import defaultdict
+    grouped: dict = defaultdict(list)
+    for row in events.iter_rows(named=True):
+        grouped[row["datetime"]].append(row)
+
+    for dt_val in sorted(grouped.keys()):
+        group_rows = grouped[dt_val]
 
         # 步驟1：持倉股有死叉 → 賣出
         if position is not None:
             held_id, entry_close, entry_cap, entry_dt = position
-            death = group.filter(
-                (pl.col("instrument_id") == held_id) & (pl.col("signal") == "death")
-            )
-            if death.height > 0:
-                exit_close = float(death["close"][0])
+            death_rows = [r for r in group_rows if r["instrument_id"] == held_id and r["signal"] == "death"]
+            if death_rows:
+                exit_close = float(death_rows[0]["close"])
                 ret = exit_close / entry_close - 1.0
                 current_capital = entry_cap * (1.0 + ret)
                 trades.append({
@@ -274,10 +278,10 @@ def simulate_novice(
 
         # 步驟2：無持倉且本 bar 有金叉 → 隨機選一支買入
         if position is None:
-            golden = group.filter(pl.col("signal") == "golden")
-            if golden.height > 0:
-                idx = int(rng.integers(0, golden.height))
-                chosen = golden.row(idx, named=True)
+            golden_rows = [r for r in group_rows if r["signal"] == "golden"]
+            if golden_rows:
+                idx = int(rng.integers(0, len(golden_rows)))
+                chosen = golden_rows[idx]
                 position = (
                     chosen["instrument_id"],
                     float(chosen["close"]),
