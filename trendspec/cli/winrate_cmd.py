@@ -18,6 +18,8 @@ console = Console()
 
 def _ascii_histogram(values: list[float], bins: int = 20, width: int = 40) -> str:
     """终值分布 ASCII 直方图，固定 bins 档。"""
+    if not values:
+        return "(no data)"
     lo, hi = min(values), max(values)
     if hi == lo:
         return f"{lo:,.0f} | {'#' * width} ({len(values)})"
@@ -175,7 +177,11 @@ def winrate_montecarlo(
         market_enum, ema_short=ema_short, ema_long=ema_long,
         start=start_dt, end=end_dt,
     )
-    res = monte_carlo(wr["trades"], sims=sims, capital=capital, seed=seed)
+    try:
+        res = monte_carlo(wr["trades"], sims=sims, capital=capital, seed=seed)
+    except RuntimeError as e:
+        console.print(f"[red]错误: {e}[/red]")
+        raise typer.Exit(code=1) from None
     s = res["summary"]
     pct = res["percentiles"]
 
