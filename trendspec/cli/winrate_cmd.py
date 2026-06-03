@@ -24,6 +24,7 @@ def winrate_ema_cross(
     start: Optional[str] = typer.Option(None, "--start", help="起始 YYYY-MM-DD"),
     end: Optional[str] = typer.Option(None, "--end", help="结束 YYYY-MM-DD"),
     max_bars_since: int = typer.Option(20, "--max-bars-since", help="新金叉信号 bars_since 上限"),
+    min_adv_us: float = typer.Option(50_000_000, "--min-adv-us", help="日均成交额阈值（美元）"),
     csv: Optional[str] = typer.Option(
         None, "--csv", help="CSV 输出前缀，写 <csv>_trades/_summary/_screen/_recent.csv"
     ),
@@ -33,7 +34,7 @@ def winrate_ema_cross(
 
     示例:
         trendspec winrate ema-cross --market us --csv ./winrate_out
-        trendspec winrate ema-cross --market us --max-bars-since 10
+        trendspec winrate ema-cross --market us --max-bars-since 10 --min-adv-us 100000000
     """
     from trendspec.data.markets import Market
     from trendspec.research.ema_cross_winrate import run_winrate
@@ -47,7 +48,9 @@ def winrate_ema_cross(
     )
     res = run_winrate(
         market_enum, ema_short=ema_short, ema_long=ema_long,
-        start=start_dt, end=end_dt, max_bars_since=max_bars_since,
+        start=start_dt, end=end_dt,
+        max_bars_since=max_bars_since,
+        min_adv=min_adv_us,
     )
     s = res["summary"]
 
