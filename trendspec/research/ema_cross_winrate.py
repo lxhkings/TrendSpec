@@ -163,7 +163,7 @@ def aggregate(trades: pl.DataFrame) -> dict:
 
 
 def per_ticker(trades: pl.DataFrame) -> pl.DataFrame:
-    """每 ticker 一行聚合。"""
+    """每 ticker 一行聚合（含中位数统计）。"""
     if trades.is_empty():
         return pl.DataFrame()
     return (
@@ -174,6 +174,10 @@ def per_ticker(trades: pl.DataFrame) -> pl.DataFrame:
             pl.col("ret").filter(pl.col("win")).mean().alias("avg_win"),
             pl.col("ret").filter(~pl.col("win")).mean().alias("avg_loss"),
             pl.col("bars_held").mean().alias("avg_bars_held"),
+            pl.col("ret").median().alias("median_ret"),
+            pl.col("ret").min().alias("worst_ret"),
+            pl.col("bars_held").median().alias("median_bars"),
+            pl.col("mfe").median().alias("median_mfe"),
         ])
         .sort("win_rate", descending=True)
     )

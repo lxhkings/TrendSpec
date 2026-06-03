@@ -8,6 +8,7 @@ from trendspec.research.ema_cross_winrate import (
     compute_ema_cross,
     current_screen,
     pair_trades,
+    per_ticker,
     recent_golden_cross,
 )
 
@@ -173,3 +174,21 @@ def test_pair_trades_records_mfe():
     # 窗口=1 → 只看进场后 1 根 [100,120] → 峰值 120 → mfe=0.2
     trades_w1 = pair_trades(cross, mfe_window=1)
     assert abs(trades_w1.row(0, named=True)["mfe"] - 0.2) < 1e-9
+
+
+def test_per_ticker_extended_stats():
+    """每股聚合含中位收益/最差/中位根数/中位MFE。"""
+    trades = pl.DataFrame({
+        "instrument_id": ["X", "X", "X"],
+        "ret": [0.20, -0.10, 0.05],
+        "bars_held": [4, 2, 6],
+        "mfe": [0.30, 0.02, 0.10],
+        "win": [True, False, True],
+    })
+    pt = per_ticker(trades)
+    row = pt.filter(pl.col("instrument_id") == "X").row(0, named=True)
+    assert row["total_trades"] == 3
+    assert abs(row["median_ret"] - 0.05) < 1e-9
+    assert abs(row["worst_ret"] - (-0.10)) < 1e-9
+    assert abs(row["median_bars"] - 4.0) < 1e-9
+    assert abs(row["median_mfe"] - 0.10) < 1e-9
