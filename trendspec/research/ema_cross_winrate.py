@@ -122,7 +122,7 @@ def pair_trades(cross: pl.DataFrame, mfe_window: int = 20) -> pl.DataFrame:
                 ret = float(close) / float(e_close) - 1.0
                 e_idx = idx[e_dt]
                 window = seq_closes[e_idx : e_idx + mfe_window + 1]
-                mfe = max(window) / float(e_close) - 1.0
+                mfe = float(max(window)) / float(e_close) - 1.0
                 rows.append({
                     "instrument_id": iid[0],
                     "entry_dt": e_dt, "entry_close": float(e_close),
