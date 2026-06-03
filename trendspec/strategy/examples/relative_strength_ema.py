@@ -97,4 +97,72 @@ class RelativeStrengthEMACross(BaseStrategy):
                 self._rs_long[(iid, dt)] = el
 
     def next(self, ctx: StrategyContext) -> None:
-        return
+        d = ctx.date
+        if not ctx.is_screening and d.weekday() != self.get_param("rebalance_weekday"):
+            return
+        if d == self._last_rebalance_date:
+            return
+        self._last_rebalance_date = d
+
+        top_n = self.get_param("top_n")
+        if ctx.market.value.upper() == "US":
+            min_adv = self.get_param("min_adv_us")
+        else:
+            min_adv = self.get_param("min_adv_cn")
+
+        day_data = self._full_data.filter(pl.col("date") == d)
+        day_rows = {r["instrument_id"]: r for r in day_data.iter_rows(named=True)}
+
+        # 1+2 候选 + 排序（金叉态 ∧ ADV 达标）
+        cand: list[tuple[str, float]] = []
+        for iid in ctx.pit_universe(d):
+            es = self._rs_short.get((iid, d))
+            el = self._rs_long.get((iid, d))
+            if es is None or el is None or es <= el:
+                continue
+            adv = ctx.indicator_value("ADV", iid, d, period=20)
+            if adv is None or adv < min_adv:
+                continue
+            cand.append((iid, es / el - 1.0))
+        ranked = [iid for iid, _ in sorted(cand, key=lambda x: x[1], reverse=True)]
+        top = ranked[:top_n]
+        top_set = set(top)
+
+        # 3 NAV = 现金 + 持仓市值
+        positions = ctx.positions
+        nav = ctx.available_capital
+        for iid, sh in positions.items():
+            row = day_rows.get(iid)
+            if row and sh:
+                nav += sh * row["close"]
+
+        # 4 SELL 跌出 top（显式全平，避免默认 order_size=100 部分平仓）
+        for iid, sh in list(positions.items()):
+            if sh > 0 and iid not in top_set:
+                row = day_rows.get(iid)
+                if row:
+                    sig = ctx.signal("SELL", iid, row["close"], note="rs_ema rotation exit")
+                    sig.shares = float(sh)
+
+        # 5 BUY 新进 top（等权 NAV/top_n）
+        if nav > 0 and top_n > 0:
+            per = nav / top_n
+            for iid in top:
+                if positions.get(iid, 0.0) > 0:
+                    continue
+                row = day_rows.get(iid)
+                if not row or row["close"] <= 0:
+                    continue
+                shares = int(per / row["close"])
+                if shares < 1:
+                    continue
+                es = self._rs_short[(iid, d)]
+                el = self._rs_long[(iid, d)]
+                sig = ctx.signal(
+                    "BUY",
+                    iid,
+                    row["close"],
+                    trigger_value=es / el - 1.0,
+                    note=f"rs_ema rotation top{top_n}",
+                )
+                sig.shares = float(shares)

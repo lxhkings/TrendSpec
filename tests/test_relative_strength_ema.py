@@ -95,3 +95,165 @@ def test_init_raises_when_benchmark_missing(temp_root) -> None:
     ctx = StrategyContext(market=Market.US, strategy=strat, data=stock_df, root=temp_root)
     with pytest.raises(RuntimeError, match="ingest indices"):
         strat.init(ctx)
+
+
+REBAL = date(2024, 1, 8)  # Monday: weekday()==0
+TUES = date(2024, 1, 9)  # Tuesday
+
+
+def _build(strat, specs, positions=None, cash=1_000_000.0, n_hist=25, cur_date=REBAL):
+    """
+    specs: list of (iid, e60, e120, dollar_vol)。
+      常量价量构造使 ADV20 == dollar_vol（close=100, volume=dv/100）。
+    种入 rs dicts(在 cur_date) + _full_data + ctx ADV 预计算 + pit_universe。
+    ctx 定位到首个 iid（触发组合级首调用逻辑）。
+    """
+    dates = [cur_date - timedelta(days=(n_hist - 1 - i)) for i in range(n_hist)]
+    rows = []
+    for iid, _e60, _e120, dv in specs:
+        close = 100.0
+        vol = dv / close
+        ticker = iid.split("_")[0]
+        for dt in dates:
+            rows.append(
+                {
+                    "instrument_id": iid,
+                    "ticker": ticker,
+                    "date": dt,
+                    "close": close,
+                    "volume": vol,
+                    "open": close,
+                    "high": close,
+                    "low": close,
+                    "adj_factor": 1.0,
+                }
+            )
+    data = pl.DataFrame(rows)
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=data)
+    ctx.precompute_indicator("ADV", period=20)
+
+    strat._full_data = data
+    strat._last_rebalance_date = None
+    strat._rs_short = {(iid, cur_date): e60 for iid, e60, _e120, _dv in specs}
+    strat._rs_long = {(iid, cur_date): e120 for iid, _e60, e120, _dv in specs}
+
+    ids = [s[0] for s in specs]
+    ctx.pit_universe = lambda _d: ids
+    ctx._current_date = cur_date
+    ctx.update_positions(positions or {}, cash)
+
+    first = ids[0]
+    first_row = data.filter(
+        (pl.col("instrument_id") == first) & (pl.col("date") == cur_date)
+    ).to_dicts()[0]
+    ctx.update_bar(cur_date, first, first, data, current_row=first_row)
+    return ctx
+
+
+def _dirs(ctx, direction):
+    return {s.instrument_id for s in ctx.pending_signals() if s.direction == direction}
+
+
+def test_top_n_selection() -> None:
+    """5 个金叉候选、top_n=3 → 只买相对强度最高的 3 只。"""
+    strat = RelativeStrengthEMACross(params={"top_n": 3})
+    specs = [
+        ("A_US", 1.30, 1.00, 2e8),  # score .30
+        ("B_US", 1.25, 1.00, 2e8),  # .25
+        ("C_US", 1.20, 1.00, 2e8),  # .20
+        ("D_US", 1.10, 1.00, 2e8),  # .10
+        ("E_US", 1.05, 1.00, 2e8),  # .05
+    ]
+    ctx = _build(strat, specs)
+    strat.next(ctx)
+    assert _dirs(ctx, "BUY") == {"A_US", "B_US", "C_US"}
+
+
+def test_non_golden_excluded() -> None:
+    """死叉 (e60<=e120) 不进候选。"""
+    strat = RelativeStrengthEMACross(params={"top_n": 3})
+    specs = [
+        ("A_US", 1.30, 1.00, 2e8),
+        ("B_US", 0.90, 1.00, 2e8),  # 死叉
+        ("C_US", 1.20, 1.00, 2e8),
+    ]
+    ctx = _build(strat, specs)
+    strat.next(ctx)
+    assert _dirs(ctx, "BUY") == {"A_US", "C_US"}
+
+
+def test_adv_gate_excludes_illiquid() -> None:
+    """强势但 ADV20 < min_adv_us 的被剔除。"""
+    strat = RelativeStrengthEMACross(params={"top_n": 3})
+    specs = [
+        ("A_US", 1.40, 1.00, 5e7),  # 最强但 5千万 < 1亿
+        ("B_US", 1.20, 1.00, 2e8),
+        ("C_US", 1.10, 1.00, 2e8),
+    ]
+    ctx = _build(strat, specs)
+    strat.next(ctx)
+    assert _dirs(ctx, "BUY") == {"B_US", "C_US"}
+
+
+def test_equal_weight_shares() -> None:
+    """等权：shares == int((NAV/top_n)/close)。"""
+    strat = RelativeStrengthEMACross(params={"top_n": 3})
+    specs = [("A_US", 1.30, 1.00, 2e8), ("B_US", 1.20, 1.00, 2e8), ("C_US", 1.10, 1.00, 2e8)]
+    ctx = _build(strat, specs, cash=1_000_000.0)  # NAV=1e6, per=333_333, close=100
+    strat.next(ctx)
+    buy = {s.instrument_id: s.shares for s in ctx.pending_signals() if s.direction == "BUY"}
+    assert buy["A_US"] == 3333.0
+
+
+def test_sell_dropout_full_close() -> None:
+    """持仓 250 股但本周跌出 top_n → SELL 且 shares==250（不被默认100截断）。"""
+    strat = RelativeStrengthEMACross(params={"top_n": 2})
+    specs = [
+        ("A_US", 1.30, 1.00, 2e8),
+        ("B_US", 1.20, 1.00, 2e8),
+        ("OLD_US", 1.05, 1.00, 2e8),  # 仍金叉但排名第3，跌出 top2
+    ]
+    ctx = _build(strat, specs, positions={"OLD_US": 250.0})
+    strat.next(ctx)
+    sells = [s for s in ctx.pending_signals() if s.direction == "SELL"]
+    assert len(sells) == 1 and sells[0].instrument_id == "OLD_US"
+    assert sells[0].shares == 250.0
+
+
+def test_sell_on_death_cross() -> None:
+    """持仓死叉 (e60<=e120) → 不进候选 → SELL。"""
+    strat = RelativeStrengthEMACross(params={"top_n": 3})
+    specs = [
+        ("A_US", 1.30, 1.00, 2e8),
+        ("B_US", 1.20, 1.00, 2e8),
+        ("OLD_US", 0.95, 1.00, 2e8),  # 死叉
+    ]
+    ctx = _build(strat, specs, positions={"OLD_US": 100.0})
+    strat.next(ctx)
+    assert _dirs(ctx, "SELL") == {"OLD_US"}
+
+
+def test_weekly_guard_and_no_double_run() -> None:
+    """非调仓日不动作；同日二次调用不重复。"""
+    strat = RelativeStrengthEMACross(params={"top_n": 3})
+    specs = [("A_US", 1.30, 1.00, 2e8), ("B_US", 1.20, 1.00, 2e8)]
+    # 周二、非 screening → 无信号
+    ctx = _build(strat, specs, cur_date=TUES)
+    strat.next(ctx)
+    assert ctx.pending_signals() == []
+    # 周一首调有信号，二次调用无新增
+    ctx2 = _build(strat, specs)
+    strat.next(ctx2)
+    n_first = len(ctx2.pending_signals())
+    strat.next(ctx2)
+    assert len(ctx2.pending_signals()) == n_first
+
+
+def test_screening_ignores_weekday() -> None:
+    """screening 模式任意 weekday 都出 Top-N。"""
+    strat = RelativeStrengthEMACross(params={"top_n": 2})
+    specs = [("A_US", 1.30, 1.00, 2e8), ("B_US", 1.20, 1.00, 2e8), ("C_US", 1.10, 1.00, 2e8)]
+    ctx = _build(strat, specs, cur_date=TUES)
+    ctx.is_screening = True
+    strat.next(ctx)
+    assert _dirs(ctx, "BUY") == {"A_US", "B_US"}
