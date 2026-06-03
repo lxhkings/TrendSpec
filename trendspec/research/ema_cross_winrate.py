@@ -97,10 +97,11 @@ def compute_ema_cross(df: pl.DataFrame, ema_short: int, ema_long: int) -> pl.Dat
     ).select(["instrument_id", "datetime", "close", "ema_s", "ema_l", "signal"])
 
 
-def pair_trades(cross: pl.DataFrame) -> pl.DataFrame:
+def pair_trades(cross: pl.DataFrame, mfe_window: int = 20) -> pl.DataFrame:
     """
     配对成交：每个 golden 配之后第一个 death。
-    返回 [instrument_id, entry_dt, entry_close, exit_dt, exit_close, ret, bars_held, win]。
+    每笔多记 mfe = 进场后 mfe_window 根内 max(close)/entry-1（窗口末尾封顶）。
+    返回 [instrument_id, entry_dt, entry_close, exit_dt, exit_close, ret, bars_held, mfe, win]。
     """
     rows = []
     for iid, g in cross.filter(pl.col("signal").is_not_null()).group_by(
@@ -108,8 +109,9 @@ def pair_trades(cross: pl.DataFrame) -> pl.DataFrame:
     ):
         events = g.sort("datetime").select(["datetime", "close", "signal"]).iter_rows()
         events = list(events)
-        # 同时需要 bar 索引算 bars_held → 用全序列定位
+        # 同时需要 bar 索引算 bars_held + MFE → 用全序列定位
         seq = cross.filter(pl.col("instrument_id") == iid[0]).sort("datetime")
+        seq_closes = seq["close"].to_list()
         idx = {dt: i for i, dt in enumerate(seq["datetime"].to_list())}
         open_entry = None
         for dt, close, sig in events:
@@ -118,12 +120,16 @@ def pair_trades(cross: pl.DataFrame) -> pl.DataFrame:
             elif sig == "death" and open_entry is not None:
                 e_dt, e_close = open_entry
                 ret = float(close) / float(e_close) - 1.0
+                e_idx = idx[e_dt]
+                window = seq_closes[e_idx : e_idx + mfe_window + 1]
+                mfe = max(window) / float(e_close) - 1.0
                 rows.append({
                     "instrument_id": iid[0],
                     "entry_dt": e_dt, "entry_close": float(e_close),
                     "exit_dt": dt, "exit_close": float(close),
                     "ret": ret,
-                    "bars_held": idx[dt] - idx[e_dt],
+                    "bars_held": idx[dt] - e_idx,
+                    "mfe": mfe,
                     "win": ret > 0,
                 })
                 open_entry = None
@@ -132,7 +138,7 @@ def pair_trades(cross: pl.DataFrame) -> pl.DataFrame:
             "instrument_id": pl.Utf8, "entry_dt": pl.Datetime,
             "entry_close": pl.Float64, "exit_dt": pl.Datetime,
             "exit_close": pl.Float64, "ret": pl.Float64,
-            "bars_held": pl.Int64, "win": pl.Boolean,
+            "bars_held": pl.Int64, "mfe": pl.Float64, "win": pl.Boolean,
         })
     return pl.DataFrame(rows)
 

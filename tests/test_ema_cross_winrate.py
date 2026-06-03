@@ -156,3 +156,20 @@ def test_recent_golden_cross_filters_by_adv():
     # A: 100M ≥ 50M 入选，B: 1M < 50M 排除
     assert recent.height == 1
     assert recent["instrument_id"].to_list() == ["A"]
+
+
+def test_pair_trades_records_mfe():
+    """每笔交易记录进场后 W 根内最大涨幅 MFE。"""
+    # 进场 100，路径冲高到 150（idx2），死叉出场 95（idx4）
+    cross = pl.DataFrame({
+        "instrument_id": ["X", "X", "X", "X", "X"],
+        "datetime": [_dt(1), _dt(2), _dt(3), _dt(4), _dt(5)],
+        "close": [100.0, 120.0, 150.0, 130.0, 95.0],
+        "signal": ["golden", None, None, None, "death"],
+    })
+    # 默认大窗口 → 抓全局峰值 150 → mfe=0.5
+    trades = pair_trades(cross)
+    assert abs(trades.row(0, named=True)["mfe"] - 0.5) < 1e-9
+    # 窗口=1 → 只看进场后 1 根 [100,120] → 峰值 120 → mfe=0.2
+    trades_w1 = pair_trades(cross, mfe_window=1)
+    assert abs(trades_w1.row(0, named=True)["mfe"] - 0.2) < 1e-9
