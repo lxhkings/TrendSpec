@@ -221,13 +221,17 @@ def recent_golden_cross(
     max_bars_since: int = 20,
     min_adv: float = 0,
     adv_dict: dict[str, float] | None = None,
+    stats: pl.DataFrame | None = None,
+    min_samples: int = 3,
 ) -> pl.DataFrame:
     """
     最近 N 根 bar 内发生金叉且仍金叉态。
 
     条件：ema_s > ema_l + bars_since ≤ max_bars_since + adv20 ≥ min_adv。
 
-    返回：[instrument_id, cross_dt, bars_since, unrealized_ret, last_close]
+    stats 非空时：left-join 历史金叉→死叉统计，加衍生列 progress_pct/overheat_pct，
+    过滤 0<N<min_samples（N=0 无历史保留标灰），按 median_ret 降序、N=0 排尾。
+    stats=None 时返回未 enrich 的旧结构。
     """
     screen = current_screen(cross)
     if screen.is_empty():
@@ -241,7 +245,21 @@ def recent_golden_cross(
         valid_ids = [iid for iid, adv in adv_dict.items() if adv >= min_adv]
         screen = screen.filter(pl.col("instrument_id").is_in(valid_ids))
 
-    return screen
+    if stats is None or stats.is_empty():
+        return screen
+
+    enriched = (
+        screen.join(stats, on="instrument_id", how="left")
+        .rename({"total_trades": "N"})
+        .with_columns(pl.col("N").fill_null(0))
+        .with_columns([
+            (pl.col("bars_since") / pl.col("median_bars")).alias("progress_pct"),
+            (pl.col("unrealized_ret") / pl.col("median_mfe")).alias("overheat_pct"),
+        ])
+        .filter((pl.col("N") == 0) | (pl.col("N") >= min_samples))
+        .sort("median_ret", descending=True, nulls_last=True)
+    )
+    return enriched
 
 
 def run_winrate(

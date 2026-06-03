@@ -192,3 +192,55 @@ def test_per_ticker_extended_stats():
     assert abs(row["worst_ret"] - (-0.10)) < 1e-9
     assert abs(row["median_bars"] - 4.0) < 1e-9
     assert abs(row["median_mfe"] - 0.10) < 1e-9
+
+
+def test_recent_golden_cross_enriches_and_filters():
+    """join 历史统计 + 过滤 0<N<min_samples + N=0 保留排尾 + 按中位收益排序。"""
+    # A/B/C 三股均最近金叉（bars_since=2）
+    cross = pl.DataFrame({
+        "instrument_id": ["A", "A", "A", "B", "B", "B", "C", "C", "C"],
+        "datetime": [_dt(1), _dt(2), _dt(3)] * 3,
+        "close": [100.0, 110.0, 121.0, 200.0, 210.0, 220.0, 50.0, 55.0, 60.0],
+        "ema_s": [99.0, 105.0, 112.0, 199.0, 205.0, 212.0, 49.0, 52.0, 56.0],
+        "ema_l": [100.0, 104.0, 108.0, 200.0, 204.0, 208.0, 50.0, 51.0, 53.0],
+        "signal": ["golden", None, None, "golden", None, None, "golden", None, None],
+    })
+    # A 历史 N=5 可信；B 历史 N=2 < min_samples 应剔除；C 无历史 N=0 保留标灰
+    stats = pl.DataFrame({
+        "instrument_id": ["A", "B"],
+        "total_trades": [5, 2],
+        "win_rate": [0.6, 0.5],
+        "avg_win": [0.10, 0.08],
+        "avg_loss": [-0.05, -0.04],
+        "avg_bars_held": [9.0, 7.0],
+        "median_ret": [0.12, 0.20],
+        "worst_ret": [-0.10, -0.08],
+        "median_bars": [10.0, 8.0],
+        "median_mfe": [0.15, 0.18],
+    })
+    out = recent_golden_cross(cross, max_bars_since=2, stats=stats, min_samples=3)
+    ids = out["instrument_id"].to_list()
+    assert ids == ["A", "C"]          # B 剔除；A(median 0.12) 在前，C(N=0)排尾
+    a = out.filter(pl.col("instrument_id") == "A").row(0, named=True)
+    assert a["N"] == 5
+    assert abs(a["progress_pct"] - 2 / 10.0) < 1e-9      # bars_since/median_bars
+    assert abs(a["overheat_pct"] - (a["unrealized_ret"] / 0.15)) < 1e-9
+    c = out.filter(pl.col("instrument_id") == "C").row(0, named=True)
+    assert c["N"] == 0
+    assert c["median_ret"] is None
+    assert c["progress_pct"] is None
+
+
+def test_recent_golden_cross_backward_compatible_without_stats():
+    """stats=None 时返回旧结构，不含 N 列。"""
+    cross = pl.DataFrame({
+        "instrument_id": ["A", "A", "A"],
+        "datetime": [_dt(1), _dt(2), _dt(3)],
+        "close": [100.0, 110.0, 121.0],
+        "ema_s": [99.0, 105.0, 112.0],
+        "ema_l": [100.0, 104.0, 108.0],
+        "signal": ["golden", None, None],
+    })
+    out = recent_golden_cross(cross, max_bars_since=2)
+    assert "N" not in out.columns
+    assert out.height == 1
