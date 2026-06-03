@@ -7,6 +7,7 @@ from trendspec.research.ema_cross_winrate import (
     compute_ema_cross,
     current_screen,
     pair_trades,
+    recent_golden_cross,
 )
 
 
@@ -86,3 +87,21 @@ def test_current_screen_open_golden():
     assert row["cross_dt"] == _dt(1)
     assert row["bars_since"] == 2
     assert abs(row["unrealized_ret"] - 0.21) < 1e-9
+
+
+def test_recent_golden_cross_filters_by_bars_since():
+    """bars_since ≤ max_bars_since 的金叉态入选。"""
+    cross = pl.DataFrame({
+        "instrument_id": ["A", "A", "A", "B", "B", "B"],
+        "datetime": [_dt(1), _dt(2), _dt(3), _dt(1), _dt(2), _dt(3)],
+        "close": [100.0, 110.0, 121.0, 200.0, 210.0, 220.0],
+        "ema_s": [99.0, 105.0, 112.0, 199.0, 205.0, 212.0],
+        "ema_l": [100.0, 104.0, 108.0, 200.0, 204.0, 208.0],
+        "signal": ["golden", None, None, "golden", None, None],
+    })
+    recent = recent_golden_cross(cross, max_bars_since=2)
+    # A: bars_since=2 (≤2)入选, B: bars_since=2 (≤2)入选
+    assert recent.height == 2
+    # 设 max_bars_since=1，只有 bars_since=1 入选（无）
+    recent2 = recent_golden_cross(cross, max_bars_since=1)
+    assert recent2.height == 0

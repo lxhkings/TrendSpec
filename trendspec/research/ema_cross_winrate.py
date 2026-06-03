@@ -158,6 +158,23 @@ def current_screen(cross: pl.DataFrame) -> pl.DataFrame:
     return pl.DataFrame(rows).sort("unrealized_ret", descending=True)
 
 
+def recent_golden_cross(
+    cross: pl.DataFrame,
+    max_bars_since: int = 20,
+) -> pl.DataFrame:
+    """
+    最近 N 根 bar 内发生金叉且仍金叉态。
+
+    条件：ema_s > ema_l + bars_since ≤ max_bars_since。
+
+    返回：[instrument_id, cross_dt, bars_since, unrealized_ret, last_close]
+    """
+    screen = current_screen(cross)
+    if screen.is_empty():
+        return screen
+    return screen.filter(pl.col("bars_since") <= max_bars_since)
+
+
 def run_winrate(
     market,
     root: str | None = None,
