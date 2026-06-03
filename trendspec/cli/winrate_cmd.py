@@ -4,7 +4,7 @@ trendspec winrate ema-cross — 1h EMA 金叉胜率 + 选股。
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
 import polars as pl
@@ -25,17 +25,17 @@ def winrate_ema_cross(
     end: Optional[str] = typer.Option(None, "--end", help="结束 YYYY-MM-DD"),
     max_bars_since: int = typer.Option(20, "--max-bars-since", help="新金叉信号 bars_since 上限"),
     min_adv_us: float = typer.Option(50_000_000, "--min-adv-us", help="日均成交额阈值（美元）"),
-    csv: Optional[str] = typer.Option(
-        None, "--csv", help="CSV 输出前缀，写 <csv>_trades/_summary/_screen/_recent.csv"
-    ),
+    csv: bool = typer.Option(True, "--csv/--no-csv", help="导出 CSV（默认导出到 results/winrate/）"),
 ) -> None:
     """
     EMA 金叉进/死叉出 胜率报告 + 当前金叉态选股 + 新金叉信号。
 
     示例:
-        trendspec winrate ema-cross --market us --csv ./winrate_out
+        trendspec winrate ema-cross --market us
         trendspec winrate ema-cross --market us --max-bars-since 10 --min-adv-us 100000000
+        trendspec winrate ema-cross --market us --no-csv  # 不导出 CSV
     """
+    import os
     from trendspec.data.markets import Market
     from trendspec.research.ema_cross_winrate import run_winrate
 
@@ -93,8 +93,14 @@ def winrate_ema_cross(
     console.print(rt)
 
     if csv:
-        res["trades"].write_csv(f"{csv}_trades.csv")
-        pl.DataFrame([s]).write_csv(f"{csv}_summary.csv")
-        screen.write_csv(f"{csv}_screen.csv")
-        recent.write_csv(f"{csv}_recent.csv")
-        console.print(f"[green]CSV 已写: {csv}_trades/_summary/_screen/_recent.csv[/green]")
+        # 输出到 results/winrate/，文件名加日期
+        today = date.today().isoformat()
+        out_dir = "results/winrate"
+        os.makedirs(out_dir, exist_ok=True)
+        prefix = f"{out_dir}/ema{ema_short}_{ema_long}_{today}"
+
+        res["trades"].write_csv(f"{prefix}_trades.csv")
+        pl.DataFrame([s]).write_csv(f"{prefix}_summary.csv")
+        screen.write_csv(f"{prefix}_screen.csv")
+        recent.write_csv(f"{prefix}_recent.csv")
+        console.print(f"[green]CSV 已写: {prefix}_*.csv[/green]")
