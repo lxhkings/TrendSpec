@@ -139,3 +139,20 @@ def test_compute_adv20_daily_returns_dict():
     # A: 100 * 1M = 100M 美元，B: 10 * 100K = 1M 美元
     assert result["A"] == 100_000_000.0
     assert result["B"] == 1_000_000.0
+
+
+def test_recent_golden_cross_filters_by_adv():
+    """按 min_adv 过滤低成交额股票。"""
+    cross = pl.DataFrame({
+        "instrument_id": ["A", "A", "A", "B", "B", "B"],
+        "datetime": [_dt(1), _dt(2), _dt(3), _dt(1), _dt(2), _dt(3)],
+        "close": [100.0, 110.0, 121.0, 200.0, 210.0, 220.0],
+        "ema_s": [99.0, 105.0, 112.0, 199.0, 205.0, 212.0],
+        "ema_l": [100.0, 104.0, 108.0, 200.0, 204.0, 208.0],
+        "signal": ["golden", None, None, "golden", None, None],
+    })
+    adv_dict = {"A": 100_000_000.0, "B": 1_000_000.0}
+    recent = recent_golden_cross(cross, max_bars_since=2, min_adv=50_000_000, adv_dict=adv_dict)
+    # A: 100M ≥ 50M 入选，B: 1M < 50M 排除
+    assert recent.height == 1
+    assert recent["instrument_id"].to_list() == ["A"]

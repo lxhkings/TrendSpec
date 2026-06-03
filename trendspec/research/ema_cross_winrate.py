@@ -209,18 +209,29 @@ def current_screen(cross: pl.DataFrame) -> pl.DataFrame:
 def recent_golden_cross(
     cross: pl.DataFrame,
     max_bars_since: int = 20,
+    min_adv: float = 0,
+    adv_dict: dict[str, float] | None = None,
 ) -> pl.DataFrame:
     """
     最近 N 根 bar 内发生金叉且仍金叉态。
 
-    条件：ema_s > ema_l + bars_since ≤ max_bars_since。
+    条件：ema_s > ema_l + bars_since ≤ max_bars_since + adv20 ≥ min_adv。
 
     返回：[instrument_id, cross_dt, bars_since, unrealized_ret, last_close]
     """
     screen = current_screen(cross)
     if screen.is_empty():
         return screen
-    return screen.filter(pl.col("bars_since") <= max_bars_since)
+
+    # bars_since 过滤
+    screen = screen.filter(pl.col("bars_since") <= max_bars_since)
+
+    # ADV 过滤
+    if min_adv > 0 and adv_dict is not None:
+        valid_ids = [iid for iid, adv in adv_dict.items() if adv >= min_adv]
+        screen = screen.filter(pl.col("instrument_id").is_in(valid_ids))
+
+    return screen
 
 
 def run_winrate(
