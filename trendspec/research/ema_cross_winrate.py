@@ -242,6 +242,7 @@ def run_winrate(
     start=None,
     end=None,
     max_bars_since: int = 20,
+    min_adv: float = 0,
 ) -> dict:
     """编排：读 intraday → 算金叉 → 配对 → 聚合 + 选股。"""
     from trendspec.data.parquet_loader import read_intraday
@@ -252,6 +253,13 @@ def run_winrate(
             f"No intraday data for {market.value}. "
             f"Run `trendspec ingest intraday --market {market.value.lower()}` first."
         )
+
+    # 预计算 ADV（仅当需要过滤时）
+    adv_dict = None
+    if min_adv > 0:
+        instrument_ids = bars["instrument_id"].unique().to_list()
+        adv_dict = compute_adv20_daily(market, root=root, instrument_ids=instrument_ids)
+
     cross = compute_ema_cross(bars, ema_short, ema_long)
     trades = pair_trades(cross)
     screen = current_screen(cross)
@@ -260,5 +268,8 @@ def run_winrate(
         "trades": trades,
         "per_ticker": per_ticker(trades),
         "screen": screen,
-        "recent_screen": recent_golden_cross(cross, max_bars_since=max_bars_since),
+        "recent_screen": recent_golden_cross(
+            cross, max_bars_since=max_bars_since,
+            min_adv=min_adv, adv_dict=adv_dict
+        ),
     }
