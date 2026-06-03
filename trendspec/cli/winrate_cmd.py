@@ -92,7 +92,7 @@ def winrate_ema_cross(
     recent = res["recent_screen"]
     rt = Table(title=f"新金叉信号 (bars_since ≤ {max_bars_since}, 按历史中位收益排序)")
     for c in ["ticker", "金叉时间", "持有根数", "浮动收益", "现价",
-              "N", "中位收益", "进度%", "过热%"]:
+              "N", "总收益", "中位收益", "进度%", "过热%"]:
         rt.add_column(c)
     for r in recent.iter_rows(named=True):
         rt.add_row(
@@ -100,12 +100,13 @@ def winrate_ema_cross(
             str(r["bars_since"]), f"{r['unrealized_ret']:.2%}",
             f"{r['last_close']:.2f}",
             str(int(r["N"])),
+            _pct(r.get("total_return")),
             _pct(r["median_ret"]),
             _ratio(r["progress_pct"]),
             _ratio(r["overheat_pct"]),
         )
     console.print(rt)
-    console.print("[dim]进度%=持有根数÷历史中位根数; 过热%=浮动÷历史中位MFE; N=0 为历史无死叉强势股[/dim]")
+    console.print("[dim]进度%=持有根数÷历史中位根数; 过热%=浮动÷历史中位MFE; N=0 为历史无死叉强势股; 总收益=历史金叉累计收益[/dim]")
 
     if csv:
         # 输出到 results/winrate/，文件名加日期

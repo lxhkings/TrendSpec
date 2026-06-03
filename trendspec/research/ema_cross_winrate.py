@@ -178,6 +178,7 @@ def per_ticker(trades: pl.DataFrame) -> pl.DataFrame:
             pl.col("ret").min().alias("worst_ret"),
             pl.col("bars_held").median().alias("median_bars"),
             pl.col("mfe").median().alias("median_mfe"),
+            pl.col("ret").sum().alias("total_return"),
         ])
         .sort("win_rate", descending=True)
     )
