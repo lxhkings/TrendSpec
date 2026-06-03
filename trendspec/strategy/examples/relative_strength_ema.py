@@ -22,6 +22,7 @@ _DEFAULTS = {
     "rebalance_weekday": 0,  # Monday
     "min_adv_us": 1e8,
     "min_adv_cn": 0.0,
+    "regime_ma": 200,  # 基准跌破 N 日均线则清仓停开仓；0 关闭
 }
 
 
@@ -61,6 +62,17 @@ class RelativeStrengthEMACross(BaseStrategy):
 
         # ADV20 流动性指标（成交额）
         ctx.precompute_indicator("ADV", period=20)
+
+        # 大盘 regime 闸：基准收盘 vs N 日均线（date -> bool 在线）
+        self._regime_ok: dict[DateType, bool] = {}
+        regime_ma = self.get_param("regime_ma")
+        if regime_ma and regime_ma > 0:
+            reg = bench.sort("date").with_columns(
+                pl.col("close").rolling_mean(window_size=regime_ma).alias("_ma")
+            )
+            for dt, close, ma in reg.select(["date", "close", "_ma"]).iter_rows():
+                if ma is not None:
+                    self._regime_ok[dt] = close > ma
 
         bench = bench.select(["date", pl.col("close").alias("_bench_close")])
         data = ctx._data
@@ -112,6 +124,16 @@ class RelativeStrengthEMACross(BaseStrategy):
 
         day_data = self._full_data.filter(pl.col("date") == d)
         day_rows = {r["instrument_id"]: r for r in day_data.iter_rows(named=True)}
+
+        # 0 大盘 regime 闸：基准跌破均线 → 全平 + 不开新仓
+        if not self._regime_ok.get(d, True):
+            for iid, sh in list(ctx.positions.items()):
+                if sh > 0:
+                    row = day_rows.get(iid)
+                    if row:
+                        sig = ctx.signal("SELL", iid, row["close"], note="regime off liquidate")
+                        sig.shares = float(sh)
+            return
 
         # 1+2 候选 + 排序（金叉态 ∧ ADV 达标）
         cand: list[tuple[str, float]] = []
