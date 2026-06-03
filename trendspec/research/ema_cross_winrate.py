@@ -18,7 +18,7 @@ from trendspec.data.parquet_loader import bars
 
 def compute_adv20_daily(
     market: Market,
-    root: str | None = None,
+    root: str | None = None,  # noqa: ARG001 — preserved for future override
     instrument_ids: list[str] | None = None,
 ) -> dict[str, float]:
     """
