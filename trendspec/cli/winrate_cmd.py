@@ -23,7 +23,7 @@ def winrate_ema_cross(
     ema_long: int = typer.Option(120, "--ema-long", help="长 EMA 周期"),
     start: str | None = typer.Option(None, "--start", help="起始 YYYY-MM-DD"),
     end: str | None = typer.Option(None, "--end", help="结束 YYYY-MM-DD"),
-    max_bars_since: int = typer.Option(20, "--max-bars-since", help="新金叉信号 bars_since 上限"),
+    max_bars_since: int = typer.Option(60, "--max-bars-since", help="新金叉信号 bars_since 上限"),
     min_adv_us: float = typer.Option(50_000_000, "--min-adv-us", help="日均成交额阈值（美元）"),
     min_samples: int = typer.Option(3, "--min-samples", help="历史金叉样本下限（0<N<阈值 剔除，N=0 保留标灰）"),
     csv: bool = typer.Option(True, "--csv/--no-csv", help="导出 CSV（默认导出到 results/winrate/）"),
