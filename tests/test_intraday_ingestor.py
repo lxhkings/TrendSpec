@@ -67,3 +67,22 @@ def test_ingest_us_intraday_incremental(intraday_engine, tmp_path):
 
     df = pl.read_parquet(tmp_path / "us" / "intraday" / "instrument_id=A" / "2024.parquet")
     assert df.height == 3  # 旧 2 根 + 新 1 根
+
+
+def test_read_intraday_roundtrip(intraday_engine, tmp_path):
+    from trendspec.data.parquet_loader import read_intraday
+
+    root = str(tmp_path)
+    manifest = Manifest(Market.US, root)
+    ingest_us_intraday(intraday_engine, manifest, root, full_sync=True)
+
+    df = read_intraday(Market.US, root=root)
+    assert "datetime" in df.columns
+    assert df.height == 3
+    # 升序 + 含两个 ticker
+    assert set(df["instrument_id"].unique().to_list()) == {"A", "AAPL"}
+
+    only_a = read_intraday(Market.US, root=root, instrument_ids=["A"])
+    assert only_a["instrument_id"].unique().to_list() == ["A"]
+    dts = only_a["datetime"].to_list()
+    assert dts == sorted(dts)  # 升序

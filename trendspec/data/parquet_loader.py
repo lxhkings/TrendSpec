@@ -11,7 +11,7 @@ Key features:
 Primary key is (instrument_id, date) - ticker can change.
 """
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Final, Literal
 
@@ -481,3 +481,32 @@ def read_indices(
         lf = lf.filter(pl.col("instrument_id").is_in(instrument_ids))
 
     return lf.collect().sort(["instrument_id", "date"])
+
+
+def read_intraday(
+    market: Market,
+    root: str | None = None,
+    instrument_ids: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> pl.DataFrame:
+    """
+    Load 1h intraday OHLCV from data_lake/{market}/intraday/.
+
+    raw（未复权）价；返回带 datetime 列，按 (instrument_id, datetime) 升序。
+    """
+    lf = scan_parquet(root, market, "intraday")
+    if _lazyframe_is_empty(lf):
+        return pl.DataFrame()
+
+    if instrument_ids is not None:
+        lf = lf.filter(pl.col("instrument_id").is_in(instrument_ids))
+    if start is not None:
+        lf = lf.filter(pl.col("datetime") >= start)
+    if end is not None:
+        lf = lf.filter(pl.col("datetime") <= end)
+
+    df = lf.collect()
+    if df.is_empty():
+        return df
+    return df.sort(["instrument_id", "datetime"])
