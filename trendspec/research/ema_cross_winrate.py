@@ -69,11 +69,11 @@ def pair_trades(cross: pl.DataFrame) -> pl.DataFrame:
                 open_entry = (dt, close)
             elif sig == "death" and open_entry is not None:
                 e_dt, e_close = open_entry
-                ret = close / e_close - 1.0
+                ret = float(close) / float(e_close) - 1.0
                 rows.append({
                     "instrument_id": iid[0],
-                    "entry_dt": e_dt, "entry_close": e_close,
-                    "exit_dt": dt, "exit_close": close,
+                    "entry_dt": e_dt, "entry_close": float(e_close),
+                    "exit_dt": dt, "exit_close": float(close),
                     "ret": ret,
                     "bars_held": idx[dt] - idx[e_dt],
                     "win": ret > 0,
@@ -146,8 +146,8 @@ def current_screen(cross: pl.DataFrame) -> pl.DataFrame:
             "instrument_id": iid[0],
             "cross_dt": cross_row["datetime"],
             "bars_since": bars_since,
-            "unrealized_ret": last["close"] / cross_row["close"] - 1.0,
-            "last_close": last["close"],
+            "unrealized_ret": float(last["close"]) / float(cross_row["close"]) - 1.0,
+            "last_close": float(last["close"]),
         })
     if not rows:
         return pl.DataFrame(schema={
