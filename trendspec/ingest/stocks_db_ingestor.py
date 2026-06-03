@@ -719,8 +719,13 @@ def ingest_us_intraday(
     if df.is_empty():
         return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
 
+    # MariaDB 返回 datetime，SQLite 返回字符串；按 dtype 处理
+    if df["datetime"].dtype == pl.String:
+        df = df.with_columns(pl.col("datetime").str.to_datetime())
+    else:
+        df = df.with_columns(pl.col("datetime").cast(pl.Datetime))
+
     df = df.with_columns([
-        pl.col("datetime").str.to_datetime(),
         pl.col("ticker").alias("instrument_id"),
     ])
     df = df.with_columns(pl.col("datetime").dt.date().alias("date"))
