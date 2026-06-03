@@ -29,6 +29,7 @@ def write_parquet(
     dataset: str,
     root: str,
     overwrite: bool = True,
+    show_progress: bool = False,
 ) -> None:
     """
     Write DataFrame to partitioned Parquet files.
@@ -41,6 +42,7 @@ def write_parquet(
         dataset: Dataset name (daily, components, sectors)
         root: Root directory for data_lake
         overwrite: If True, overwrite existing files for same (instrument_id, year)
+        show_progress: If True, render a Rich progress bar over partition writes
 
     Raises:
         ValueError: If DataFrame doesn't have required columns (instrument_id, date, year)
@@ -66,8 +68,33 @@ def write_parquet(
     # Get unique instrument_ids and years
     partitions = df.select(["instrument_id", "year"]).unique()
 
-    # Write each partition
-    for row in partitions.iter_rows(named=True):
+    partition_rows = partitions.iter_rows(named=True)
+    if show_progress:
+        from rich.progress import (
+            BarColumn,
+            MofNCompleteColumn,
+            Progress,
+            TextColumn,
+            TimeRemainingColumn,
+        )
+
+        progress = Progress(
+            TextColumn("[cyan]写入 {task.fields[dataset]}[/cyan]"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+        )
+        with progress:
+            task = progress.add_task("write", total=partitions.height, dataset=dataset)
+            partition_rows = progress.track(partition_rows, task_id=task)
+            _write_partitions(df, partition_rows, base_path, overwrite)
+        return
+
+    _write_partitions(df, partition_rows, base_path, overwrite)
+
+
+def _write_partitions(df, partition_rows, base_path, overwrite) -> None:
+    for row in partition_rows:
         instrument_id = row["instrument_id"]
         year = row["year"]
 

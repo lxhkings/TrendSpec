@@ -56,6 +56,50 @@ def _get_last_synced_date(manifest: Manifest, dataset: str) -> str:
     return date_range.get("end", "1970-01-01")
 
 
+_FETCH_CHUNK: Final[int] = 50_000
+
+
+def _fetch_df_with_progress(
+    engine: Engine,
+    data_sql,
+    params: dict,
+    schema: list[str],
+    label: str,
+) -> pl.DataFrame:
+    """
+    Stream a large query into a Polars DataFrame with a Rich progress bar.
+
+    Uses a server-side cursor (stream_results) and pulls rows in chunks, so a
+    multi-million-row pull shows live row counts within ~1s of the first chunk
+    instead of a silent hang. No COUNT(*) up front (that would block first).
+    """
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+
+    with engine.connect() as conn:
+        result = conn.execution_options(stream_results=True).execute(data_sql, params)
+        rows: list = []
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn(f"[cyan]{label}[/cyan]"),
+            BarColumn(),
+            TextColumn("{task.completed:,} 行"),
+            TimeElapsedColumn(),
+        )
+        with progress:
+            task = progress.add_task("fetch", total=None)
+            for chunk in result.partitions(_FETCH_CHUNK):
+                rows.extend(chunk)
+                progress.update(task, advance=len(chunk))
+
+    return pl.DataFrame(rows, schema=schema, orient="row")
+
+
 # =============================================================================
 # US Daily
 # =============================================================================
@@ -91,27 +135,24 @@ def ingest_us_daily(
             WHERE index_id IN ('SP500', 'RUSSELL1000')
         ) AS us ON p.ticker = us.ticker
         WHERE p.date > :last_date
-        ORDER BY p.date, p.ticker
     """)
 
-    with engine.connect() as conn:
-        rows = conn.execute(sql, params).fetchall()
+    df = _fetch_df_with_progress(
+        engine, sql, params,
+        schema=["ticker", "date", "open", "high", "low", "close", "volume"],
+        label="拉取 us 日线",
+    )
 
-    if not rows:
+    if df.is_empty():
         return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
 
-    df = pl.DataFrame(
-        rows,
-        schema=["ticker", "date", "open", "high", "low", "close", "volume"],
-        orient="row",
-    )
     df = df.with_columns(pl.col("date").cast(pl.Date))
     df = df.with_columns([
         pl.col("ticker").alias("instrument_id"),
         pl.lit(1.0).alias("adj_factor"),
     ])
 
-    write_parquet(df, Market.US, "daily", root, overwrite=full_sync)
+    write_parquet(df, Market.US, "daily", root, overwrite=full_sync, show_progress=True)
 
     dates = df["date"].cast(pl.Utf8)
     date_range = (dates.min(), dates.max())
@@ -323,34 +364,29 @@ def ingest_cn_daily(
         JOIN stocks s ON p.ticker = s.ticker
         WHERE s.exchange IN ({ex_placeholders})
           AND p.date > :last_date
-        ORDER BY p.date, p.ticker
     """)
 
-    with engine.connect() as conn:
-        rows = conn.execute(sql, ex_params).fetchall()
+    df = _fetch_df_with_progress(
+        engine, sql, ex_params,
+        schema=["ticker", "date", "open", "high", "low", "close", "volume", "exchange"],
+        label="拉取 cn 日线",
+    )
 
-    if not rows:
+    if df.is_empty():
         return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
 
-    df = pl.DataFrame(
-        rows,
-        schema=["ticker", "date", "open", "high", "low", "close", "volume", "exchange"],
-        orient="row",
-    )
     df = df.with_columns(pl.col("date").cast(pl.Date))
 
     df = df.with_columns(
-        pl.struct(["ticker", "exchange"])
-        .map_elements(
-            lambda s: _derive_cn_instrument_id(s["ticker"], s["exchange"]),
-            return_dtype=pl.Utf8,
-        )
-        .alias("instrument_id")
+        (
+            pl.col("exchange").str.to_uppercase().replace_strict(_CN_EXCHANGE_TO_PREFIX)
+            + pl.col("ticker")
+        ).alias("instrument_id")
     )
     df = df.with_columns(pl.lit(1.0).alias("adj_factor"))
     df = df.drop("exchange")
 
-    write_parquet(df, Market.CN, "daily", root, overwrite=full_sync)
+    write_parquet(df, Market.CN, "daily", root, overwrite=full_sync, show_progress=True)
 
     dates = df["date"].cast(pl.Utf8)
     date_range = (dates.min(), dates.max())
@@ -680,12 +716,10 @@ def ingest_cn_weekly(
     )
     df = df.with_columns(pl.col("date").cast(pl.Date))
     df = df.with_columns(
-        pl.struct(["ticker", "exchange"])
-        .map_elements(
-            lambda s: _derive_cn_instrument_id(s["ticker"], s["exchange"]),
-            return_dtype=pl.Utf8,
-        )
-        .alias("instrument_id")
+        (
+            pl.col("exchange").str.to_uppercase().replace_strict(_CN_EXCHANGE_TO_PREFIX)
+            + pl.col("ticker")
+        ).alias("instrument_id")
     )
     df = df.with_columns(pl.lit(1.0).alias("adj_factor"))
     df = df.drop("exchange")
