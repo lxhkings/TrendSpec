@@ -30,6 +30,7 @@ def write_parquet(
     root: str,
     overwrite: bool = True,
     show_progress: bool = False,
+    dedup_keys: list[str] | None = None,
 ) -> None:
     """
     Write DataFrame to partitioned Parquet files.
@@ -43,10 +44,13 @@ def write_parquet(
         root: Root directory for data_lake
         overwrite: If True, overwrite existing files for same (instrument_id, year)
         show_progress: If True, render a Rich progress bar over partition writes
+        dedup_keys: Keys for deduplication on incremental write. Defaults to ["instrument_id", "date"].
 
     Raises:
         ValueError: If DataFrame doesn't have required columns (instrument_id, date, year)
     """
+    if dedup_keys is None:
+        dedup_keys = ["instrument_id", "date"]
     # Validate required columns
     if "instrument_id" not in df.columns:
         raise ValueError("DataFrame must have 'instrument_id' column")
@@ -87,13 +91,13 @@ def write_parquet(
         with progress:
             task = progress.add_task("write", total=partitions.height, dataset=dataset)
             partition_rows = progress.track(partition_rows, task_id=task)
-            _write_partitions(df, partition_rows, base_path, overwrite)
+            _write_partitions(df, partition_rows, base_path, overwrite, dedup_keys)
         return
 
-    _write_partitions(df, partition_rows, base_path, overwrite)
+    _write_partitions(df, partition_rows, base_path, overwrite, dedup_keys)
 
 
-def _write_partitions(df, partition_rows, base_path, overwrite) -> None:
+def _write_partitions(df, partition_rows, base_path, overwrite, dedup_keys) -> None:
     for row in partition_rows:
         instrument_id = row["instrument_id"]
         year = row["year"]
@@ -123,9 +127,9 @@ def _write_partitions(df, partition_rows, base_path, overwrite) -> None:
         else:
             # Read existing, combine with new, write merged
             existing_df = pl.read_parquet(file_path)
-            # Combine and deduplicate (keep latest by date)
+            # Combine and deduplicate (keep latest by dedup_keys)
             combined_df = pl.concat([existing_df, partition_df]).unique(
-                subset=["instrument_id", "date"],
+                subset=dedup_keys,
                 keep="last",
                 maintain_order=False,
             )
