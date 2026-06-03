@@ -189,6 +189,56 @@ uv run trendspec winrate ema-cross --market us --no-csv
 
 ---
 
+## 蒙特卡洛随机回测
+
+对 EMA 金叉→死叉历史交易做 bootstrap 验证：每次 $1M 全仓随机抽一笔历史交易，独立模拟 N 次，输出终值/收益分布。
+
+```bash
+uv run trendspec winrate montecarlo --market us
+```
+
+### 参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--ema-short` | 60 | 短 EMA 周期 |
+| `--ema-long` | 120 | 长 EMA 周期 |
+| `--sims` | 100 | 模拟次数 |
+| `--capital` | 1000000 | 每次全仓本金（美元） |
+| `--seed` | — | 随机种子（固定 = 可复现） |
+| `--csv/--no-csv` | 默认导出 | 明细 CSV 到 `results/montecarlo/` |
+
+### 输出
+
+**终端三张表 + 直方图：**
+
+| 输出 | 说明 |
+|------|------|
+| 汇总表 | 终值均值/中位/最好/最差、胜率、标准差、总 P&L、平均收益 |
+| 百分位表 | 终值与收益的 P5/P25/P50/P75/P95 |
+| ASCII 直方图 | 终值分布（20 档） |
+
+**CSV 文件：**
+
+```
+results/montecarlo/ema60_120_2026-06-04_montecarlo.csv   # 100 行明细（sim_id, ticker, ret, pnl_usd, final_equity）
+```
+
+### 示例
+
+```bash
+# 默认 100 次
+uv run trendspec winrate montecarlo --market us
+
+# 500 次 + 固定 seed 可复现
+uv run trendspec winrate montecarlo --market us --sims 500 --seed 42
+
+# 不导出 CSV
+uv run trendspec winrate montecarlo --market us --no-csv
+```
+
+---
+
 ## 信号历史
 
 回放策略历史信号，计算远期收益率（T+1/3/5/10/20）：
