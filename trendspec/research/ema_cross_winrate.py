@@ -8,7 +8,55 @@ EMA 金叉胜率事件研究（1h）。
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import polars as pl
+
+from trendspec.data.markets import Market
+from trendspec.data.parquet_loader import bars
+
+
+def compute_adv20_daily(
+    market: Market,
+    root: str | None = None,
+    instrument_ids: list[str] | None = None,
+) -> dict[str, float]:
+    """
+    从 daily parquet 计算每只股票的 20 日平均成交额（美元）。
+
+    返回：{instrument_id: adv20_usd}
+    """
+    # 取最近 30 日数据（留 buffer）
+    end_date = date.today()
+    start_date = end_date - timedelta(days=30)
+
+    df = bars(
+        market,
+        start_date=start_date,
+        end_date=end_date,
+        instrument_ids=instrument_ids,
+        columns=["instrument_id", "date", "close", "volume"],
+    )
+
+    if df.is_empty():
+        return {}
+
+    # 按 instrument_id 分组取最近 20 日
+    adv = (
+        df.sort("date")
+        .group_by("instrument_id")
+        .agg([
+            pl.col("date").last().alias("_last_date"),
+            pl.col("close").last().alias("_last_close"),
+            pl.col("volume").tail(20).mean().alias("_avg_volume"),
+        ])
+        .with_columns(
+            (pl.col("_avg_volume") * pl.col("_last_close")).alias("adv20")
+        )
+        .select(["instrument_id", "adv20"])
+    )
+
+    return {row["instrument_id"]: row["adv20"] for row in adv.iter_rows(named=True)}
 
 
 def _ema_expr(period: int) -> pl.Expr:

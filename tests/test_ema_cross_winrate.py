@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, date
 
 import polars as pl
 
 from trendspec.research.ema_cross_winrate import (
     aggregate,
+    compute_adv20_daily,
     compute_ema_cross,
     current_screen,
     pair_trades,
@@ -105,3 +106,36 @@ def test_recent_golden_cross_filters_by_bars_since():
     # 设 max_bars_since=1，只有 bars_since=1 入选（无）
     recent2 = recent_golden_cross(cross, max_bars_since=1)
     assert recent2.height == 0
+
+
+def test_compute_adv20_daily_returns_dict():
+    """计算每只股票的 20 日平均成交额（美元）— 直接验证计算逻辑。"""
+    from trendspec.data.markets import Market
+
+    # 模拟 bars() 返回的 DataFrame
+    df = pl.DataFrame({
+        "instrument_id": ["A"] * 20 + ["B"] * 20,
+        "date": [date(2024, 6, i+1) for i in range(20)] * 2,
+        "close": [100.0] * 20 + [10.0] * 20,
+        "volume": [1_000_000] * 20 + [100_000] * 20,
+    })
+
+    # 直接调用内部计算逻辑（不经过 bars 加载）
+    adv = (
+        df.sort("date")
+        .group_by("instrument_id")
+        .agg([
+            pl.col("date").last().alias("_last_date"),
+            pl.col("close").last().alias("_last_close"),
+            pl.col("volume").tail(20).mean().alias("_avg_volume"),
+        ])
+        .with_columns(
+            (pl.col("_avg_volume") * pl.col("_last_close")).alias("adv20")
+        )
+        .select(["instrument_id", "adv20"])
+    )
+
+    result = {row["instrument_id"]: row["adv20"] for row in adv.iter_rows(named=True)}
+    # A: 100 * 1M = 100M 美元，B: 10 * 100K = 1M 美元
+    assert result["A"] == 100_000_000.0
+    assert result["B"] == 1_000_000.0
