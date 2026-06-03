@@ -672,6 +672,77 @@ def ingest_us_weekly(
 
 
 # =============================================================================
+# US Intraday (1h)
+# =============================================================================
+
+
+def _get_last_synced_datetime(manifest: Manifest, dataset: str) -> str:
+    """Return last synced end datetime, or '1970-01-01 00:00:00' if never."""
+    state = manifest.get_dataset_state(dataset)
+    if state is None:
+        return "1970-01-01 00:00:00"
+    return state.get("date_range", {}).get("end", "1970-01-01 00:00:00")
+
+
+def ingest_us_intraday(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,
+) -> dict:
+    """
+    Ingest US 1h OHLCV from prices_intraday (raw/unadjusted).
+
+    全部 ticker（无 universe 过滤），instrument_id = ticker。
+    PK (instrument_id, datetime)；按 datetime 去重，date 列供按年分区。
+
+    Returns:
+        {"row_count": int, "date_range": (str, str), "instrument_count": int}
+    """
+    last_dt = "1970-01-01 00:00:00" if full_sync else _get_last_synced_datetime(
+        manifest, "intraday"
+    )
+    params = {"last_dt": last_dt}
+
+    sql = text("""
+        SELECT ticker, datetime, open, high, low, close, volume
+        FROM prices_intraday
+        WHERE `interval` = '1h' AND datetime > :last_dt
+    """)
+
+    df = _fetch_df_with_progress(
+        engine, sql, params,
+        schema=["ticker", "datetime", "open", "high", "low", "close", "volume"],
+        label="拉取 us 1h",
+    )
+
+    if df.is_empty():
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    df = df.with_columns([
+        pl.col("datetime").str.to_datetime(),
+        pl.col("ticker").alias("instrument_id"),
+    ])
+    df = df.with_columns(pl.col("datetime").dt.date().alias("date"))
+
+    write_parquet(
+        df, Market.US, "intraday", root,
+        overwrite=full_sync, show_progress=True,
+        dedup_keys=["instrument_id", "datetime"],
+    )
+
+    dts = df["datetime"].cast(pl.Utf8)
+    date_range = (dts.min(), dts.max())
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+
+    manifest.update_dataset_state("intraday", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range,
+            "instrument_count": instrument_count}
+
+
+# =============================================================================
 # CN Weekly
 # =============================================================================
 
