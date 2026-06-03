@@ -222,3 +222,92 @@ def winrate_montecarlo(
         path = f"{out_dir}/ema{ema_short}_{ema_long}_{today}_montecarlo.csv"
         res["detail"].write_csv(path)
         console.print(f"[green]CSV 已写: {path}[/green]")
+
+
+@app.command("novice-sim")
+def winrate_novice_sim(
+    market: str = typer.Option("us", "--market", help="市場代碼 (目前僅 us)"),
+    ema_short: int = typer.Option(60, "--ema-short", help="短 EMA 週期"),
+    ema_long: int = typer.Option(120, "--ema-long", help="長 EMA 週期"),
+    start: str | None = typer.Option(None, "--start", help="起始 YYYY-MM-DD"),
+    end: str | None = typer.Option(None, "--end", help="結束 YYYY-MM-DD"),
+    sims: int = typer.Option(100, "--sims", help="模擬小白人數"),
+    capital: float = typer.Option(1_000_000, "--capital", help="每個小白初始資金（美元）"),
+    seed: int | None = typer.Option(None, "--seed", help="隨機種子（復現用）"),
+    csv: bool = typer.Option(True, "--csv/--no-csv", help="導出明細 CSV"),
+) -> None:
+    """
+    小白交易員時間軸模擬：每個小白跑完完整 1h 數據，
+    看到金叉隨機全倉買入，死叉賣出，複利積累。跑 sims 個小白看分佈。
+
+    示例:
+        trendspec winrate novice-sim --market us
+        trendspec winrate novice-sim --market us --sims 200 --seed 42
+    """
+    from trendspec.data.markets import Market
+    from trendspec.data.parquet_loader import read_intraday
+    from trendspec.research.ema_cross_winrate import compute_ema_cross, run_novice_simulations
+
+    market_enum = Market(market.upper())
+    start_dt = datetime.fromisoformat(start) if start else None
+    end_dt = datetime.fromisoformat(end) if end else None
+
+    console.print(
+        f"[cyan]小白交易員模擬 EMA{ema_short}/{ema_long} ({market}, sims={sims})...[/cyan]"
+    )
+
+    bars_df = read_intraday(market_enum, root=None, start=start_dt, end=end_dt)
+    if bars_df.is_empty():
+        console.print(
+            f"[red]錯誤: 無 intraday 數據。先執行 trendspec ingest intraday --market {market}[/red]"
+        )
+        raise typer.Exit(code=1) from None
+
+    cross = compute_ema_cross(bars_df, ema_short, ema_long)
+
+    try:
+        res = run_novice_simulations(cross, sims=sims, capital=capital, seed=seed)
+    except RuntimeError as e:
+        console.print(f"[red]錯誤: {e}[/red]")
+        raise typer.Exit(code=1) from None
+
+    s = res["summary"]
+    pct = res["percentiles"]
+
+    # 汇总表
+    t = Table(title=f"小白模擬 EMA{ema_short}/{ema_long} ({sims} 人)")
+    t.add_column("指標")
+    t.add_column("值", justify="right")
+    t.add_row("模擬人數", f"{s['sims']:,}")
+    t.add_row("初始資金", f"${s['capital']:,.0f}")
+    t.add_row("終值均值", f"${s['mean_equity']:,.0f}")
+    t.add_row("終值中位", f"${s['median_equity']:,.0f}")
+    t.add_row("終值最好", f"${s['best_equity']:,.0f}")
+    t.add_row("終值最差", f"${s['worst_equity']:,.0f}")
+    t.add_row("勝率(終值>本金)", f"{s['win_rate']:.2%}")
+    t.add_row("終值標準差", f"${s['std_equity']:,.0f}")
+    t.add_row("平均收益", f"{s['mean_ret']:.2%}")
+    t.add_row("中位交易次數", f"{s['median_n_trades']:.1f}")
+    console.print(t)
+
+    # 百分位表
+    pt = Table(title="百分位 (終值 / 總收益)")
+    pt.add_column("分位")
+    pt.add_column("終值", justify="right")
+    pt.add_column("總收益", justify="right")
+    for k in ["p5", "p25", "p50", "p75", "p95"]:
+        pt.add_row(k.upper(), f"${pct['equity'][k]:,.0f}", f"{pct['ret'][k]:.2%}")
+    console.print(pt)
+
+    # ASCII 直方圖
+    console.print("[bold]終值分佈[/bold]")
+    console.print(_ascii_histogram(res["detail"]["final_equity"].to_list(), bins=20))
+    console.print("[dim]注: 複利模擬，含強制平倉，毛收益未扣交易成本[/dim]")
+
+    if csv:
+        today = date.today().isoformat()
+        out_dir = "results/novice_sim"
+        os.makedirs(out_dir, exist_ok=True)
+        path = f"{out_dir}/ema{ema_short}_{ema_long}_{today}_novice.csv"
+        res["detail"].write_csv(path)
+        console.print(f"[green]CSV 已寫: {path}[/green]")
