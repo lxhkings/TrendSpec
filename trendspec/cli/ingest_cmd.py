@@ -113,6 +113,45 @@ def ingest_weekly(
         raise typer.Exit(1)
 
 
+@app.command("intraday")
+def ingest_intraday(
+    market: str = typer.Option("us", "--market", help="市场代码 (目前仅 us)"),
+    incremental: bool = typer.Option(
+        True, "--incremental/--full", help="增量 / 全量"
+    ),
+) -> None:
+    """
+    导入 1h K 线（prices_intraday）。
+
+    示例:
+        trendspec ingest intraday --market us
+        trendspec ingest intraday --market us --full
+    """
+    from trendspec.data.markets import Market
+    from trendspec.config.settings import get_settings
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.mariadb_client import create_engine_from_settings
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_intraday
+
+    market_enum = Market(market.upper())
+    if market_enum != Market.US:
+        console.print(f"[red]intraday 目前仅支持 us，收到: {market}[/red]")
+        raise typer.Exit(1)
+
+    settings = get_settings()
+    engine = create_engine_from_settings(settings.db)
+    root = settings.data_lake.data_lake_root
+    manifest = Manifest(market_enum, root)
+    full_sync = not incremental
+
+    console.print(f"[cyan]导入 {market} 1h 数据...[/cyan]")
+    result = ingest_us_intraday(engine, manifest, root, full_sync=full_sync)
+    console.print(
+        f"[green]完成: {result['row_count']:,} 行, "
+        f"{result['instrument_count']} 只, {result['date_range']}[/green]"
+    )
+
+
 @app.command("components")
 def ingest_components(
     market: str = typer.Option("us", "--market", help="市场代码 (cn, us)"),
