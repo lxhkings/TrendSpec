@@ -182,6 +182,7 @@ def run_winrate(
     ema_long: int = 120,
     start=None,
     end=None,
+    max_bars_since: int = 20,
 ) -> dict:
     """编排：读 intraday → 算金叉 → 配对 → 聚合 + 选股。"""
     from trendspec.data.parquet_loader import read_intraday
@@ -194,9 +195,11 @@ def run_winrate(
         )
     cross = compute_ema_cross(bars, ema_short, ema_long)
     trades = pair_trades(cross)
+    screen = current_screen(cross)
     return {
         "summary": aggregate(trades),
         "trades": trades,
         "per_ticker": per_ticker(trades),
-        "screen": current_screen(cross),
+        "screen": screen,
+        "recent_screen": recent_golden_cross(cross, max_bars_since=max_bars_since),
     }
