@@ -1035,3 +1035,56 @@ def indicator_info(name: str) -> dict[str, Any]:
         "docstring": func.__doc__ or "",
         "signature": str(func.__code__.co_varnames[:func.__code__.co_argcount]),
     }
+
+
+@register_indicator("RUMI")
+def rumi(
+    df: pl.DataFrame,
+    fast_period: int = 3,
+    slow_period: int = 50,
+    signal_period: int = 30,
+) -> pl.DataFrame:
+    """
+    RUMI Trend-Following Indicator (David Imgraben).
+
+    DIFF  = SMA(close, fast_period) - WMA(close, slow_period)
+    RUMI  = SMA(DIFF, signal_period)
+
+    RUMI > 0 confirms uptrend; RUMI < 0 confirms downtrend.
+
+    Args:
+        df: DataFrame with OHLCV data
+        fast_period: SMA period for fast line (default: 3)
+        slow_period: WMA period for slow line (default: 50)
+        signal_period: SMA smoothing period for DIFF (default: 30)
+
+    Returns:
+        DataFrame with RUMI_DIFF and RUMI columns added
+    """
+    slow_weights = [slow_period - i for i in range(slow_period)]
+
+    df_sorted = df.sort("date")
+
+    df_ma = df_sorted.with_columns([
+        pl.col("close")
+        .rolling_mean(window_size=fast_period)
+        .over("instrument_id")
+        .alias("_rumi_fast"),
+        pl.col("close")
+        .rolling_mean(window_size=slow_period, weights=slow_weights)
+        .over("instrument_id")
+        .alias("_rumi_slow"),
+    ])
+
+    df_diff = df_ma.with_columns(
+        (pl.col("_rumi_fast") - pl.col("_rumi_slow")).alias("RUMI_DIFF")
+    )
+
+    df_rumi = df_diff.with_columns(
+        pl.col("RUMI_DIFF")
+        .rolling_mean(window_size=signal_period)
+        .over("instrument_id")
+        .alias("RUMI")
+    )
+
+    return df_rumi.drop(["_rumi_fast", "_rumi_slow"])
