@@ -70,3 +70,59 @@ class TestRumiIndicator:
     def test_rumi_registered(self):
         from trendspec.strategy.indicators import list_indicators
         assert "RUMI" in list_indicators()
+
+
+class TestRumiStrategy:
+    def _make_strategy(self, params=None):
+        from trendspec.strategy.examples.rumi import RumiStrategy
+        return RumiStrategy(params=params or {"fast_period": 2, "slow_period": 3, "signal_period": 2})
+
+    def _run_next(self, closes, has_pos=False):
+        """Build context, run init+next on last bar, return pending signals."""
+        strategy = self._make_strategy()
+        data = make_data(closes)
+        ctx = StrategyContext(Market.US, strategy, data=data)
+        strategy.init(ctx)
+        last_date = data.sort("date")["date"].to_list()[-1]
+        if has_pos:
+            ctx.update_positions({"AAPL": 100.0}, 0.0)
+        ctx.update_bar(last_date, "AAPL", "AAPL", data)
+        strategy.next(ctx)
+        return ctx.pending_signals()
+
+    def test_buy_signal_when_rumi_positive_no_position(self):
+        # Uptrend → RUMI > 0, no position → BUY
+        closes = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+        signals = self._run_next(closes, has_pos=False)
+        assert len(signals) == 1
+        assert signals[0].direction == "BUY"
+        assert signals[0].instrument_id == "AAPL"
+
+    def test_sell_signal_when_rumi_negative_with_position(self):
+        # Downtrend → RUMI < 0, has position → SELL
+        closes = [15.0, 14.0, 13.0, 12.0, 11.0, 10.0]
+        signals = self._run_next(closes, has_pos=True)
+        assert len(signals) == 1
+        assert signals[0].direction == "SELL"
+
+    def test_no_signal_rumi_negative_no_position(self):
+        # Downtrend, no position → no signal (not shorting)
+        closes = [15.0, 14.0, 13.0, 12.0, 11.0, 10.0]
+        signals = self._run_next(closes, has_pos=False)
+        assert len(signals) == 0
+
+    def test_no_signal_rumi_positive_already_held(self):
+        # Uptrend, already in position → no repeated BUY
+        closes = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+        signals = self._run_next(closes, has_pos=True)
+        assert len(signals) == 0
+
+    def test_no_signal_during_warmup(self):
+        # Only 2 rows → RUMI = None → no signal regardless
+        closes = [10.0, 11.0]
+        signals = self._run_next(closes, has_pos=False)
+        assert len(signals) == 0
+
+    def test_strategy_registered(self):
+        from trendspec.strategy.base import list_strategies
+        assert "rumi" in list_strategies()
