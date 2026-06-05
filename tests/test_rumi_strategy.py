@@ -50,7 +50,7 @@ class TestRumiIndicator:
         result = rumi_indicator(data, fast_period=2, slow_period=3, signal_period=2)
 
         rumi_col = result.sort("date").filter(pl.col("instrument_id") == "AAPL")["RUMI"].to_list()
-        # First slow_period + signal_period - 2 = 3 + 2 - 2 = 3 rows must be None
+        # First 3 rows must be None (insufficient data for WMA(3) + SMA(2))
         assert rumi_col[0] is None
         assert rumi_col[1] is None
         assert rumi_col[2] is None

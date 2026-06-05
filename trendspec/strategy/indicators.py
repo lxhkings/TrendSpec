@@ -1061,7 +1061,7 @@ def rumi(
     Returns:
         DataFrame with RUMI_DIFF and RUMI columns added
     """
-    slow_weights = [slow_period - i for i in range(slow_period)]
+    slow_weights = [i + 1 for i in range(slow_period)]
 
     df_sorted = df.sort("date")
 
