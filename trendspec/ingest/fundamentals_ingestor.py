@@ -26,11 +26,14 @@ from trendspec.ingest.fundamentals_schema import (
 from trendspec.ingest.manifest import Manifest
 from trendspec.ingest.writer import write_parquet
 
+_ALLOWED_TABLES: frozenset[str] = frozenset({"us_fin_income", "us_fin_indicator"})
 _QUARTERLY = ("1", "2", "3", "4")
 
 
 def _fetch_parsed(engine: Engine, table: str, field_map: dict[int, str]) -> list[dict]:
     """Fetch quarterly rows from `table`, parse item_list into flat columns."""
+    if table not in _ALLOWED_TABLES:
+        raise ValueError(f"Table {table!r} not in allowed list")
     placeholders = ", ".join(f":q{i}" for i in range(len(_QUARTERLY)))
     params = {f"q{i}": q for i, q in enumerate(_QUARTERLY)}
     sql = text(f"""
@@ -69,9 +72,12 @@ def ingest_us_fundamentals(
         pl.col("ann_date").cast(pl.Date),
     ])
     if indicator_rows:
+        _IND_COLS = ["roe", "roic", "net_margin", "op_margin"]
         indicator = pl.DataFrame(indicator_rows).with_columns(
             pl.col("period_end").cast(pl.Date)
-        ).select(["ticker", "period_end", "roe", "roic", "net_margin", "op_margin"])
+        )
+        available_ind = [c for c in _IND_COLS if c in indicator.columns]
+        indicator = indicator.select(["ticker", "period_end"] + available_ind)
         df = income.join(indicator, on=["ticker", "period_end"], how="left")
     else:
         df = income.with_columns([
