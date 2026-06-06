@@ -35,5 +35,5 @@ def parse_item_list(payload_json: str, field_map: dict[int, str]) -> dict[str, f
     for item in doc.get("item_list", []):
         fid = item.get("field_id")
         if fid in field_map and "data" in item:
-            out[field_map[fid]] = item["data"]
+            out[field_map[fid]] = float(item["data"])
     return out
