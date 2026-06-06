@@ -15,8 +15,8 @@ def merge_fundamentals_frame(daily: pl.DataFrame, fund: pl.DataFrame) -> pl.Data
     """Backward as-of join `fund` onto `daily` by instrument_id over date."""
     if fund.is_empty() or daily.is_empty():
         return daily
-    daily_sorted = daily.sort("date")
-    fund_sorted = fund.sort("date")
+    daily_sorted = daily.sort(["instrument_id", "date"])
+    fund_sorted = fund.sort(["instrument_id", "date"])
     return daily_sorted.join_asof(
         fund_sorted, on="date", by="instrument_id", strategy="backward"
     )
