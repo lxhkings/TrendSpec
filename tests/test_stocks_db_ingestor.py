@@ -147,6 +147,21 @@ def test_ingest_us_daily_incremental(stocks_db, temp_root):
     assert r2["row_count"] == 0  # no new rows
 
 
+def test_ingest_us_daily_since_inclusive(stocks_db, temp_root):
+    """`since` filters from that date inclusive, overriding manifest."""
+    from trendspec.ingest.stocks_db_ingestor import ingest_us_daily
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.US, temp_root)
+    # since=2024-01-03 → only the 2024-01-03 rows (3 tickers), not 2024-01-02
+    result = ingest_us_daily(stocks_db, manifest, temp_root, since="2024-01-03")
+
+    assert result["row_count"] == 3
+    df = pl.read_parquet(f"{temp_root}/us/daily/")
+    assert df["date"].cast(pl.Utf8).unique().to_list() == ["2024-01-03"]
+
+
 # =============================================================================
 # US components tests
 # =============================================================================

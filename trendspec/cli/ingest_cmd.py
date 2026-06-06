@@ -25,9 +25,9 @@ def ingest_daily(
         help="市场代码 (cn, us)",
     ),
     since: str = typer.Option(
-        "2000-01-01",
+        None,
         "--since",
-        help="起始日期 YYYY-MM-DD（仅用于显示，实际由 manifest 控制增量）",
+        help="起始日期 YYYY-MM-DD（含当天）；覆盖 manifest 增量与 --full 起点",
     ),
     incremental: bool = typer.Option(
         True,
@@ -48,6 +48,15 @@ def ingest_daily(
     from trendspec.ingest.mariadb_client import create_engine_from_settings
     from trendspec.ingest.stocks_db_ingestor import ingest_cn_daily, ingest_us_daily
 
+    from datetime import date as date_type
+
+    if since is not None:
+        try:
+            date_type.fromisoformat(since)
+        except ValueError:
+            console.print("[red]日期格式错误，请使用 YYYY-MM-DD 格式[/red]")
+            raise typer.Exit(1)
+
     market_enum = Market(market.upper())
     settings = get_settings()
     engine = create_engine_from_settings(settings.db)
@@ -58,9 +67,9 @@ def ingest_daily(
     console.print(f"[cyan]导入 {market} 日线数据...[/cyan]")
     try:
         if market_enum == Market.US:
-            result = ingest_us_daily(engine, manifest, root, full_sync=full_sync)
+            result = ingest_us_daily(engine, manifest, root, full_sync=full_sync, since=since)
         elif market_enum == Market.CN:
-            result = ingest_cn_daily(engine, manifest, root, full_sync=full_sync)
+            result = ingest_cn_daily(engine, manifest, root, full_sync=full_sync, since=since)
         else:
             console.print(f"[red]不支持的市场: {market}[/red]")
             raise typer.Exit(1)

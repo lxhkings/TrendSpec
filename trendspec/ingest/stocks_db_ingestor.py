@@ -21,7 +21,7 @@ Prices are already adjusted:
   CN  → Tushare backward-adjusted (adj_factor = 1.0)
 """
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Final
 
 import polars as pl
@@ -54,6 +54,23 @@ def _get_last_synced_date(manifest: Manifest, dataset: str) -> str:
         return "1970-01-01"
     date_range = state.get("date_range", {})
     return date_range.get("end", "1970-01-01")
+
+
+def _resolve_start_exclusive(
+    manifest: Manifest, dataset: str, full_sync: bool, since: str | None
+) -> str:
+    """
+    Resolve the exclusive lower-bound date for the `p.date > :last_date` filter.
+
+    Precedence: explicit `since` > full_sync > manifest last synced date.
+    `since` is treated as an inclusive start, so it maps to the day before
+    (exclusive boundary). Returns 'YYYY-MM-DD'.
+    """
+    if since is not None:
+        return (date.fromisoformat(since) - timedelta(days=1)).isoformat()
+    if full_sync:
+        return "1970-01-01"
+    return _get_last_synced_date(manifest, dataset)
 
 
 _FETCH_CHUNK: Final[int] = 50_000
@@ -110,6 +127,7 @@ def ingest_us_daily(
     manifest: Manifest,
     root: str,
     full_sync: bool = False,
+    since: str | None = None,
 ) -> dict:
     """
     Ingest US daily OHLCV from prices + stocks tables.
@@ -119,11 +137,12 @@ def ingest_us_daily(
         manifest: Manifest for tracking sync state
         root: data_lake root directory
         full_sync: If True, pull all history ignoring manifest
+        since: Inclusive start date 'YYYY-MM-DD'; overrides manifest/full_sync
 
     Returns:
         {"row_count": int, "date_range": (str, str), "instrument_count": int}
     """
-    last_date = "1970-01-01" if full_sync else _get_last_synced_date(manifest, "daily")
+    last_date = _resolve_start_exclusive(manifest, "daily", full_sync, since)
 
     params = {"last_date": last_date}
 
@@ -341,6 +360,7 @@ def ingest_cn_daily(
     manifest: Manifest,
     root: str,
     full_sync: bool = False,
+    since: str | None = None,
 ) -> dict:
     """
     Ingest CN (A-share) daily OHLCV from prices + stocks tables.
@@ -348,10 +368,13 @@ def ingest_cn_daily(
     instrument_id = SH{ticker} for SSE/SH, SZ{ticker} for SZSE/SZ.
     adj_factor = 1.0 (prices are Tushare backward-adjusted).
 
+    Args:
+        since: Inclusive start date 'YYYY-MM-DD'; overrides manifest/full_sync
+
     Returns:
         {"row_count": int, "date_range": (str, str), "instrument_count": int}
     """
-    last_date = "1970-01-01" if full_sync else _get_last_synced_date(manifest, "daily")
+    last_date = _resolve_start_exclusive(manifest, "daily", full_sync, since)
 
     ex_placeholders = _exchange_placeholder(_CN_EXCHANGES)
     ex_params = _exchange_params(_CN_EXCHANGES)
