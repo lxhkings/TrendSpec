@@ -74,6 +74,9 @@ from trendspec.factors.cross_sectional import (
     DemeanBySectorFactor,
 )
 
+# Fundamental factors
+from trendspec.factors import fundamental  # noqa: F401
+
 __all__ = [
     # Base classes
     "Factor",
