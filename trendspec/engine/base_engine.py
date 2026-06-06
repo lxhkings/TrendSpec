@@ -27,6 +27,7 @@ import polars as pl
 
 from trendspec.config.settings import get_settings
 from trendspec.data.markets import Market
+from trendspec.data.fundamentals import merge_fundamentals
 from trendspec.data.parquet_loader import bars
 from trendspec.data.universe import Universe, get_universe
 from trendspec.data.calendar import trading_days_between
@@ -183,6 +184,14 @@ class BaseEngine(ABC):
                 adjustment_mode=self.config.adjustment_mode,
                 root=self.root,
             )
+            # Best-effort fundamentals PIT merge (no-op if dataset absent)
+            try:
+                if not self._data.is_empty():
+                    self._data = merge_fundamentals(
+                        self._data, self.config.market, self.root
+                    )
+            except Exception:
+                pass
             # Best-effort weekly load (may be empty if weekly ingest not run yet)
             try:
                 self._weekly_data = bars(
