@@ -5,7 +5,11 @@ from datetime import date
 import polars as pl
 
 import trendspec.factors  # noqa: F401  (triggers registration)
+from trendspec.data.markets import Market
 from trendspec.factors.registry import get_factor, list_factors
+from trendspec.research.spec import FactorSpec
+from trendspec.strategy.context import StrategyContext
+from trendspec.strategy.factor_strategy import FactorStrategy
 
 
 def _df():
@@ -55,3 +59,36 @@ def test_fundamental_factor_missing_column_yields_null():
     })
     res = get_factor("fund_roe").compute_full(bare)
     assert res.values["fund_roe"].null_count() == 1
+
+
+def test_factor_combo_accepts_fundamental_factor():
+    # spec validation rejects unregistered factors; this confirms registration
+    spec = FactorSpec(
+        market="us",
+        factors=[
+            {"name": "fund_roe", "direction": "high", "weight": 1.0},
+            {"name": "fund_pe_ttm", "direction": "low", "weight": 1.0},
+        ],
+        top_k=1,
+        rebalance=5,
+    )
+    assert len(spec.factors) == 2
+
+    # init() must score without raising on a daily frame carrying fundamental cols
+    df = pl.DataFrame({
+        "instrument_id": ["AAPL", "MSFT", "AAPL", "MSFT"],
+        "ticker": ["AAPL", "MSFT", "AAPL", "MSFT"],
+        "date": [date(2026, 4, 30), date(2026, 4, 30),
+                 date(2026, 5, 1), date(2026, 5, 1)],
+        "close": [110.0, 200.0, 111.0, 201.0],
+        "roe": [34.0, 25.0, 34.0, 25.0],
+        "eps_ttm": [4.0, 8.0, 4.0, 8.0],
+    })
+    # BaseStrategy takes params via constructor; StrategyContext needs market + strategy.
+    strat = FactorStrategy(params={"spec": spec.model_dump()})
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+    # AAPL: high roe (34) + low pe (27.5) ; MSFT: roe 25, pe 25.
+    # combo z-scores: confirm a ranking was produced for the date.
+    ranked = strat._ranked_by_date[date(2026, 4, 30)]
+    assert set(ranked) == {"AAPL", "MSFT"}
