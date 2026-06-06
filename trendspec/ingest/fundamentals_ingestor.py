@@ -55,7 +55,7 @@ def ingest_us_fundamentals(
     engine: Engine,
     manifest: Manifest,
     root: str,
-    full_sync: bool = False,
+    full_sync: bool = False,  # noqa: ARG001 — kept for CLI API compat; always full recompute
 ) -> dict:
     """Ingest US quarterly fundamentals into the fundamentals dataset.
 
