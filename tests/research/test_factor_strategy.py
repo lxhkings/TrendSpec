@@ -2,10 +2,10 @@ from datetime import date, timedelta
 
 import polars as pl
 
+import trendspec.strategy.factor_strategy as factor_strategy_module
 from trendspec.data.markets import Market
 from trendspec.strategy.context import StrategyContext
 from trendspec.strategy.factor_strategy import FactorStrategy
-import trendspec.strategy.factor_strategy as factor_strategy_module
 
 
 def _make_bars(iid: str, n: int, start_close: float, drift: float) -> pl.DataFrame:
