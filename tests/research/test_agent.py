@@ -55,6 +55,31 @@ def test_propose_rejects_unknown_factor():
         agent.propose(ledger_rows=[])
 
 
+def test_propose_rejects_unsupported_param_for_factor():
+    """rank_within_sector 不接受 period（只包一个已有因子，没有自己的 period）。"""
+    bad = json.dumps({
+        "market": "us",
+        "factors": [{"name": "rank_within_sector", "direction": "low", "weight": 1.0,
+                     "param_grid": {"factor_name": ["momentum"], "period": [20]}}],
+        "top_k_grid": [10], "rebalance_grid": [5], "rationale": "x",
+    })
+    agent = HypothesisAgent(MockLLMClient([bad, bad]))
+    with pytest.raises(HypothesisParseError, match="period"):
+        agent.propose(ledger_rows=[])
+
+
+def test_propose_accepts_valid_rank_within_sector_params():
+    good = json.dumps({
+        "market": "us",
+        "factors": [{"name": "rank_within_sector", "direction": "low", "weight": 1.0,
+                     "param_grid": {"factor_name": ["momentum"]}}],
+        "top_k_grid": [10], "rebalance_grid": [5], "rationale": "行业中性反转",
+    })
+    agent = HypothesisAgent(MockLLMClient([good]))
+    hypo = agent.propose(ledger_rows=[])
+    assert hypo["factors"][0]["name"] == "rank_within_sector"
+
+
 class _SpyLLMClient:
     """测试用：记录最近一次 complete() 收到的 system prompt。"""
 
@@ -81,3 +106,4 @@ def test_propose_with_theme_injects_mean_reversion_constraint():
     assert "本轮主题限定: 均值回归" in spy.last_system
     assert "rank_within_sector" in spy.last_system
     assert "ma_bias" in spy.last_system
+    assert "只允许给 factor_name" in spy.last_system

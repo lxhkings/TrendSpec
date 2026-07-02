@@ -1,10 +1,11 @@
 """假设生成 agent：纯假设生成器，无 tool-calling。"""
 
+import inspect
 import json
 import re
 from typing import Any
 
-from trendspec.factors.registry import factor_info, list_factors
+from trendspec.factors.registry import factor_info, get_factor_class, list_factors
 from trendspec.research.llm_client import LLMClient
 
 
@@ -35,8 +36,9 @@ _MEAN_REVERSION_CONSTRAINT = """
 1. 短期反转: factors 用 momentum 或 returns，period 取 5-20 交易日，direction=low
 2. 均线偏离回归: factors 用 ma_bias，period 任意，direction=low
 3. 行业中性反转: factors 用 rank_within_sector 或 demean_by_sector，
-   其 params.factor_name 填 momentum 或 returns，direction=low
-   （market 参数会按当前市场自动注入，param_grid 不用给 market）"""
+   param_grid 只允许给 factor_name（候选值从 momentum/returns 里选），direction=low，
+   不要给 period/market/ascending/root 等其它参数——这两个因子本身没有 period，
+   包的是哪个因子就用哪个因子的默认参数（market 会按当前市场自动注入）"""
 
 
 def _factor_catalog() -> str:
@@ -79,8 +81,17 @@ def _validate(hypo: dict) -> None:
         raise HypothesisParseError("factors 为空")
     registered = set(list_factors())
     for f in factors:
-        if f.get("name") not in registered:
-            raise HypothesisParseError(f"未注册因子: {f.get('name')}")
+        name = f.get("name")
+        if name not in registered:
+            raise HypothesisParseError(f"未注册因子: {name}")
+        cls = get_factor_class(name)
+        valid_params = set(inspect.signature(cls.__init__).parameters) - {"self"}
+        given = set((f.get("param_grid") or {}).keys())
+        bad = given - valid_params
+        if bad:
+            raise HypothesisParseError(
+                f"因子 {name} 不支持参数 {sorted(bad)}（支持: {sorted(valid_params)}）"
+            )
     if not hypo.get("top_k_grid") or not hypo.get("rebalance_grid"):
         raise HypothesisParseError("缺 top_k_grid / rebalance_grid")
 
