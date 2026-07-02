@@ -5,6 +5,7 @@ import polars as pl
 from trendspec.data.markets import Market
 from trendspec.strategy.context import StrategyContext
 from trendspec.strategy.factor_strategy import FactorStrategy
+import trendspec.strategy.factor_strategy as factor_strategy_module
 
 
 def _make_bars(iid: str, n: int, start_close: float, drift: float) -> pl.DataFrame:
@@ -120,20 +121,35 @@ def test_next_respects_rebalance_interval():
     assert sigs2 == []
 
 
-def test_init_normalizes_lowercase_market_string_for_cross_sectional_factor():
+def test_init_passes_spec_market_into_get_factor_with_market(monkeypatch):
+    """spec.market 必须原样传给 get_factor_with_market，而不是被丢弃或写死。"""
     df = _two_stock_data()
     spec = {
         "spec": {
             "market": "us",
             "factors": [{"name": "rank_within_sector",
-                         "params": {"factor_name": "returns", "market": "us"},
+                         "params": {"factor_name": "returns"},
                          "direction": "low", "weight": 1.0}],
             "top_k": 1,
             "rebalance": 5,
         }
     }
+
+    captured: dict = {}
+    original = factor_strategy_module.get_factor_with_market
+
+    def spy(name, params, market):
+        captured["name"] = name
+        captured["params"] = params
+        captured["market"] = market
+        return original(name, params, market)
+
+    monkeypatch.setattr(factor_strategy_module, "get_factor_with_market", spy)
+
     strat = FactorStrategy(params=spec)
     ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
-    strat.init(ctx)  # pre-fix: AttributeError, 'str' object has no attribute 'path'
-    last_date = df["date"].max()
-    assert last_date in strat._ranked_by_date
+    strat.init(ctx)
+
+    assert captured["name"] == "rank_within_sector"
+    assert captured["market"] == "us"
+    assert captured["params"] == {"factor_name": "returns"}
