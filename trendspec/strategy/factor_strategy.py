@@ -4,7 +4,7 @@ from datetime import date as DateType
 
 import polars as pl
 
-from trendspec.factors.registry import get_factor
+from trendspec.factors.registry import get_factor_with_market
 from trendspec.research.spec import FactorSpec
 from trendspec.strategy.base import BaseStrategy, register_strategy
 from trendspec.strategy.context import StrategyContext
@@ -37,7 +37,7 @@ class FactorStrategy(BaseStrategy):
             score_df = df.select(["instrument_id", "date"])
             weight_cols: list[pl.Expr] = []
             for i, term in enumerate(spec.factors):
-                factor = get_factor(term.name, term.params)
+                factor = get_factor_with_market(term.name, term.params, spec.market)
                 result = factor.compute_full(df)
                 col = result.name
                 sign = 1.0 if term.direction == "high" else -1.0

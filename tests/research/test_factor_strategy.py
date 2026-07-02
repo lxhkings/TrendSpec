@@ -118,3 +118,22 @@ def test_next_respects_rebalance_interval():
     # 紧邻下一日（间隔 1 < 5）不再调仓
     sigs2 = _run_next_once(strat, ctx, df, all_dates[61])
     assert sigs2 == []
+
+
+def test_init_normalizes_lowercase_market_string_for_cross_sectional_factor():
+    df = _two_stock_data()
+    spec = {
+        "spec": {
+            "market": "us",
+            "factors": [{"name": "rank_within_sector",
+                         "params": {"factor_name": "returns", "market": "us"},
+                         "direction": "low", "weight": 1.0}],
+            "top_k": 1,
+            "rebalance": 5,
+        }
+    }
+    strat = FactorStrategy(params=spec)
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)  # pre-fix: AttributeError, 'str' object has no attribute 'path'
+    last_date = df["date"].max()
+    assert last_date in strat._ranked_by_date
