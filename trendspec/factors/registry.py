@@ -9,10 +9,12 @@ Provides a central registry for factors:
 Factors are registered at import time and accessed via the registry.
 """
 
-from typing import Any, Callable
+import inspect
+from collections.abc import Callable
+from typing import Any
 
+from trendspec.data.markets import Market
 from trendspec.factors.base import Factor
-
 
 # =============================================================================
 # Factor Registry
@@ -74,6 +76,38 @@ def get_factor(name: str, params: dict[str, Any] | None = None) -> Factor | None
     if params:
         return cls(**params)
     return cls()
+
+
+def get_factor_with_market(
+    name: str, params: dict[str, Any], market: str
+) -> Factor | None:
+    """
+    Like get_factor, but auto-resolves a `market` param for factors that need one.
+
+    If the target factor's constructor accepts `market` and params either omits
+    it or supplies it as a plain string, inject Market(market.upper()) — the
+    caller's market string uppercased. An explicit Market enum in params is
+    left untouched.
+
+    Args:
+        name: Factor name
+        params: Factor parameters (as would be passed to get_factor)
+        market: Market string, e.g. "us" (from FactorSpec.market)
+
+    Returns:
+        Factor instance or None if not found
+    """
+    cls = _FACTOR_REGISTRY.get(name)
+    if cls is None:
+        return None
+
+    resolved = dict(params or {})
+    if "market" in inspect.signature(cls.__init__).parameters:
+        given = resolved.get("market")
+        if not isinstance(given, Market):
+            resolved["market"] = Market(market.upper())
+
+    return get_factor(name, resolved)
 
 
 def get_factor_class(name: str) -> type[Factor] | None:
