@@ -282,6 +282,16 @@ uv run trendspec research run --market us --start 2015-01-01 --end 2023-12-31 --
 uv run trendspec research run --market us --start 2015-01-01 --end 2023-12-31 --rounds 1 --mock-llm '{"market":"us","factors":[{"name":"momentum","direction":"high","weight":1.0}],"top_k_grid":[20]}'
 ```
 
+### 限定研究主题
+
+`--theme` 限定 LLM 本轮只提某一类假设，不传则不限定（默认行为）。目前支持"均值回归"主题：LLM 只会在短期反转（`momentum`/`returns`, direction=low）、均线偏离回归（`ma_bias`, direction=low）、行业中性反转（`rank_within_sector`/`demean_by_sector`, direction=low）三类假设里选，不会提动量追涨假设。
+
+```bash
+uv run trendspec research run --market us --theme "均值回归" --rounds 10 --out ./research_out
+```
+
+跑完检查 `research_out/ledger.jsonl` 里每轮 `hypothesis.factors[].direction` 是否都是 `low`，确认 LLM 遵守了主题约束。几轮下来没有达标策略也是有效结论——说明均值回归在当前股票池上没有阿尔法。
+
 ### 监控面板
 
 ```bash
