@@ -53,3 +53,31 @@ def test_propose_rejects_unknown_factor():
     agent = HypothesisAgent(MockLLMClient([bad, bad]))
     with pytest.raises(HypothesisParseError):
         agent.propose(ledger_rows=[])
+
+
+class _SpyLLMClient:
+    """测试用：记录最近一次 complete() 收到的 system prompt。"""
+
+    def __init__(self, response: str) -> None:
+        self._response = response
+        self.last_system: str | None = None
+
+    def complete(self, system: str, user: str) -> str:  # noqa: ARG002
+        self.last_system = system
+        return self._response
+
+
+def test_propose_without_theme_has_no_constraint_text():
+    spy = _SpyLLMClient(_good_hypo_json())
+    agent = HypothesisAgent(spy)
+    agent.propose(ledger_rows=[])
+    assert "本轮主题限定" not in spy.last_system
+
+
+def test_propose_with_theme_injects_mean_reversion_constraint():
+    spy = _SpyLLMClient(_good_hypo_json())
+    agent = HypothesisAgent(spy, theme="均值回归")
+    agent.propose(ledger_rows=[])
+    assert "本轮主题限定: 均值回归" in spy.last_system
+    assert "rank_within_sector" in spy.last_system
+    assert "ma_bias" in spy.last_system
