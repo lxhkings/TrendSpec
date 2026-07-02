@@ -22,7 +22,7 @@ def test_build_combo_score_matches_inline_zscore():
         {"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0},
         {"name": "volatility", "params": {"period": 10}, "direction": "low", "weight": 0.5},
     ]
-    score = build_combo_score(df, factors)
+    score = build_combo_score(df, factors, market="us")
     assert set(score.columns) == {"instrument_id", "date", "combo_score"}
     last = score.filter(pl.col("combo_score").is_not_null())
     assert last.height > 0
@@ -38,3 +38,14 @@ def test_factor_cache_memoizes_by_name_params():
     c = cache.get("momentum", {"period": 10})
     assert c is not a  # 不同参数不命中
     assert cache.compute_count == 2  # 只真正算了两次
+
+
+def test_build_combo_score_normalizes_market_for_cross_sectional_factor():
+    df = _panel()
+    factors = [
+        {"name": "rank_within_sector",
+         "params": {"factor_name": "momentum", "market": "us"},
+         "direction": "low", "weight": 1.0},
+    ]
+    score = build_combo_score(df, factors, market="us")
+    assert set(score.columns) == {"instrument_id", "date", "combo_score"}

@@ -66,7 +66,7 @@ def _worker_eval_candidate(args: tuple) -> tuple[int, dict]:
     for w_start, w_end in windows:
         win_df = panel.slice(w_start, w_end)
         # 每个窗口独立计算combo_score（不复用其他窗口）
-        scores = build_combo_score(win_df, spec["factors"])
+        scores = build_combo_score(win_df, spec["factors"], market)
 
         cfg = EngineConfig(market=Market(market.upper()),
                            start_date=w_start, end_date=w_end,
@@ -130,7 +130,7 @@ class ResearchEvaluator:
                 for spec in candidates:
                     k = _combo_key(spec)
                     if k not in combo_scores:
-                        combo_scores[k] = build_combo_score(win_df, spec["factors"])
+                        combo_scores[k] = build_combo_score(win_df, spec["factors"], self.market)
                 window_combo_scores[(w_start, w_end)] = combo_scores
 
             results: list[dict] = []

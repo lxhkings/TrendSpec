@@ -30,7 +30,7 @@ def test_injected_scores_equal_self_computed():
     m = Market.US
     df = bars(market=m, start_date=cfg.start_date, end_date=cfg.end_date)
     uni = get_universe(m, cfg.root)
-    scores = build_combo_score(df, SPEC["factors"])
+    scores = build_combo_score(df, SPEC["factors"], SPEC["market"])
 
     eng = BacktestEngine(cfg)
     eng.inject(data=df, universe=uni)

@@ -4,21 +4,26 @@ from typing import Any
 
 import polars as pl
 
-from trendspec.factors.registry import get_factor
+from trendspec.factors.registry import get_factor, get_factor_with_market
 
 
-def build_combo_score(df: pl.DataFrame, factors: list[dict[str, Any]]) -> pl.DataFrame:
+def build_combo_score(
+    df: pl.DataFrame, factors: list[dict[str, Any]], market: str
+) -> pl.DataFrame:
     """按 spec.factors 对截面做 z-score 加权，产出 (instrument_id,date,combo_score)。
 
     与 trendspec/strategy/factor_strategy.py:FactorStrategy.init 内联逻辑一致：
       sign = +1 if direction=='high' else -1
       z = sign * (x - mean_over_date(x)) / std_over_date(x)
       combo_score = sum(weight_i * fill_null(z_i, 0))
+
+    market: FactorSpec.market（如 "us"），用于给需要 market 的因子（如
+    rank_within_sector/demean_by_sector）解析正确市场。
     """
     score_df = df.select(["instrument_id", "date"])
     weight_cols: list[pl.Expr] = []
     for i, term in enumerate(factors):
-        factor = get_factor(term["name"], term.get("params", {}))
+        factor = get_factor_with_market(term["name"], term.get("params", {}), market)
         result = factor.compute_full(df)
         col = result.name  # column name in result.values
         sign = 1.0 if term["direction"] == "high" else -1.0
