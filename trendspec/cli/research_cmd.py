@@ -19,6 +19,9 @@ def research_run(
     n_windows: int = typer.Option(4, "--windows", help="walk-forward 窗口数"),
     capital: float = typer.Option(100000.0, "--capital", "-c", help="初始资金"),
     out: str | None = typer.Option(None, "--out", help="输出目录"),
+    theme: str | None = typer.Option(
+        None, "--theme", help="限定假设主题，如'均值回归'；不传则不限定"
+    ),
     mock_llm: str | None = typer.Option(
         None, "--mock-llm", help="测试用：注入一段假设 JSON 取代真 LLM"
     ),
@@ -28,9 +31,9 @@ def research_run(
     import trendspec.strategy.factor_strategy  # noqa: F401 — 触发策略注册
     from trendspec.research.agent import HypothesisAgent
     from trendspec.research.config import ResearchSettings
+    from trendspec.research.fast_eval import ResearchEvaluator
     from trendspec.research.llm_client import MockLLMClient, OpenAICompatClient
     from trendspec.research.orchestrator import ResearchOrchestrator
-    from trendspec.research.fast_eval import ResearchEvaluator
 
     settings = ResearchSettings()
     out_dir = out or settings.out_dir
@@ -46,10 +49,14 @@ def research_run(
             model=settings.llm_model,
         )
 
-    agent = HypothesisAgent(client)
+    agent = HypothesisAgent(client, theme=theme)
     evaluator = ResearchEvaluator(
-        market=market, start=start_date, end=end_date,
-        n_windows=n_windows, capital=capital, parallel=True,
+        market=market,
+        start=start_date,
+        end=end_date,
+        n_windows=n_windows,
+        capital=capital,
+        parallel=True,
     )
     orch = ResearchOrchestrator(
         agent=agent,
