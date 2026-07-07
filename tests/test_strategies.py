@@ -115,6 +115,67 @@ def test_backtest_engine_uses_signal_shares(custom_shares, expected_shares) -> N
     )
 
 
+def test_backtest_engine_rejects_buy_exceeding_cash() -> None:
+    """Engine's cash pre-check skips a BUY that would overdraw cash, even
+    though each individual order looks affordable considered in isolation.
+    """
+    from datetime import date
+    from unittest.mock import MagicMock, patch
+
+    import polars as pl
+
+    from trendspec.risk.pipeline import RiskPipeline
+
+    day_data = pl.DataFrame({
+        "instrument_id": ["AAPL", "MSFT"],
+        "ticker": ["AAPL", "MSFT"],
+        "date": [date(2024, 1, 2), date(2024, 1, 2)],
+        "open": [100.0, 100.0], "high": [105.0, 105.0], "low": [95.0, 95.0],
+        "close": [100.0, 100.0], "volume": [50_000_000, 50_000_000], "adj_factor": [1.0, 1.0],
+    })
+
+    @register_strategy("_test_cash_guard")
+    class CashGuardTestStrategy(BaseStrategy):
+        name = "_test_cash_guard"
+
+        def init(self, ctx: StrategyContext) -> None:
+            pass
+
+        def next(self, ctx: StrategyContext) -> None:
+            if not ctx.has_position(ctx.instrument_id):
+                sig = ctx.signal("BUY", ctx.instrument_id, ctx.close)
+                sig.shares = 80.0  # 80 * 100 = 8000 per order; only 1 fits in 10,000 cash
+
+    config = EngineConfig(
+        market=Market.US,
+        start_date=date(2024, 1, 2),
+        end_date=date(2024, 1, 3),
+        initial_capital=10_000.0,
+        order_size=100,
+        costs_model="none",
+        root="/tmp/nonexistent",
+        risk_pipeline=RiskPipeline([]),  # no rules → all signals pass to cash pre-check
+    )
+
+    engine = BacktestEngine(config)
+    engine._data = day_data
+
+    def _ticker_list(_d):
+        return ["AAPL", "MSFT"]
+
+    engine._universe = MagicMock(tickers=_ticker_list)
+
+    with (
+        patch.object(engine, "load_data"),
+        patch.object(engine, "load_universe"),
+    ):
+        result = engine.run(CashGuardTestStrategy)
+
+    assert len(result.trades) == 1, (
+        f"Expected exactly 1 trade (cash exhausted after first), got {len(result.trades)}"
+    )
+
+
 # =============================================================================
 # CLENOW_SCORE and MIN_DAILY_RETURN Indicator Tests
 # =============================================================================
