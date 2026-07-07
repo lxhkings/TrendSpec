@@ -203,7 +203,7 @@ class TestPortfolio:
             trade_date=date(2024, 1, 2),
         )
 
-        assert realized_pnl == 0.0
+        assert realized_pnl is None
         assert portfolio.cash == 1000
         assert portfolio.position_count() == 0
 
@@ -526,6 +526,85 @@ class TestBacktestEngine:
         # Should return empty result
         assert result.trades == []
         assert result.signals == []
+
+    def test_engine_no_phantom_trade_log_on_rejected_buy(self) -> None:
+        """A BUY whose declared signal.price is affordable, but whose real
+        transaction cost pushes the total over available cash, must never
+        appear in result.trades. The engine's cheap cash pre-check only
+        considers shares * price (ignoring cost), so it lets the order
+        through to the broker; Portfolio.update_position must then reject it
+        (returning None), and the engine must not log a phantom trade for it.
+        """
+        from trendspec.engine.costs import CostsConfig, CostsModel
+        from trendspec.risk.pipeline import RiskPipeline
+        from trendspec.strategy import register_strategy
+
+        class BigFixedCostModel(CostsModel):
+            """Always returns a large fixed cost, regardless of trade value —
+            simulates a real execution cost the cheap pre-check can't see."""
+
+            def calculate(self, direction, value) -> float:
+                return 600.0
+
+            def breakdown(self, direction, value) -> dict[str, float]:
+                return {"total": 600.0}
+
+            def get_config(self) -> CostsConfig:
+                return CostsConfig()
+
+        day_data = pl.DataFrame({
+            "instrument_id": ["AAPL"],
+            "ticker": ["AAPL"],
+            "date": [date(2024, 1, 2)],
+            "open": [50.0], "high": [52.0], "low": [48.0],
+            "close": [50.0], "volume": [50_000_000], "adj_factor": [1.0],
+        })
+
+        @register_strategy("_test_phantom_trade")
+        class PhantomTradeTestStrategy(BaseStrategy):
+            name = "_test_phantom_trade"
+
+            def init(self, ctx: StrategyContext) -> None:
+                pass
+
+            def next(self, ctx: StrategyContext) -> None:
+                if not ctx.has_position(ctx.instrument_id):
+                    sig = ctx.signal("BUY", ctx.instrument_id, ctx.close)
+                    # 10 * 50 = 500 < 1000 cash: engine's pre-check (ignores
+                    # cost) lets this through. Real cost=600 pushes total to
+                    # 1100 > 1000 cash, so Portfolio must reject it.
+                    sig.shares = 10.0
+
+        config = EngineConfig(
+            market=Market.US,
+            start_date=date(2024, 1, 2),
+            end_date=date(2024, 1, 3),
+            initial_capital=1000.0,
+            order_size=100,
+            costs_model="default",
+            root="/tmp/nonexistent",
+            risk_pipeline=RiskPipeline([]),  # no rules → all signals pass
+        )
+
+        engine = BacktestEngine(config)
+        engine._data = day_data
+        engine._universe = MagicMock(tickers=lambda _d: ["AAPL"])
+
+        with (
+            patch.object(engine, "load_data"),
+            patch.object(engine, "load_universe"),
+            patch(
+                "trendspec.engine.backtest_engine.get_costs_model",
+                return_value=BigFixedCostModel(),
+            ),
+        ):
+            result = engine.run(PhantomTradeTestStrategy)
+
+        assert len(result.trades) == 0, (
+            f"Expected no trades (rejected by cash guard after real cost "
+            f"applied), got {len(result.trades)}"
+        )
+        assert result.metrics["final_nav"] == 1000.0
 
 
 class TestBacktestMetrics:

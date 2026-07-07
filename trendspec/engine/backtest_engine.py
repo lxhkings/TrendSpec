@@ -372,7 +372,7 @@ class BacktestEngine(BaseEngine):
         # Update portfolio for each trade
         for trade in executed_trades:
             sector = ctx.sector(trade.instrument_id, trading_day) if ctx else None
-            portfolio.update_position(
+            realized_pnl = portfolio.update_position(
                 instrument_id=trade.instrument_id,
                 ticker=trade.ticker,
                 direction=trade.direction,
@@ -382,6 +382,8 @@ class BacktestEngine(BaseEngine):
                 trade_date=trade.execution_date or trading_day,
                 sector=sector,
             )
+            if realized_pnl is None:
+                continue  # Portfolio rejected the trade (e.g. cost pushed it over cash) — no phantom log entry
             self._trade_log.append(trade)
 
         # Update all position prices with current day's close prices
