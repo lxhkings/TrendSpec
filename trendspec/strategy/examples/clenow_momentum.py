@@ -295,8 +295,11 @@ class ClenowMomentumStrategy(BaseStrategy):
                 continue
 
             target_shares = int(nav * self._risk_factor / atr)
-            affordable_shares = int(available / close)
-            shares = min(target_shares, affordable_shares)
+            if ctx.is_screening:
+                shares = target_shares
+            else:
+                affordable_shares = int(available / close)
+                shares = min(target_shares, affordable_shares)
             if shares < 1:
                 continue
 

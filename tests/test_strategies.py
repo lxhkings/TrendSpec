@@ -896,6 +896,7 @@ class TestClenowMomentumRiskControls:
         params: dict,
         positions: dict[str, float] | None = None,
         available_capital: float = 1_000_000.0,
+        is_screening: bool = False,
     ) -> list:
         """Init + invoke next() for one rebalance day with custom starting
         positions/capital. Returns all pending signals (BUY and SELL)."""
@@ -910,6 +911,7 @@ class TestClenowMomentumRiskControls:
         ctx.pit_universe = lambda _d: ids
         ctx._current_date = rebalance_date
         ctx.update_positions(positions or {}, available_capital)
+        ctx.is_screening = is_screening
         strategy.init(ctx)
 
         with patch(
@@ -1003,6 +1005,45 @@ class TestClenowMomentumRiskControls:
         assert len(buys) == 3
         # S000 = fastest trend = highest price/ATR by rebalance date; S002 = slowest.
         assert buys["S000"].shares <= buys["S002"].shares
+
+    def test_screening_bypasses_affordability_cap(self) -> None:
+        """ctx.is_screening=True sizes purely by ATR risk parity, ignoring
+        the affordability cap derived from a tiny available_capital; with
+        ctx.is_screening=False (default), the same tiny capital caps/rations
+        shares, proving the flag actually changes behavior."""
+        df = self._make_ranked_df(n_instruments=5)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        params = {
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+            "drawdown_period": 20, "volume_avg_period": 20,
+            "rebalance_weekday": rebalance_date.weekday(),
+            "top_n": 5, "risk_factor": 10.0,  # deliberately huge — forces a large ATR target
+            "cash_buffer": 0.0,
+        }
+        tiny_capital = 500.0
+
+        screening_signals = self._run_strategy(
+            df, rebalance_date, params, available_capital=tiny_capital, is_screening=True,
+        )
+        screening_buys = [s for s in screening_signals if s.is_buy()]
+        assert len(screening_buys) == 5
+
+        # Screening ignores the affordability cap: total notional of the
+        # ATR-sized picks exceeds the nominal tiny capital entirely.
+        screening_notional = sum(s.shares * s.price for s in screening_buys)
+        assert screening_notional > tiny_capital
+
+        non_screening_signals = self._run_strategy(
+            df, rebalance_date, params, available_capital=tiny_capital, is_screening=False,
+        )
+        non_screening_buys = [s for s in non_screening_signals if s.is_buy()]
+
+        # Same tiny capital, screening off: fewer BUYs make it through, and/or
+        # any surviving BUY is sized smaller than its screening counterpart.
+        screening_shares = {s.instrument_id: s.shares for s in screening_buys}
+        assert len(non_screening_buys) < len(screening_buys) or all(
+            s.shares < screening_shares[s.instrument_id] for s in non_screening_buys
+        )
 
 
 # =============================================================================
