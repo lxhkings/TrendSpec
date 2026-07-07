@@ -176,6 +176,86 @@ def test_backtest_engine_rejects_buy_exceeding_cash() -> None:
     )
 
 
+def test_backtest_engine_credits_same_day_sell_for_buy() -> None:
+    """Cash pre-check must credit same-day SELL proceeds before evaluating a
+    later BUY in the signal list, mirroring how ClenowMomentumStrategy emits
+    SELLs (exits) before BUYs (new entries) within a single rebalance day.
+    """
+    from datetime import date
+    from unittest.mock import MagicMock, patch
+
+    import polars as pl
+
+    from trendspec.risk.pipeline import RiskPipeline
+
+    day_data = pl.DataFrame({
+        "instrument_id": ["AAPL", "AAPL", "MSFT", "MSFT"],
+        "ticker": ["AAPL", "AAPL", "MSFT", "MSFT"],
+        "date": [date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 2), date(2024, 1, 3)],
+        "open": [100.0, 100.0, 100.0, 100.0],
+        "high": [100.0, 100.0, 100.0, 100.0],
+        "low": [100.0, 100.0, 100.0, 100.0],
+        "close": [100.0, 100.0, 100.0, 100.0],
+        "volume": [50_000_000, 50_000_000, 50_000_000, 50_000_000],
+        "adj_factor": [1.0, 1.0, 1.0, 1.0],
+    })
+
+    @register_strategy("_test_sell_funds_buy")
+    class SellFundsBuyTestStrategy(BaseStrategy):
+        name = "_test_sell_funds_buy"
+
+        def init(self, ctx: StrategyContext) -> None:
+            pass
+
+        def next(self, ctx: StrategyContext) -> None:
+            if ctx.date == date(2024, 1, 2):
+                if ctx.instrument_id == "AAPL" and not ctx.has_position("AAPL"):
+                    sig = ctx.signal("BUY", "AAPL", ctx.close)
+                    sig.shares = 50.0  # 50 * 100 = 5000, exactly the full starting capital
+            elif ctx.date == date(2024, 1, 3):
+                if ctx.instrument_id == "AAPL" and ctx.has_position("AAPL"):
+                    sig = ctx.signal("SELL", "AAPL", ctx.close)
+                    sig.shares = 50.0  # frees 5000 in proceeds
+                if ctx.instrument_id == "MSFT" and not ctx.has_position("MSFT"):
+                    sig = ctx.signal("BUY", "MSFT", ctx.close)
+                    sig.shares = 40.0  # 40 * 100 = 4000
+
+    config = EngineConfig(
+        market=Market.US,
+        start_date=date(2024, 1, 2),
+        end_date=date(2024, 1, 3),
+        initial_capital=5000.0,
+        order_size=100,
+        costs_model="none",
+        root="/tmp/nonexistent",
+        risk_pipeline=RiskPipeline([]),  # no rules → all signals pass to cash pre-check
+    )
+
+    engine = BacktestEngine(config)
+    engine._data = day_data
+
+    def _ticker_list(_d):
+        return ["AAPL", "MSFT"]
+
+    engine._universe = MagicMock(tickers=_ticker_list)
+
+    with (
+        patch.object(engine, "load_data"),
+        patch.object(engine, "load_universe"),
+    ):
+        result = engine.run(SellFundsBuyTestStrategy)
+
+    assert len(result.trades) == 3, (
+        f"Expected 3 trades (day-1 BUY AAPL, day-2 SELL AAPL, day-2 BUY MSFT), "
+        f"got {len(result.trades)}: "
+        f"{[(t.instrument_id, t.direction, t.shares) for t in result.trades]}"
+    )
+    msft_trades = [t for t in result.trades if t.instrument_id == "MSFT"]
+    assert len(msft_trades) == 1, "Expected exactly one MSFT trade (the day-2 BUY)"
+    assert msft_trades[0].direction == "BUY"
+    assert msft_trades[0].shares == 40.0
+
+
 # =============================================================================
 # CLENOW_SCORE and MIN_DAILY_RETURN Indicator Tests
 # =============================================================================

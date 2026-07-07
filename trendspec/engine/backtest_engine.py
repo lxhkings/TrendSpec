@@ -361,6 +361,8 @@ class BacktestEngine(BaseEngine):
                     if estimated_cost > projected_cash:
                         continue
                     projected_cash -= estimated_cost
+                elif signal.is_sell():
+                    projected_cash += order_shares * signal.price
                 self._broker.submit(signal, shares=order_shares)
 
         # Execute orders at next day's open (T+1)
