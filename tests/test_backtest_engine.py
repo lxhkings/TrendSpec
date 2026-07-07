@@ -189,6 +189,24 @@ class TestPortfolio:
         weights = portfolio.sector_weights()
         assert "Finance" in weights
 
+    def test_portfolio_buy_insufficient_cash(self):
+        """BUY exceeding available cash is rejected — no position, no cash change."""
+        portfolio = Portfolio(initial_capital=1000)
+
+        realized_pnl = portfolio.update_position(
+            instrument_id="SH600000",
+            ticker="600000",
+            direction="BUY",
+            shares=200,  # 200 * 10 = 2000 > 1000 cash
+            price=10.0,
+            cost=0.0,
+            trade_date=date(2024, 1, 2),
+        )
+
+        assert realized_pnl == 0.0
+        assert portfolio.cash == 1000
+        assert portfolio.position_count() == 0
+
     def test_portfolio_to_risk_portfolio(self):
         """Test conversion to risk portfolio format."""
         portfolio = Portfolio(initial_capital=100000)

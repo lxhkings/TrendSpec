@@ -376,8 +376,11 @@ class Portfolio:
         realized_pnl = 0.0
 
         if direction == "BUY":
-            # Deduct cash (shares * price + cost)
+            # Deduct cash (shares * price + cost). Reject if insufficient cash —
+            # cash must never go negative (no margin/leverage in this engine).
             total_cost = shares * price + cost
+            if total_cost > self.cash:
+                return 0.0
             self.cash -= total_cost
             self._total_costs += cost
 
