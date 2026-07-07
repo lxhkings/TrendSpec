@@ -19,7 +19,11 @@ Parameters:
     gap_period (int): Window for gap filter (matches score_period). Default 90.
     risk_factor (float): Equity fraction per ATR unit. Default 0.001.
     rebalance_weekday (int): 0=Mon … 4=Fri. Default 2 (Wednesday).
-    top_pct (float): Fraction of ranked universe to hold. Default 0.8 (top 80%).
+    top_n (int): Max number of positions held. Default 20.
+    sell_rank_mult (float): Exit buffer — a held position is only sold for
+        rank reasons once its rank exceeds top_n * sell_rank_mult. Default 1.5.
+    cash_buffer (float): Fraction of available capital held back from new
+        BUYs, absorbing execution slippage. Default 0.02.
     max_gap (float): Maximum allowed single-day drop (negative). Default -0.15.
 """
 
@@ -38,7 +42,8 @@ class ClenowMomentumStrategy(BaseStrategy):
     Clenow quantitative momentum strategy (Stocks on the Move).
 
     Ranks universe stocks by exponential regression slope × R² and holds
-    the top fraction, sized by ATR-based risk parity. Rebalances weekly.
+    the top top_n names, sized by ATR-based risk parity within a strict
+    cash budget (zero leverage). Rebalances weekly.
 
     Parameters:
         sma_period: Trend filter period (default: 200)
@@ -47,7 +52,9 @@ class ClenowMomentumStrategy(BaseStrategy):
         gap_period: Gap filter lookback window (default: 90)
         risk_factor: Equity fraction per ATR unit (default: 0.001)
         rebalance_weekday: 0=Mon…4=Fri (default: 2 = Wednesday)
-        top_pct: Fraction of ranked universe to hold (default: 0.8)
+        top_n: Max number of positions held (default: 20)
+        sell_rank_mult: Exit buffer multiplier on top_n (default: 1.5)
+        cash_buffer: Fraction of capital held back from new BUYs (default: 0.02)
         max_gap: Max allowed single-day drop, e.g. -0.15 (default: -0.15)
     """
 
@@ -60,7 +67,9 @@ class ClenowMomentumStrategy(BaseStrategy):
         "gap_period": 90,
         "risk_factor": 0.001,
         "rebalance_weekday": 2,
-        "top_pct": 0.8,
+        "top_n": 20,
+        "sell_rank_mult": 1.5,
+        "cash_buffer": 0.02,
         "max_gap": -0.15,
         "max_per_sector": 0,       # 0 = 不限；1 = 每行业最多1只
         # Display-only fields (do not affect entry/exit logic)
@@ -80,12 +89,18 @@ class ClenowMomentumStrategy(BaseStrategy):
         for key, value in self.__class__.params.items():
             self.params.setdefault(key, value)
 
-        top_pct = self.get_param("top_pct", 0.8)
+        top_n = self.get_param("top_n", 20)
+        sell_rank_mult = self.get_param("sell_rank_mult", 1.5)
+        cash_buffer = self.get_param("cash_buffer", 0.02)
         risk_factor = self.get_param("risk_factor", 0.001)
         rebalance_weekday = self.get_param("rebalance_weekday", 2)
 
-        if not (0 < top_pct < 1):
-            raise ValueError(f"top_pct ({top_pct}) must be between 0 and 1 exclusive")
+        if top_n < 1:
+            raise ValueError(f"top_n ({top_n}) must be >= 1")
+        if sell_rank_mult < 1.0:
+            raise ValueError(f"sell_rank_mult ({sell_rank_mult}) must be >= 1.0")
+        if not (0 <= cash_buffer < 1):
+            raise ValueError(f"cash_buffer ({cash_buffer}) must be in [0, 1)")
         if risk_factor <= 0:
             raise ValueError(f"risk_factor ({risk_factor}) must be > 0")
         if rebalance_weekday not in range(5):
@@ -136,7 +151,9 @@ class ClenowMomentumStrategy(BaseStrategy):
         self._gap_period = gap_period
         self._risk_factor = self.get_param("risk_factor", 0.001)
         self._rebalance_weekday = self.get_param("rebalance_weekday", 2)
-        self._top_pct = self.get_param("top_pct", 0.8)
+        self._top_n = int(self.get_param("top_n", 20))
+        self._sell_rank_mult = self.get_param("sell_rank_mult", 1.5)
+        self._cash_buffer = self.get_param("cash_buffer", 0.02)
         self._max_gap = self.get_param("max_gap", -0.15)
         self._max_per_sector = int(self.get_param("max_per_sector", 0))
         self._drawdown_period = self.get_param("drawdown_period", 63)
@@ -153,7 +170,7 @@ class ClenowMomentumStrategy(BaseStrategy):
         ctx.strategy.log(
             f"Initialized: sma={sma_period}, atr={atr_period}, "
             f"score_period={score_period}, weekday={self._rebalance_weekday}, "
-            f"top_pct={self._top_pct}"
+            f"top_n={self._top_n}"
         )
 
     def next(self, ctx: StrategyContext) -> None:
@@ -218,8 +235,12 @@ class ClenowMomentumStrategy(BaseStrategy):
                     seen[sec] = seen.get(sec, 0) + 1
             ranked = deduped
 
-        n_keep = max(1, int(len(ranked) * self._top_pct))
-        top_set = set(ranked[:n_keep])
+        # Rank map (1-based) over the full qualifying+deduped list — used both
+        # to decide sells (buffer band) and to label BUY signal extras["rank"].
+        rank_of = {iid: pos for pos, iid in enumerate(ranked, start=1)}
+        entry_candidates = ranked[: self._top_n]
+        exit_rank_threshold = int(self._top_n * self._sell_rank_mult)
+        retain_set = set(ranked[:exit_rank_threshold])
 
         # Compute total equity for position sizing
         nav = ctx.available_capital
@@ -228,7 +249,9 @@ class ClenowMomentumStrategy(BaseStrategy):
             if close is not None:
                 nav += qty * close
 
-        # SELL: positions no longer in top set or below trend filter
+        # SELL: below trend filter, no longer qualifying, or rank fell outside
+        # the buffer band (top_n * sell_rank_mult). Always sells the FULL
+        # position — no partial-exit residue.
         for iid in list(ctx.positions.keys()):
             sma = ctx.indicator_value("MA", iid, current_date, period=self._sma_period)
             close = get_close(iid)
@@ -241,15 +264,27 @@ class ClenowMomentumStrategy(BaseStrategy):
                 continue
             elif sma is not None and close <= sma:
                 sell_reason = f"below SMA{self._sma_period}"
-            elif iid not in top_set:
-                sell_reason = "rank out of top qualifying universe"
+            elif iid not in rank_of:
+                sell_reason = "no longer qualifies"
+            elif iid not in retain_set:
+                sell_reason = f"rank out of top {exit_rank_threshold}"
 
             if sell_reason:
                 sig = ctx.signal("SELL", iid, close, note=sell_reason)
                 sig.ticker = get_ticker(iid)
+                sig.shares = float(ctx.positions[iid])
 
-        # BUY: top-ranked stocks not already held
-        for rank_pos, iid in enumerate(ranked[:n_keep], start=1):
+        # BUY: top-ranked stocks not already held, sized by ATR risk parity and
+        # capped by both open slots (top_n) and remaining cash budget — the
+        # combination guarantees zero leverage (sum of buys never exceeds
+        # available cash) and a hard position-count ceiling.
+        slots = max(0, self._top_n - len(ctx.positions))
+        available = ctx.available_capital * (1 - self._cash_buffer)
+        filled = 0
+
+        for iid in entry_candidates:
+            if filled >= slots:
+                break
             if ctx.has_position(iid):
                 continue
 
@@ -259,7 +294,9 @@ class ClenowMomentumStrategy(BaseStrategy):
             if atr is None or atr <= 0 or close is None or close <= 0:
                 continue
 
-            shares = int(nav * self._risk_factor / atr)
+            target_shares = int(nav * self._risk_factor / atr)
+            affordable_shares = int(available / close)
+            shares = min(target_shares, affordable_shares)
             if shares < 1:
                 continue
 
@@ -304,7 +341,7 @@ class ClenowMomentumStrategy(BaseStrategy):
             sig.shares = float(shares)
             sig.extras = {
                 "sector": sector_code,
-                "rank": rank_pos,
+                "rank": rank_of[iid],
                 "r2": r2_val,
                 "deviation_pct": float(deviation_pct),
                 "drawdown_pct": float(drawdown_pct),
@@ -312,3 +349,6 @@ class ClenowMomentumStrategy(BaseStrategy):
                 "stop_loss": float(stop_loss),
                 "alerts": alerts,
             }
+
+            available -= shares * close
+            filled += 1

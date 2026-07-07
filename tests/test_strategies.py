@@ -432,12 +432,24 @@ class TestClenowMomentumStrategyInit:
         assert strategy.get_param("gap_period", 90) == 90
         assert strategy.get_param("risk_factor", 0.001) == 0.001
         assert strategy.get_param("rebalance_weekday", 2) == 2
-        assert strategy.get_param("top_pct", 0.8) == 0.8
+        assert strategy.get_param("top_n", 20) == 20
+        assert strategy.get_param("sell_rank_mult", 1.5) == 1.5
+        assert strategy.get_param("cash_buffer", 0.02) == 0.02
 
-    def test_invalid_top_pct(self) -> None:
+    def test_invalid_top_n(self) -> None:
         from trendspec.strategy.examples import ClenowMomentumStrategy
-        with pytest.raises(ValueError, match="top_pct"):
-            ClenowMomentumStrategy(params={"top_pct": 1.5})
+        with pytest.raises(ValueError, match="top_n"):
+            ClenowMomentumStrategy(params={"top_n": 0})
+
+    def test_invalid_sell_rank_mult(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="sell_rank_mult"):
+            ClenowMomentumStrategy(params={"sell_rank_mult": 0.5})
+
+    def test_invalid_cash_buffer(self) -> None:
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+        with pytest.raises(ValueError, match="cash_buffer"):
+            ClenowMomentumStrategy(params={"cash_buffer": 1.0})
 
     def test_invalid_risk_factor(self) -> None:
         from trendspec.strategy.examples import ClenowMomentumStrategy
@@ -577,7 +589,6 @@ class TestClenowMomentumStrategySignals:
             "atr_period": 10,
             "rebalance_weekday": 2,
             "risk_factor": 0.001,
-            "top_pct": 0.8,
         })
         ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
         strategy.init(ctx)
@@ -851,6 +862,147 @@ class TestClenowMomentumStrategySignals:
         )
         has_dd_alert = any("回撤过深" in s.extras["alerts"] for s in buys)
         assert has_dd_alert
+
+
+class TestClenowMomentumRiskControls:
+    """Position cap, cash budget, buffer-band exits, ATR risk parity."""
+
+    def _make_ranked_df(self, n_instruments: int, n_days: int = 220) -> pl.DataFrame:
+        """N instruments in a clean, noise-free uptrend with strictly decreasing
+        trend rate — so CLENOW_SCORE strictly decreases as instrument index
+        increases (S000 always ranks first, S001 second, ...). Deterministic,
+        no randomness → no flaky ranking.
+        """
+        rows = []
+        for i in range(n_instruments):
+            inst = f"S{i:03d}"
+            trend = 0.003 - i * 0.00005
+            price = 100.0
+            for d in range(n_days):
+                price = price * (1 + trend)
+                rows.append({
+                    "instrument_id": inst, "ticker": inst,
+                    "date": date(2022, 1, 1) + timedelta(days=d),
+                    "open": price * 0.999, "high": price * 1.005,
+                    "low": price * 0.995, "close": price,
+                    "volume": 1_000_000, "adj_factor": 1.0,
+                })
+        return pl.DataFrame(rows)
+
+    def _run_strategy(
+        self,
+        df: pl.DataFrame,
+        rebalance_date: date,
+        params: dict,
+        positions: dict[str, float] | None = None,
+        available_capital: float = 1_000_000.0,
+    ) -> list:
+        """Init + invoke next() for one rebalance day with custom starting
+        positions/capital. Returns all pending signals (BUY and SELL)."""
+        from trendspec.strategy.context import StrategyContext
+        from trendspec.strategy.examples import ClenowMomentumStrategy
+
+        strategy = ClenowMomentumStrategy(params=params)
+        ctx = StrategyContext(market=Market.US, strategy=strategy, data=df)
+        ids = list(df["instrument_id"].unique())
+        ctx._universe = MagicMock()
+        ctx._universe.tickers = MagicMock(return_value=ids)
+        ctx.pit_universe = lambda _d: ids
+        ctx._current_date = rebalance_date
+        ctx.update_positions(positions or {}, available_capital)
+        strategy.init(ctx)
+
+        with patch(
+            "trendspec.strategy.examples.clenow_momentum.sector_lookup",
+            side_effect=lambda _m, _iid, _dt: None,
+        ):
+            for iid in ids:
+                row = df.filter(
+                    (pl.col("instrument_id") == iid) & (pl.col("date") == rebalance_date)
+                )
+                if row.is_empty():
+                    continue
+                ctx.update_bar(rebalance_date, iid, row["ticker"].item(), df)
+                strategy.next(ctx)
+
+        return ctx.pending_signals()
+
+    def test_buy_count_capped_at_top_n(self) -> None:
+        """With 10 qualifying names and top_n=3, only 3 BUY signals are generated."""
+        df = self._make_ranked_df(n_instruments=10)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        params = {
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+            "drawdown_period": 20, "volume_avg_period": 20,
+            "rebalance_weekday": rebalance_date.weekday(),
+            "top_n": 3, "risk_factor": 0.001,
+        }
+        signals = self._run_strategy(df, rebalance_date, params)
+        buys = [s for s in signals if s.is_buy()]
+        assert len(buys) == 3
+        assert {s.instrument_id for s in buys} == {"S000", "S001", "S002"}
+
+    def test_buy_total_cost_never_exceeds_cash_budget(self) -> None:
+        """Sum of all BUY order values stays within
+        available_capital * (1 - cash_buffer), even when risk_factor alone
+        would demand far more shares than the account can afford."""
+        df = self._make_ranked_df(n_instruments=10)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        params = {
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+            "drawdown_period": 20, "volume_avg_period": 20,
+            "rebalance_weekday": rebalance_date.weekday(),
+            "top_n": 10, "risk_factor": 10.0,  # deliberately huge — forces affordability to bind
+            "cash_buffer": 0.02,
+        }
+        available_capital = 5_000.0
+        signals = self._run_strategy(
+            df, rebalance_date, params, available_capital=available_capital,
+        )
+        buys = [s for s in signals if s.is_buy()]
+        assert len(buys) >= 1
+        total_cost = sum(s.shares * s.price for s in buys)
+        assert total_cost <= available_capital * (1 - params["cash_buffer"]) + 1e-6
+
+    def test_sell_buffer_band_retains_marginal_rank(self) -> None:
+        """A held position ranked just outside top_n but inside
+        top_n * sell_rank_mult is NOT sold; one ranked beyond the buffer
+        IS sold, with the full held share count."""
+        df = self._make_ranked_df(n_instruments=10)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        params = {
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+            "drawdown_period": 20, "volume_avg_period": 20,
+            "rebalance_weekday": rebalance_date.weekday(),
+            "top_n": 3, "sell_rank_mult": 2.0,  # buffer = top 6
+        }
+        # S004 -> rank 5 (inside buffer, retained). S007 -> rank 8 (outside buffer, sold).
+        positions = {"S004": 50.0, "S007": 30.0}
+        signals = self._run_strategy(df, rebalance_date, params, positions=positions)
+        sells = {s.instrument_id: s for s in signals if s.is_sell()}
+        assert "S004" not in sells
+        assert "S007" in sells
+        assert sells["S007"].shares == 30.0
+
+    def test_atr_risk_parity_smaller_atr_gets_more_shares(self) -> None:
+        """Higher-priced/higher-ATR (top-ranked) names receive fewer-or-equal
+        shares than lower-priced/lower-ATR (lower-ranked) names, given ample
+        cash for both."""
+        df = self._make_ranked_df(n_instruments=3)
+        rebalance_date = df.sort("date")["date"].to_list()[-1]
+        params = {
+            "sma_period": 50, "score_period": 30, "gap_period": 30, "atr_period": 10,
+            "drawdown_period": 20, "volume_avg_period": 20,
+            "rebalance_weekday": rebalance_date.weekday(),
+            "top_n": 3, "risk_factor": 0.001, "cash_buffer": 0.0,
+        }
+        signals = self._run_strategy(
+            df, rebalance_date, params, available_capital=10_000_000.0,
+        )
+        buys = {s.instrument_id: s for s in signals if s.is_buy()}
+        assert len(buys) == 3
+        # S000 = fastest trend = highest price/ATR by rebalance date; S002 = slowest.
+        assert buys["S000"].shares <= buys["S002"].shares
 
 
 # =============================================================================
