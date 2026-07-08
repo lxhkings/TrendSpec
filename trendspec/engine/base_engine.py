@@ -27,7 +27,7 @@ import polars as pl
 
 from trendspec.config.settings import get_settings
 from trendspec.data.markets import Market
-from trendspec.data.fundamentals import merge_fundamentals
+from trendspec.data.fundamentals import merge_fundamentals, merge_valuation
 from trendspec.data.parquet_loader import bars
 from trendspec.data.universe import Universe, get_universe
 from trendspec.data.calendar import trading_days_between
@@ -188,6 +188,14 @@ class BaseEngine(ABC):
             try:
                 if not self._data.is_empty():
                     self._data = merge_fundamentals(
+                        self._data, self.config.market, self.root
+                    )
+            except Exception:
+                pass
+            # Best-effort valuation PIT merge (no-op if dataset absent)
+            try:
+                if not self._data.is_empty():
+                    self._data = merge_valuation(
                         self._data, self.config.market, self.root
                     )
             except Exception:

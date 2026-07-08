@@ -19,15 +19,20 @@ from sqlalchemy import Engine, text
 
 from trendspec.data.markets import Market
 from trendspec.ingest.fundamentals_schema import (
+    CN_INCOME_FIELDS,
+    CN_INDICATOR_FIELDS,
     INCOME_FIELDS,
     INDICATOR_FIELDS,
+    parse_flat_payload,
     parse_item_list,
 )
 from trendspec.ingest.manifest import Manifest
+from trendspec.ingest.schema_map import derive_instrument_id_cn
 from trendspec.ingest.writer import write_parquet
 
 _ALLOWED_TABLES: frozenset[str] = frozenset({"us_fin_income", "us_fin_indicator"})
 _QUARTERLY = ("1", "2", "3", "4")
+_CN_ALLOWED_TABLES: frozenset[str] = frozenset({"fin_income", "fin_indicator"})
 
 
 def _fetch_parsed(engine: Engine, table: str, field_map: dict[int, str]) -> list[dict]:
@@ -107,6 +112,164 @@ def ingest_us_fundamentals(
     instrument_count = df["instrument_id"].n_unique()
     row_count = len(df)
     manifest.update_dataset_state("fundamentals", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range,
+            "instrument_count": instrument_count}
+
+
+# =============================================================================
+# CN Fundamentals (Tushare, via StockPull-populated fin_income / fin_indicator)
+# =============================================================================
+
+
+def _ts_code_to_instrument_id(ts_code: str) -> str | None:
+    """Derive CN instrument_id from a Tushare ts_code (e.g. "600519.SH").
+
+    Returns None for exchanges not yet supported by derive_instrument_id_cn
+    (e.g. Beijing Stock Exchange ".BJ") rather than raising, so a handful of
+    unsupported tickers don't abort the whole ingest.
+    """
+    exchange = ts_code.rsplit(".", 1)[-1]
+    try:
+        return derive_instrument_id_cn(ts_code, exchange)
+    except ValueError:
+        return None
+
+
+def _fetch_cn_parsed(engine: Engine, table: str, field_map: dict[str, str]) -> list[dict]:
+    """Fetch rows from a CN raw_payload-JSON financial table, parsed to flat columns."""
+    if table not in _CN_ALLOWED_TABLES:
+        raise ValueError(f"Table {table!r} not in allowed list")
+    sql = text(f"""
+        SELECT ts_code, end_date, ann_date, raw_payload
+        FROM {table}
+        WHERE ann_date IS NOT NULL
+    """)
+    rows: list[dict] = []
+    with engine.connect() as conn:
+        for ts_code, end_date, ann_date, payload in conn.execute(sql):
+            parsed = parse_flat_payload(payload, field_map)
+            rows.append({"ts_code": ts_code, "end_date": end_date,
+                         "ann_date": ann_date, **parsed})
+    return rows
+
+
+def ingest_cn_fundamentals(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+    full_sync: bool = False,  # noqa: ARG001 — kept for CLI API compat; always full recompute
+) -> dict:
+    """Ingest CN quarterly fundamentals from StockPull-populated fin_income /
+    fin_indicator tables (raw_payload JSON, already flat tushare field names).
+
+    Returns {"row_count", "date_range", "instrument_count"}.
+    """
+    income_rows = _fetch_cn_parsed(engine, "fin_income", CN_INCOME_FIELDS)
+    indicator_rows = _fetch_cn_parsed(engine, "fin_indicator", CN_INDICATOR_FIELDS)
+
+    if not income_rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    income = pl.DataFrame(income_rows).with_columns([
+        pl.col("end_date").cast(pl.Date),
+        pl.col("ann_date").cast(pl.Date),
+    ])
+
+    _IND_COLS = list(CN_INDICATOR_FIELDS.values())
+    if indicator_rows:
+        indicator = pl.DataFrame(indicator_rows).with_columns(
+            pl.col("end_date").cast(pl.Date)
+        )
+        available_ind = [c for c in _IND_COLS if c in indicator.columns]
+        indicator = indicator.select(["ts_code", "end_date"] + available_ind)
+        df = income.join(indicator, on=["ts_code", "end_date"], how="left")
+    else:
+        df = income.with_columns([
+            pl.lit(None, dtype=pl.Float64).alias(c) for c in _IND_COLS
+        ])
+
+    # instrument_id derived from ts_code; drop rows for unsupported exchanges.
+    df = df.with_columns(
+        pl.col("ts_code")
+        .map_elements(_ts_code_to_instrument_id, return_dtype=pl.Utf8)
+        .alias("instrument_id")
+    ).filter(pl.col("instrument_id").is_not_null())
+
+    # ann_date becomes the PIT 'date' partition key.
+    df = df.rename({"ann_date": "date"}).drop("ts_code")
+
+    write_parquet(
+        df, Market.CN, "fundamentals", root,
+        overwrite=True, dedup_keys=["instrument_id", "date"],
+    )
+
+    dates = df["date"].cast(pl.Utf8)
+    date_range = (dates.min(), dates.max())
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+    manifest.update_dataset_state("fundamentals", row_count, date_range, instrument_count)
+
+    return {"row_count": row_count, "date_range": date_range,
+            "instrument_count": instrument_count}
+
+
+# =============================================================================
+# CN Valuation (Tushare daily_basic, via StockPull-populated cn_valuation_snapshot)
+# =============================================================================
+
+_CN_VALUATION_COLS = [
+    "pe", "pe_ttm", "pb", "ps", "ps_ttm", "total_mv", "circ_mv", "turnover_rate",
+]
+
+
+def ingest_cn_valuation(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+) -> dict:
+    """Ingest CN daily valuation snapshots from StockPull-populated
+    cn_valuation_snapshot table (flat columns, no JSON payload).
+
+    Output dataset: data_lake/cn/valuation/instrument_id=<id>/<year>.parquet
+    PK (instrument_id, date) where date = trade_date (same-day visible, no PIT lag).
+
+    Returns {"row_count", "date_range", "instrument_count"}.
+    """
+    cols = ", ".join(["ts_code", "trade_date"] + _CN_VALUATION_COLS)
+    sql = text(f"SELECT {cols} FROM cn_valuation_snapshot")
+
+    rows: list[dict] = []
+    with engine.connect() as conn:
+        for row in conn.execute(sql):
+            ts_code, trade_date = row[0], row[1]
+            rows.append({
+                "ts_code": ts_code, "trade_date": trade_date,
+                **dict(zip(_CN_VALUATION_COLS, row[2:], strict=True)),
+            })
+
+    if not rows:
+        return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
+
+    df = pl.DataFrame(rows).with_columns(pl.col("trade_date").cast(pl.Date))
+    df = df.with_columns(
+        pl.col("ts_code")
+        .map_elements(_ts_code_to_instrument_id, return_dtype=pl.Utf8)
+        .alias("instrument_id")
+    ).filter(pl.col("instrument_id").is_not_null())
+
+    df = df.rename({"trade_date": "date"}).drop("ts_code")
+
+    write_parquet(
+        df, Market.CN, "valuation", root,
+        overwrite=True, dedup_keys=["instrument_id", "date"],
+    )
+
+    dates = df["date"].cast(pl.Utf8)
+    date_range = (dates.min(), dates.max())
+    instrument_count = df["instrument_id"].n_unique()
+    row_count = len(df)
+    manifest.update_dataset_state("valuation", row_count, date_range, instrument_count)
 
     return {"row_count": row_count, "date_range": date_range,
             "instrument_count": instrument_count}

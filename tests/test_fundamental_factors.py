@@ -30,7 +30,7 @@ def _df():
 def test_fundamental_factors_registered():
     names = list_factors()
     for n in ("fund_roe", "fund_roic", "fund_net_margin", "fund_op_margin",
-              "fund_revenue_yoy", "fund_net_income_yoy", "fund_pe_ttm"):
+              "fund_revenue_yoy", "fund_net_income_yoy", "fund_pe_ttm", "fund_pb"):
         assert n in names
 
 
@@ -51,6 +51,34 @@ def test_fund_pe_ttm_null_when_eps_nonpositive():
     df = _df().with_columns(pl.Series("eps_ttm", [0.0, -1.0]))
     res = get_factor("fund_pe_ttm").compute_full(df)
     assert res.values["fund_pe_ttm"].null_count() == 2
+
+
+def test_fund_pe_ttm_prefers_direct_pe_ttm_column():
+    # CN Tushare daily_basic supplies pe_ttm directly — must win over the
+    # close/eps_ttm formula even when eps_ttm is also present.
+    df = _df().with_columns(pl.Series("pe_ttm", [18.0, 22.0]))
+    res = get_factor("fund_pe_ttm").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_pe_ttm"].to_list() == [18.0, 22.0]
+
+
+def test_fund_pe_ttm_null_when_direct_pe_ttm_nonpositive():
+    df = _df().with_columns(pl.Series("pe_ttm", [0.0, -5.0]))
+    res = get_factor("fund_pe_ttm").compute_full(df)
+    assert res.values["fund_pe_ttm"].null_count() == 2
+
+
+def test_fund_pb_passthrough():
+    df = _df().with_columns(pl.Series("pb", [3.5, 9.2]))
+    res = get_factor("fund_pb").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_pb"].to_list() == [3.5, 9.2]
+
+
+def test_fund_pb_null_when_missing_or_nonpositive():
+    assert get_factor("fund_pb").compute_full(_df()).values["fund_pb"].null_count() == 2
+    df = _df().with_columns(pl.Series("pb", [0.0, -1.0]))
+    assert get_factor("fund_pb").compute_full(df).values["fund_pb"].null_count() == 2
 
 
 def test_fundamental_factor_missing_column_yields_null():
@@ -92,3 +120,70 @@ def test_factor_combo_accepts_fundamental_factor():
     # combo z-scores: confirm a ranking was produced for the date.
     ranked = strat._ranked_by_date[date(2026, 4, 30)]
     assert set(ranked) == {"AAPL", "MSFT"}
+
+
+class _FakeSectorIndex:
+    """Minimal stand-in for SectorIndex — maps instrument_id -> sector code."""
+
+    def __init__(self, mapping: dict[str, str]) -> None:
+        self._mapping = mapping
+
+    def sector(self, instrument_id: str, _as_of_date) -> str | None:
+        return self._mapping.get(instrument_id)
+
+
+def test_factor_strategy_sector_filter_restricts_universe():
+    spec = FactorSpec(
+        market="cn",
+        factors=[{"name": "fund_roe", "direction": "high", "weight": 1.0}],
+        top_k=5,
+        rebalance=1,
+        sector_filter=["08"],  # 食品饮料 only
+    )
+    df = pl.DataFrame({
+        "instrument_id": ["A", "B", "C"],
+        "ticker": ["A", "B", "C"],
+        "date": [date(2026, 4, 30)] * 3,
+        "close": [10.0, 20.0, 30.0],
+        "roe": [5.0, 20.0, 30.0],
+    })
+    strat = FactorStrategy(params={"spec": spec.model_dump()})
+    ctx = StrategyContext(market=Market.CN, strategy=strat, data=df)
+    strat.init(ctx)
+    ctx._sector_index = _FakeSectorIndex({"A": "08", "B": "07", "C": "08"})
+    ctx._universe = type("U", (), {"tickers": staticmethod(lambda _d: ["A", "B", "C"])})()
+    ctx.update_positions({}, 1_000_000.0)
+    ctx.update_bar(date(2026, 4, 30), "A", "A", df)
+    strat.next(ctx)
+
+    buys = {s.instrument_id for s in ctx.pending_signals() if s.is_buy()}
+    # B (sector "07") is excluded even though it has the 2nd-highest ROE.
+    assert buys == {"A", "C"}
+
+
+def test_factor_strategy_no_sector_filter_keeps_full_universe():
+    spec = FactorSpec(
+        market="cn",
+        factors=[{"name": "fund_roe", "direction": "high", "weight": 1.0}],
+        top_k=5,
+        rebalance=1,
+    )
+    assert spec.sector_filter is None
+
+    df = pl.DataFrame({
+        "instrument_id": ["A", "B"],
+        "ticker": ["A", "B"],
+        "date": [date(2026, 4, 30)] * 2,
+        "close": [10.0, 20.0],
+        "roe": [5.0, 20.0],
+    })
+    strat = FactorStrategy(params={"spec": spec.model_dump()})
+    ctx = StrategyContext(market=Market.CN, strategy=strat, data=df)
+    strat.init(ctx)
+    ctx._universe = type("U", (), {"tickers": staticmethod(lambda _d: ["A", "B"])})()
+    ctx.update_positions({}, 1_000_000.0)
+    ctx.update_bar(date(2026, 4, 30), "A", "A", df)
+    strat.next(ctx)
+
+    buys = {s.instrument_id for s in ctx.pending_signals() if s.is_buy()}
+    assert buys == {"A", "B"}

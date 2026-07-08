@@ -91,6 +91,12 @@ class FactorStrategy(BaseStrategy):
         self._last_processed_date = current_date
 
         universe = set(ctx.pit_universe(current_date))
+        if self._spec.sector_filter:
+            allowed_sectors = set(self._spec.sector_filter)
+            universe = {
+                iid for iid in universe
+                if ctx.sector(iid, current_date) in allowed_sectors
+            }
         ranked = [iid for iid in self._ranked_by_date.get(current_date, []) if iid in universe]
         top = ranked[: self._spec.top_k]
         top_set = set(top)

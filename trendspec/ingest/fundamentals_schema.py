@@ -37,3 +37,36 @@ def parse_item_list(payload_json: str, field_map: dict[int, str]) -> dict[str, f
         if fid in field_map and "data" in item:
             out[field_map[fid]] = float(item["data"])
     return out
+
+
+# CN Tushare raw_payload is already a flat {field_name: value} JSON dict (no
+# field_id indirection like the US item_list format) — these maps just rename
+# tushare's native field names to the canonical column names shared with US.
+CN_INCOME_FIELDS: Final[dict[str, str]] = {
+    "total_revenue": "total_revenue",
+    "n_income": "net_income",
+    "diluted_eps": "diluted_eps",
+}
+
+CN_INDICATOR_FIELDS: Final[dict[str, str]] = {
+    "roe": "roe",
+    "roic": "roic",
+    "netprofit_margin": "net_margin",
+    "op_of_gr": "op_margin",
+    "tr_yoy": "revenue_yoy",
+    "netprofit_yoy": "net_income_yoy",
+}
+
+
+def parse_flat_payload(payload_json: str, field_map: dict[str, str]) -> dict[str, float]:
+    """Parse a flat {field_name: value} raw_payload JSON string into
+    {canonical_name: value}, keeping only fields present in field_map with a
+    non-null numeric value.
+    """
+    doc = json.loads(payload_json)
+    out: dict[str, float] = {}
+    for src_name, canonical_name in field_map.items():
+        val = doc.get(src_name)
+        if val is not None:
+            out[canonical_name] = float(val)
+    return out

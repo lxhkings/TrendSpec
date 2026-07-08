@@ -31,3 +31,6 @@ class FactorSpec(BaseModel):
     top_k: int = Field(gt=0)
     rebalance: int = Field(gt=0)
     rationale: str = ""
+    sector_filter: list[str] | None = None
+    """可选：限定排名/持仓的行业代码列表（申万一级/GICS，market 对应体系）。
+    None = 不过滤，全市场参与排名。"""

@@ -31,3 +31,24 @@ def merge_fundamentals(daily: pl.DataFrame, market: Market, root: str | None) ->
     if _lazyframe_is_empty(lf):
         return daily
     return merge_fundamentals_frame(daily, lf.collect())
+
+
+def merge_valuation(daily: pl.DataFrame, market: Market, root: str | None) -> pl.DataFrame:
+    """Load the valuation dataset for `market` and PIT-merge into `daily`.
+
+    Same backward as-of join as merge_fundamentals — valuation updates daily
+    (date = trade_date) so the join is effectively an exact match on trading
+    days, falling back to the prior available snapshot otherwise.
+
+    Kept as a separate dataset/merge from fundamentals (not unioned) because
+    the two update at different cadences (quarterly vs daily): unioning them
+    would null out fundamentals columns on valuation-only rows, and the
+    as-of join would then pick up those nulls instead of the true last
+    reported quarter.
+
+    Best-effort: returns `daily` unchanged if the dataset is absent/empty.
+    """
+    lf = scan_parquet(root, market, "valuation")
+    if _lazyframe_is_empty(lf):
+        return daily
+    return merge_fundamentals_frame(daily, lf.collect())

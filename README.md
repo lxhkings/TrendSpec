@@ -73,6 +73,13 @@ uv run trendspec ingest sectors --market cn
 
 # 1h intraday（胜率研究前置）
 uv run trendspec ingest intraday --market us --full
+
+# 基本面（季度：营收/净利润/ROE/成长率）+ 估值（逐日：PE/PB/PS）
+# 数据源：群辉 stocks DB 的 us_fin_*/fin_income/fin_indicator/cn_valuation_snapshot 表，
+# 由另一个项目 StockPull 负责拉取写入（US 走 Futu，CN 走 Tushare），本仓库只读表转 parquet。
+uv run trendspec ingest fundamentals --market us
+uv run trendspec ingest fundamentals --market cn
+uv run trendspec ingest valuation --market cn
 ```
 
 ### 日常增量
@@ -106,6 +113,43 @@ uv run trendspec backtest run --strategy rs_ema_cross --market us --start 2020-0
 # 策略对比
 uv run trendspec backtest compare --market us --start 2022-01-01 --end 2024-12-31 --sort sharpe
 ```
+
+### clenow_momentum 参数与自查
+
+散户化改造后（2026-07-07），持仓上限 `top_n`、ATR 现金预算、SELL 全清、零杠杆全部由引擎+策略双层强制。用 `-p key=value` 覆盖参数：
+
+```bash
+uv run trendspec backtest run --strategy clenow_momentum --market us \
+    --start 2020-01-01 --end 2026-05-31 \
+    -p top_n=20 -p sell_rank_mult=1.5 -p cash_buffer=0.02 -p rebalance_weekday=2
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `top_n` | 20 | 同时持仓上限（10-20 为散户区间） |
+| `sell_rank_mult` | 1.5 | 退出缓冲带：rank 掉出 `top_n × sell_rank_mult` 才卖 |
+| `cash_buffer` | 0.02 | 买入预留现金比例，吸收滑点/成本 |
+| `rebalance_weekday` | 2（周三） | 调仓日，0=周一…4=周五 |
+
+**自己验证不变量**（别只信终端报告，读原始数据）：
+
+```bash
+# 找到本次运行目录（终端最后一行"报告已保存至: ..."）
+RUN_DIR=results/backtest/clenow_momentum_<timestamp>_<hash>
+
+python3 -c "
+import csv
+with open('$RUN_DIR/equity_curve.csv') as f:
+    rows = list(csv.DictReader(f))
+cash = [float(r['cash']) for r in rows]
+counts = [int(r['position_count']) for r in rows]
+print('rows:', len(rows))
+print('min cash (应 >= 0):', min(cash))
+print('max position_count (应 <= top_n):', max(counts))
+"
+```
+
+`trades.csv` 里可核对 BUY/SELL 笔数是否大致平衡（不应再出现旧版本 1281买/21073卖 那种16倍失衡——那是 bug，已修）。
 
 ---
 

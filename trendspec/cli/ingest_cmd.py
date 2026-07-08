@@ -84,7 +84,7 @@ def ingest_fundamentals(
     market: str = typer.Option(
         "us",
         "--market",
-        help="市场代码 (目前仅 us)",
+        help="市场代码 (us, cn)",
     ),
     incremental: bool = typer.Option(
         True,
@@ -92,16 +92,20 @@ def ingest_fundamentals(
         help="保留参数兼容；基本面始终全量重算（TTM/YoY 需历史）",
     ),
 ) -> None:
-    """从群辉 stocks DB 导入季度基本面数据（US）。
+    """从群辉 stocks DB 导入季度基本面数据（US/CN）。
 
     示例:
         trendspec ingest fundamentals --market us
+        trendspec ingest fundamentals --market cn
     """
     from trendspec.data.markets import Market
     from trendspec.config.settings import get_settings
     from trendspec.ingest.manifest import Manifest
     from trendspec.ingest.mariadb_client import create_engine_from_settings
-    from trendspec.ingest.fundamentals_ingestor import ingest_us_fundamentals
+    from trendspec.ingest.fundamentals_ingestor import (
+        ingest_cn_fundamentals,
+        ingest_us_fundamentals,
+    )
 
     market_enum = Market(market.upper())
     settings = get_settings()
@@ -114,8 +118,51 @@ def ingest_fundamentals(
     try:
         if market_enum == Market.US:
             result = ingest_us_fundamentals(engine, manifest, root, full_sync=full_sync)
+        elif market_enum == Market.CN:
+            result = ingest_cn_fundamentals(engine, manifest, root, full_sync=full_sync)
         else:
-            console.print(f"[red]基本面目前仅支持 us，收到: {market}[/red]")
+            console.print(f"[red]基本面目前仅支持 us/cn，收到: {market}[/red]")
+            raise typer.Exit(1)
+        console.print(
+            f"[green]完成: {result['row_count']} 行, "
+            f"{result['instrument_count']} 只股票[/green]"
+        )
+    except Exception as e:
+        console.print(f"[red]导入失败: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("valuation")
+def ingest_valuation(
+    market: str = typer.Option(
+        "cn",
+        "--market",
+        help="市场代码 (目前仅 cn)",
+    ),
+) -> None:
+    """从群辉 stocks DB 导入每日估值快照（CN, PE/PB/PS）。
+
+    示例:
+        trendspec ingest valuation --market cn
+    """
+    from trendspec.data.markets import Market
+    from trendspec.config.settings import get_settings
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.ingest.mariadb_client import create_engine_from_settings
+    from trendspec.ingest.fundamentals_ingestor import ingest_cn_valuation
+
+    market_enum = Market(market.upper())
+    settings = get_settings()
+    engine = create_engine_from_settings(settings.db)
+    root = settings.data_lake.data_lake_root
+    manifest = Manifest(market_enum, root)
+
+    console.print(f"[cyan]导入 {market} 估值数据...[/cyan]")
+    try:
+        if market_enum == Market.CN:
+            result = ingest_cn_valuation(engine, manifest, root)
+        else:
+            console.print(f"[red]估值目前仅支持 cn，收到: {market}[/red]")
             raise typer.Exit(1)
         console.print(
             f"[green]完成: {result['row_count']} 行, "

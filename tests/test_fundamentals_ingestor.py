@@ -149,3 +149,137 @@ def test_ingest_us_fundamentals_drops_annual_rows(fundamentals_db):
         df = scan_parquet(root, Market.US, "fundamentals").collect()
         # no row from the FY (annual) record: total_revenue 450 must not appear
         assert 450.0 not in df["total_revenue"].to_list()
+
+
+# ---------------------------------------------------------------------------
+# CN fundamentals / valuation ingestor tests
+# ---------------------------------------------------------------------------
+
+from trendspec.ingest.fundamentals_ingestor import (  # noqa: E402
+    _ts_code_to_instrument_id,
+    ingest_cn_fundamentals,
+    ingest_cn_valuation,
+)
+from trendspec.ingest.fundamentals_schema import parse_flat_payload  # noqa: E402
+
+
+def test_parse_flat_payload_renames_and_drops_missing():
+    payload = json.dumps({
+        "roe": 38.4, "netprofit_margin": 52.3, "tr_yoy": 15.7, "unrelated": 1.0,
+    })
+    out = parse_flat_payload(payload, {
+        "roe": "roe", "netprofit_margin": "net_margin", "tr_yoy": "revenue_yoy",
+        "op_of_gr": "op_margin",  # absent in payload -> dropped, not KeyError
+    })
+    assert out == {"roe": 38.4, "net_margin": 52.3, "revenue_yoy": 15.7}
+
+
+def test_ts_code_to_instrument_id_sh_sz():
+    assert _ts_code_to_instrument_id("600519.SH") == "SH600519.SH"
+    assert _ts_code_to_instrument_id("000001.SZ") == "SZ000001.SZ"
+
+
+def test_ts_code_to_instrument_id_unsupported_exchange_returns_none():
+    # Beijing Stock Exchange not yet supported by derive_instrument_id_cn.
+    assert _ts_code_to_instrument_id("430047.BJ") is None
+
+
+def _cn_income_payload(revenue, net_income):
+    return json.dumps({"total_revenue": revenue, "n_income": net_income, "diluted_eps": 1.0})
+
+
+def _cn_indicator_payload(roe):
+    return json.dumps({
+        "roe": roe, "roic": roe, "netprofit_margin": 52.0, "op_of_gr": 68.0,
+        "tr_yoy": 0.15, "netprofit_yoy": 0.20,
+    })
+
+
+@pytest.fixture
+def cn_fundamentals_db():
+    engine = create_engine("sqlite:///:memory:")
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE fin_income (
+                ts_code TEXT, end_date DATE, ann_date DATE,
+                f_ann_date DATE, report_type TEXT, comp_type TEXT, raw_payload TEXT
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE fin_indicator (
+                ts_code TEXT, end_date DATE, ann_date DATE, raw_payload TEXT
+            )
+        """))
+        conn.execute(
+            text("INSERT INTO fin_income VALUES ('600519.SH','2024-09-30','2024-10-26',"
+                 "'2024-10-26','1','1',:rp)"),
+            {"rp": _cn_income_payload(123122542625.45, 63031462239.55)},
+        )
+        conn.execute(
+            text("INSERT INTO fin_indicator VALUES ('600519.SH','2024-09-30','2024-10-26',:rp)"),
+            {"rp": _cn_indicator_payload(38.4)},
+        )
+        # Beijing exchange row must be silently dropped (unsupported prefix).
+        conn.execute(
+            text("INSERT INTO fin_income VALUES ('430047.BJ','2024-09-30','2024-10-26',"
+                 "'2024-10-26','1','1',:rp)"),
+            {"rp": _cn_income_payload(1000.0, 100.0)},
+        )
+        conn.commit()
+    return engine
+
+
+def test_ingest_cn_fundamentals_writes_parquet(cn_fundamentals_db):
+    with tempfile.TemporaryDirectory() as root:
+        manifest = Manifest(Market.CN, root)
+        result = ingest_cn_fundamentals(cn_fundamentals_db, manifest, root)
+        assert result["row_count"] == 1  # BJ row dropped
+
+        df = scan_parquet(root, Market.CN, "fundamentals").collect()
+        assert df["instrument_id"].to_list() == ["SH600519.SH"]
+        assert df["date"].to_list() == [date(2024, 10, 26)]
+        row = df.row(0, named=True)
+        assert row["total_revenue"] == pytest.approx(123122542625.45)
+        assert row["net_income"] == pytest.approx(63031462239.55)
+        assert row["roe"] == pytest.approx(38.4)
+        assert row["net_margin"] == pytest.approx(52.0)
+        assert row["op_margin"] == pytest.approx(68.0)
+        assert row["revenue_yoy"] == pytest.approx(0.15)
+        assert row["net_income_yoy"] == pytest.approx(0.20)
+
+
+@pytest.fixture
+def cn_valuation_db():
+    engine = create_engine("sqlite:///:memory:")
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE cn_valuation_snapshot (
+                ts_code TEXT, trade_date DATE, close REAL, turnover_rate REAL,
+                volume_ratio REAL, pe REAL, pe_ttm REAL, pb REAL, ps REAL,
+                ps_ttm REAL, total_mv REAL, circ_mv REAL
+            )
+        """))
+        conn.execute(text(
+            "INSERT INTO cn_valuation_snapshot VALUES "
+            "('600519.SH','2024-12-31',1524.0,0.31,1.9,25.6,23.15,9.22,12.96,11.59,191444544.72,191444544.72)"
+        ))
+        conn.execute(text(
+            "INSERT INTO cn_valuation_snapshot VALUES "
+            "('430047.BJ','2024-12-31',10.0,1.0,1.0,15.0,14.0,2.0,3.0,3.0,1000.0,1000.0)"
+        ))
+        conn.commit()
+    return engine
+
+
+def test_ingest_cn_valuation_writes_parquet(cn_valuation_db):
+    with tempfile.TemporaryDirectory() as root:
+        manifest = Manifest(Market.CN, root)
+        result = ingest_cn_valuation(cn_valuation_db, manifest, root)
+        assert result["row_count"] == 1  # BJ row dropped
+
+        df = scan_parquet(root, Market.CN, "valuation").collect()
+        assert df["instrument_id"].to_list() == ["SH600519.SH"]
+        row = df.row(0, named=True)
+        assert row["pe_ttm"] == pytest.approx(23.15)
+        assert row["pb"] == pytest.approx(9.22)
+        assert row["date"] == date(2024, 12, 31)
