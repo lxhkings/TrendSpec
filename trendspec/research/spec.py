@@ -34,3 +34,9 @@ class FactorSpec(BaseModel):
     sector_filter: list[str] | None = None
     """可选：限定排名/持仓的行业代码列表（申万一级/GICS，market 对应体系）。
     None = 不过滤，全市场参与排名。"""
+    group_by: dict[str, list[str]] | None = None
+    """可选：{组名: [细分行业名...]}。设置后 FactorStrategy 按组分别选
+    top_k（每组前 top_k 支），而不是全局排名取 top_k。None = 保持原有
+    全局模式，向后兼容。"""
+    winsorize_pct: float = 0.01
+    """入模前每个因子的双侧截断分位数（默认 1%/99%），组内计算。"""

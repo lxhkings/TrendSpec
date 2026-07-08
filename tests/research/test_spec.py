@@ -49,3 +49,28 @@ def test_round_trip_dict():
     spec = FactorSpec(**_valid_spec_dict())
     again = FactorSpec(**spec.model_dump())
     assert again.top_k == spec.top_k
+
+
+def test_group_by_defaults_to_none():
+    spec = FactorSpec(**_valid_spec_dict())
+    assert spec.group_by is None
+
+
+def test_winsorize_pct_defaults_to_one_percent():
+    spec = FactorSpec(**_valid_spec_dict())
+    assert spec.winsorize_pct == 0.01
+
+
+def test_group_by_accepts_mapping():
+    d = _valid_spec_dict()
+    d["group_by"] = {"金融": ["银行", "证券"], "能源": ["煤炭开采"]}
+    spec = FactorSpec(**d)
+    assert spec.group_by == {"金融": ["银行", "证券"], "能源": ["煤炭开采"]}
+
+
+def test_group_by_round_trips_through_model_dump():
+    d = _valid_spec_dict()
+    d["group_by"] = {"金融": ["银行"]}
+    spec = FactorSpec(**d)
+    again = FactorSpec(**spec.model_dump())
+    assert again.group_by == {"金融": ["银行"]}
