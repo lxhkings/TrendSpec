@@ -356,7 +356,7 @@ class Portfolio:
         cost: float,
         trade_date: date,
         sector: str | None = None,
-    ) -> float:
+    ) -> float | None:
         """
         Update portfolio after trade execution.
 
@@ -371,13 +371,18 @@ class Portfolio:
             sector: Sector classification
 
         Returns:
-            Realized P&L (for sells)
+            Realized P&L (for sells), or 0.0 for a successful BUY. Returns
+            None if the trade was rejected (insufficient cash on BUY, or no
+            matching position on SELL) and no portfolio state changed.
         """
         realized_pnl = 0.0
 
         if direction == "BUY":
-            # Deduct cash (shares * price + cost)
+            # Deduct cash (shares * price + cost). Reject if insufficient cash —
+            # cash must never go negative (no margin/leverage in this engine).
             total_cost = shares * price + cost
+            if total_cost > self.cash:
+                return None
             self.cash -= total_cost
             self._total_costs += cost
 
@@ -401,7 +406,7 @@ class Portfolio:
             # Get position
             pos = self._positions.get(instrument_id)
             if pos is None:
-                return 0.0
+                return None
 
             # Remove shares and get realized P&L
             realized_pnl = pos.remove_shares(shares)
