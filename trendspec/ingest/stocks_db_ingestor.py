@@ -519,7 +519,7 @@ def ingest_cn_sectors(
     full_sync: bool = False,
 ) -> dict:
     """
-    Ingest CN sector assignments from stocks.gics_sector.
+    Ingest CN sector assignments from stocks.gics_sector for all stocks with sector data.
 
     Note: Source DB uses GICS classification, not Shenwan/申万.
     assign_date = 2000-01-01 (static — no historical changes in source).
@@ -527,18 +527,17 @@ def ingest_cn_sectors(
     Returns:
         {"row_count": int, "date_range": (str, str), "instrument_count": int}
     """
-    sql = text("""
+    ex_placeholders = _exchange_placeholder(_CN_EXCHANGES)
+    ex_params = _exchange_params(_CN_EXCHANGES)
+
+    sql = text(f"""
         SELECT s.ticker, s.exchange, s.gics_sector, s.gics_industry
         FROM stocks s
-        JOIN (
-            SELECT DISTINCT ticker FROM index_constituents
-            WHERE index_id = 'CSI800'
-        ) AS cn ON s.ticker = cn.ticker
-        WHERE s.gics_sector IS NOT NULL
+        WHERE s.gics_sector IS NOT NULL AND s.exchange IN ({ex_placeholders})
     """)
 
     with engine.connect() as conn:
-        rows = conn.execute(sql).fetchall()
+        rows = conn.execute(sql, ex_params).fetchall()
 
     if not rows:
         return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}

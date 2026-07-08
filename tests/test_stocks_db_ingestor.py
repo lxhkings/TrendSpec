@@ -359,3 +359,32 @@ def test_ingest_cn_sectors_maps_to_correct_market(stocks_db_cn, temp_root):
     df = pl.read_parquet(f"{temp_root}/cn/sectors/")
     ids = df["instrument_id"].unique().to_list()
     assert all(id_.startswith(("SH", "SZ")) for id_ in ids)
+
+
+def test_ingest_cn_sectors_not_limited_to_csi800(stocks_db, temp_root):
+    """去掉 CSI800 JOIN 后，非 CSI800 成分股只要 gics_sector 非空也要被摄入。"""
+    from trendspec.ingest.stocks_db_ingestor import ingest_cn_sectors
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    with stocks_db.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO stocks VALUES
+            ('600000', 'SSE', 'Financials', 'Banks', 1),
+            ('688001', 'SSE', 'Technology', 'Semiconductors', 1)
+        """))
+        # 只有 600000 在 CSI800，688001 不在任何指数成分表里
+        conn.execute(text("""
+            INSERT INTO index_constituents VALUES
+            ('CSI800', '2024-01-01', '600000')
+        """))
+        conn.commit()
+
+    manifest = Manifest(Market.CN, temp_root)
+    result = ingest_cn_sectors(stocks_db, manifest, temp_root)
+
+    assert result["instrument_count"] == 2  # 600000 + 688001，非 CSI800 的也在
+
+    df = pl.read_parquet(f"{temp_root}/cn/sectors/")
+    ids = df["instrument_id"].unique().to_list()
+    assert "SH688001" in ids  # 非 CSI800 成分股同样被摄入
