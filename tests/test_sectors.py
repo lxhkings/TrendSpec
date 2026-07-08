@@ -244,3 +244,37 @@ class TestSectorFunctions:
         # Should return different instance after clear
         # (Though this is hard to verify without checking cache stats)
         assert isinstance(index2, SectorIndex)
+
+
+# =============================================================================
+# CN GICS Groups Tests
+# =============================================================================
+
+
+from trendspec.data.sectors import CN_GICS_GROUPS, TICKER_GROUP_OVERRIDES, gics_group
+
+
+def test_gics_groups_cover_expected_sectors():
+    assert CN_GICS_GROUPS["日常消费"] == [
+        "白酒", "啤酒", "红黄酒", "软饮料", "食品", "乳制品", "饲料", "日用化工",
+        "种植业", "农业综合",
+    ]
+    assert "综合类" not in [s for members in CN_GICS_GROUPS.values() for s in members]
+    assert "广告包装" not in [s for members in CN_GICS_GROUPS.values() for s in members]
+
+
+def test_gics_group_override_takes_precedence():
+    # 分众传媒在 override 表里强制归"通信服务"，即使传入一个假的 sector 值
+    assert gics_group("随便什么", "SZ002027.SZ") == "通信服务"
+    assert gics_group("随便什么", "SZ002831.SZ") == "材料"
+
+
+def test_gics_group_falls_back_to_sector_mapping():
+    assert gics_group("白酒", "SH600519.SH") == "日常消费"
+    assert gics_group("半导体", "SH688981.SH") == "信息技术"
+
+
+def test_gics_group_returns_none_for_unmapped_sector():
+    assert gics_group("综合类", "SH600000.SH") is None
+    assert gics_group(None, "SH600000.SH") is None
+    assert gics_group("不存在的行业名", "SH600000.SH") is None
