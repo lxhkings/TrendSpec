@@ -1,16 +1,25 @@
-"""A 股消费大类多因子排名（动量 + 质量 + 估值，等权）。
+"""A 股多因子排名（动量 + 质量 + 估值，等权）。
 
 一次性研究报告，非可回测策略：复用声明式 factor_combo（FactorStrategy）+
-ScreeningEngine，限定消费大类细分行业（CONSUMER_SECTORS），输出排名前 N。
+ScreeningEngine。默认限定消费大类细分行业（CONSUMER_SECTORS），可通过
+命令行参数换成任意行业或全市场。
+
+用法:
+    uv run python3 scripts/consumer_rank.py                         # 默认消费大类
+    uv run python3 scripts/consumer_rank.py --sectors 半导体,元器件,IT设备
+    uv run python3 scripts/consumer_rank.py --all                   # 不分行业，全市场
+    uv run python3 scripts/consumer_rank.py --top-n 10 --date 2026-05-15
+    uv run python3 scripts/consumer_rank.py --list-sectors          # 查看可选行业名
 """
 
+import argparse
 from datetime import date
 
 from sqlalchemy import text
 
 from trendspec.config.settings import get_settings
 from trendspec.data.markets import Market
-from trendspec.data.parquet_loader import bars
+from trendspec.data.parquet_loader import bars, scan_parquet
 from trendspec.engine.base_engine import EngineConfig
 from trendspec.engine.screening_engine import ScreeningEngine
 from trendspec.ingest.mariadb_client import create_engine_from_settings
@@ -18,6 +27,11 @@ from trendspec.research.spec import FactorSpec
 from trendspec.strategy.base import get_strategy
 import trendspec.strategy.examples  # noqa: F401 — triggers @register_strategy
 import trendspec.strategy.factor_strategy  # noqa: F401 — registers "factor_combo"
+
+
+def _list_sectors() -> list[str]:
+    df = scan_parquet(None, Market.CN, "sectors").collect()
+    return sorted(df["sector"].unique().to_list())
 
 
 def _company_names(tickers: list[str]) -> dict[str, str]:
@@ -55,10 +69,14 @@ CONSUMER_SECTORS = [
     "日用化工",
 ]
 
-TOP_N = 20
+TOP_N = 50
 
 
-def main(target_date: date | None = None) -> None:
+def main(
+    target_date: date | None = None,
+    sectors: list[str] | None = CONSUMER_SECTORS,
+    top_n: int = TOP_N,
+) -> None:
     target_date = target_date or _latest_available_date(Market.CN)
 
     spec = FactorSpec(
@@ -68,10 +86,10 @@ def main(target_date: date | None = None) -> None:
             {"name": "fund_roe", "direction": "high", "weight": 1.0},
             {"name": "fund_pe_ttm", "direction": "low", "weight": 1.0},
         ],
-        top_k=TOP_N,
+        top_k=top_n,
         rebalance=1,
-        sector_filter=CONSUMER_SECTORS,
-        rationale="A股消费大类：动量+质量(ROE)+估值(PE_ttm)，等权组合排名",
+        sector_filter=sectors,
+        rationale="A股：动量+质量(ROE)+估值(PE_ttm)，等权组合排名",
     )
 
     config = EngineConfig(
@@ -89,9 +107,9 @@ def main(target_date: date | None = None) -> None:
         reverse=True,
     )
 
-    print(f"=== A股消费大类多因子排名 {target_date.isoformat()} ===")
+    print(f"=== A股多因子排名 {target_date.isoformat()} ===")
     print(f"因子: 动量(60日,权重1) + ROE(权重1) + PE_ttm低优先(权重1)，等权 z-score 组合")
-    print(f"候选池行业: {CONSUMER_SECTORS} (食品饮料/家电家居/纺织服饰/商贸零售/社服休闲/日化)")
+    print(f"候选池行业: {sectors if sectors else '全市场（不限行业）'}")
     print(f"结果: {len(buys)} 支\n")
 
     if not buys:
@@ -107,4 +125,30 @@ def main(target_date: date | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--sectors", type=str, default=None,
+                        help="逗号分隔的行业名列表，覆盖默认消费大类，如: 半导体,元器件,IT设备")
+    parser.add_argument("--all", action="store_true",
+                        help="不限行业，全市场排名（忽略 --sectors）")
+    parser.add_argument("--top-n", type=int, default=TOP_N, help=f"排名前 N 支（默认 {TOP_N}）")
+    parser.add_argument("--date", type=str, default=None,
+                        help="筛选日期 YYYY-MM-DD（默认数据里最新可用交易日）")
+    parser.add_argument("--list-sectors", action="store_true",
+                        help="打印所有可选行业名后退出，不跑排名")
+    args = parser.parse_args()
+
+    if args.list_sectors:
+        for s in _list_sectors():
+            print(s)
+        raise SystemExit(0)
+
+    if args.all:
+        chosen_sectors = None
+    elif args.sectors:
+        chosen_sectors = [s.strip() for s in args.sectors.split(",") if s.strip()]
+    else:
+        chosen_sectors = CONSUMER_SECTORS
+
+    chosen_date = date.fromisoformat(args.date) if args.date else None
+
+    main(target_date=chosen_date, sectors=chosen_sectors, top_n=args.top_n)
