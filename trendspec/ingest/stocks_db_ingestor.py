@@ -28,6 +28,8 @@ import polars as pl
 from sqlalchemy import Engine, text
 
 from trendspec.data.markets import Market
+from trendspec.data.parquet_loader import scan_parquet
+from trendspec.data.universe.cn import IPO_EVENT, DELIST_EVENT
 from trendspec.ingest.manifest import Manifest
 from trendspec.ingest.writer import write_parquet
 
@@ -505,6 +507,67 @@ def ingest_cn_components(
     manifest.update_dataset_state("components", row_count, date_range, instrument_count)
 
     return {"row_count": row_count, "date_range": date_range, "instrument_count": instrument_count}
+
+
+def ingest_cn_full_universe_events(
+    engine: Engine,
+    manifest: Manifest,
+    root: str,
+) -> dict:
+    """从 stocks.list_date/delist_date 构造全A股 IPO/DELIST PIT 事件，
+    修正 ingest_cn_components() 产出的 CSI800 事件语义（IPO/DELIST 改名为
+    CSI800_ADDED/CSI800_REMOVED），两者合并写回同一个 components 数据集。
+
+    必须在 ingest_cn_components() 之后运行。返回 {"row_count", "instrument_count"}。
+    """
+    # 用 stocks.exchange 字段（不是从 ticker 字符串解析）—— 跟现有
+    # ingest_cn_components()/ingest_cn_sectors() 一致，且已验证真实 DB 里
+    # exchange 字段对 A 股混用 "SH"/"SSE"/"SZ"/"SZSE" 四种取值，
+    # _derive_cn_instrument_id 的 _CN_EXCHANGE_TO_PREFIX 已支持全部四种。
+    sql = text("""
+        SELECT ticker, exchange, list_date, delist_date FROM stocks
+        WHERE list_date IS NOT NULL
+    """)
+    rows = []
+    with engine.connect() as conn:
+        for ticker, exchange, list_date, delist_date in conn.execute(sql):
+            try:
+                iid = _derive_cn_instrument_id(ticker, exchange)
+            except ValueError:
+                continue  # 不支持的交易所（如未来的北交所），跳过
+            rows.append({
+                "instrument_id": iid, "date": list_date,
+                "event": IPO_EVENT, "event_details": f"{ticker} 上市",
+            })
+            if delist_date is not None:
+                rows.append({
+                    "instrument_id": iid, "date": delist_date,
+                    "event": DELIST_EVENT, "event_details": f"{ticker} 退市",
+                })
+
+    if not rows:
+        return {"row_count": 0, "instrument_count": 0}
+
+    new_events = pl.DataFrame(rows).with_columns(pl.col("date").cast(pl.Date))
+
+    existing = scan_parquet(root, Market.CN, "components").collect()
+    existing_fixed = existing.with_columns(
+        pl.when(pl.col("event") == IPO_EVENT)
+          .then(pl.lit("CSI800_ADDED"))
+          .when(pl.col("event") == DELIST_EVENT)
+          .then(pl.lit("CSI800_REMOVED"))
+          .otherwise(pl.col("event"))
+          .alias("event")
+    )
+
+    combined = pl.concat([existing_fixed, new_events])
+    write_parquet(combined, Market.CN, "components", root, overwrite=True)
+
+    row_count = len(combined)
+    instrument_count = combined["instrument_id"].n_unique()
+    manifest.update_dataset_state("components", row_count, ("", ""), instrument_count)
+
+    return {"row_count": row_count, "instrument_count": instrument_count}
 
 
 # =============================================================================

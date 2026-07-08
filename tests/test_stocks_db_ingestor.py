@@ -1,6 +1,7 @@
 """Tests for Synology stocks DB custom ingestor."""
 
 import tempfile
+from datetime import date
 
 import polars as pl
 import pytest
@@ -388,3 +389,69 @@ def test_ingest_cn_sectors_not_limited_to_csi800(stocks_db, temp_root):
     df = pl.read_parquet(f"{temp_root}/cn/sectors/")
     ids = df["instrument_id"].unique().to_list()
     assert "SH688001" in ids  # 非 CSI800 成分股同样被摄入
+
+
+@pytest.fixture
+def stocks_db_cn_with_dates(stocks_db_cn):
+    """stocks_db_cn 基础上补 list_date/delist_date 列（不污染共享 stocks_db_cn fixture）。"""
+    with stocks_db_cn.connect() as conn:
+        conn.execute(text("ALTER TABLE stocks ADD COLUMN list_date DATE"))
+        conn.execute(text("ALTER TABLE stocks ADD COLUMN delist_date DATE"))
+        conn.execute(text("UPDATE stocks SET list_date='2000-01-01' WHERE ticker='600000'"))
+        conn.execute(text("UPDATE stocks SET list_date='2005-06-01' WHERE ticker='000001'"))
+        conn.execute(text(
+            "UPDATE stocks SET list_date='2010-03-01', delist_date='2023-12-31' WHERE ticker='600036'"
+        ))
+        conn.commit()
+    return stocks_db_cn
+
+
+def test_ingest_cn_full_universe_events_adds_real_ipo_delist(stocks_db_cn_with_dates, temp_root):
+    """真实 IPO/DELIST 事件（从 list_date/delist_date）与 CSI800 事件共存于同一数据集。"""
+    from trendspec.ingest.stocks_db_ingestor import (
+        ingest_cn_components, ingest_cn_full_universe_events,
+    )
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    manifest = Manifest(Market.CN, temp_root)
+    ingest_cn_components(stocks_db_cn_with_dates, manifest, temp_root)  # 先跑现有 CSI800 摄入
+    result = ingest_cn_full_universe_events(stocks_db_cn_with_dates, manifest, temp_root)
+
+    assert result["instrument_count"] >= 3
+
+    df = pl.read_parquet(f"{temp_root}/cn/components/")
+    events = set(df["event"].unique().to_list())
+    # 真实 IPO/DELIST 事件类型存在
+    assert "IPO" in events
+    assert "DELIST" in events
+    # CSI800 事件已改名，不再叫 IPO/DELIST（避免和真实事件混淆）
+    assert "CSI800_ADDED" in events or "CSI800_REMOVED" in events
+
+    # SH600036 有真实退市日期
+    delist_rows = df.filter(
+        (pl.col("instrument_id") == "SH600036") & (pl.col("event") == "DELIST")
+    )
+    assert len(delist_rows) == 1
+    assert delist_rows["date"].item() == date(2023, 12, 31)
+
+
+def test_ingest_cn_full_universe_events_skips_unsupported_exchange(stocks_db_cn_with_dates, temp_root):
+    """不支持的交易所（如 .BJ 对应的裸 exchange 值）被跳过，不中断摄入。"""
+    from trendspec.ingest.stocks_db_ingestor import (
+        ingest_cn_components, ingest_cn_full_universe_events,
+    )
+    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+
+    with stocks_db_cn_with_dates.connect() as conn:
+        conn.execute(text(
+            "INSERT INTO stocks VALUES ('430047', 'BSE', 'Industrials', 'Machinery', 1, '2021-01-01', NULL)"
+        ))
+        conn.commit()
+
+    manifest = Manifest(Market.CN, temp_root)
+    ingest_cn_components(stocks_db_cn_with_dates, manifest, temp_root)
+    result = ingest_cn_full_universe_events(stocks_db_cn_with_dates, manifest, temp_root)  # 不应抛异常
+
+    assert result["row_count"] > 0
