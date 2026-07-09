@@ -7,7 +7,9 @@ Command:
     trendspec screen --strategy ma_cross --market cn --date 2024-05-15
 """
 
+import json
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -49,6 +51,12 @@ def screen_run(
         "-p",
         help="策略参数，格式 KEY=VALUE，可多次传入（如 --param max_per_sector=1）",
     ),
+    spec_file: Optional[Path] = typer.Option(
+        None,
+        "--spec-file",
+        help="FactorSpec JSON 文件路径（factor_combo 等需要嵌套 factors/group_by 的策略用这个，"
+             "--param 只支持扁平 key=value，表达不了嵌套结构），见 examples/factor_combo_cn_gics.json",
+    ),
 ) -> None:
     """
     运行选股并输出信号列表.
@@ -58,12 +66,14 @@ def screen_run(
     示例:
         trendspec screen run --strategy ma_cross --market cn --date 2024-05-15
         trendspec screen run --strategy ma_cross --market cn  # 使用今日日期
+        trendspec screen run --strategy factor_combo --market cn --spec-file examples/factor_combo_cn_gics.json
     """
     from trendspec.data.markets import Market
     from trendspec.engine.base_engine import EngineConfig
     from trendspec.engine.screening_engine import ScreeningEngine
     from trendspec.strategy.base import get_strategy
     import trendspec.strategy.examples  # noqa: F401 — triggers @register_strategy decorators
+    import trendspec.strategy.factor_strategy  # noqa: F401
     from trendspec.screening.report import ScreeningReport
 
     # Parse date (default to today)
@@ -108,11 +118,23 @@ def screen_run(
             except ValueError:
                 strategy_params[k.strip()] = v
 
+    if spec_file:
+        if not spec_file.exists():
+            console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
+            raise typer.Exit(1)
+        try:
+            strategy_params["spec"] = json.loads(spec_file.read_text())
+        except json.JSONDecodeError as e:
+            console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
+            raise typer.Exit(1)
+
     console.print(f"[cyan]运行选股[/cyan]")
     console.print(f"  策略: {strategy}")
     console.print(f"  市场: {market}")
     console.print(f"  日期: {target_date}")
-    if strategy_params:
+    if spec_file:
+        console.print(f"  spec 文件: {spec_file}")
+    elif strategy_params:
         console.print(f"  参数: {strategy_params}")
 
     try:

@@ -7,7 +7,9 @@ Command:
     trendspec backtest --strategy ma_cross --market cn --start 2020-01-01 --end 2024-12-31
 """
 
+import json
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -89,6 +91,12 @@ def backtest_run(
         "-p",
         help="覆盖策略参数 key=value (可多次), 例: -p gap_pct=0.03 -p volume_multiplier=2.0",
     ),
+    spec_file: Optional[Path] = typer.Option(
+        None,
+        "--spec-file",
+        help="FactorSpec JSON 文件路径（factor_combo 等需要嵌套 factors/group_by 的策略用这个，"
+             "--param 只支持扁平 key=value，表达不了嵌套结构），见 examples/factor_combo_cn_gics.json",
+    ),
 ) -> None:
     """
     运行回测并输出中文报告.
@@ -97,6 +105,7 @@ def backtest_run(
 
     示例:
         trendspec backtest run --strategy ma_cross --market cn --start 2020-01-01 --end 2024-12-31
+        trendspec backtest run --strategy factor_combo --market cn --spec-file examples/factor_combo_cn_gics.json
     """
     from trendspec.data.markets import Market
     from trendspec.engine.base_engine import EngineConfig
@@ -104,6 +113,7 @@ def backtest_run(
     from trendspec.strategy.base import get_strategy, create_strategy
     from trendspec.analyzer.report import BacktestReport
     import trendspec.strategy.examples  # noqa: F401 — triggers @register_strategy decorators
+    import trendspec.strategy.factor_strategy  # noqa: F401
 
     # Parse dates
     try:
@@ -171,6 +181,16 @@ def backtest_run(
                         pass
                 run_params[key] = value
             console.print(f"  策略参数覆盖: { {k: v for k, v in run_params.items() if k != 'ablate_filters'} }")
+        if spec_file:
+            if not spec_file.exists():
+                console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
+                raise typer.Exit(1)
+            try:
+                run_params["spec"] = json.loads(spec_file.read_text())
+            except json.JSONDecodeError as e:
+                console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
+                raise typer.Exit(1)
+            console.print(f"  spec 文件: {spec_file}")
 
         # Run backtest
         result = engine.run(strategy_class, params=run_params or None)
@@ -214,6 +234,7 @@ def backtest_list() -> None:
     from trendspec.strategy.base import list_strategies
     from rich.table import Table
     import trendspec.strategy.examples  # noqa: F401
+    import trendspec.strategy.factor_strategy  # noqa: F401
 
     strategies = list_strategies()
 
@@ -247,6 +268,7 @@ def backtest_compare(
     from trendspec.strategy.base import get_strategy, list_strategies
     from trendspec.analyzer.strategy_comparison import ComparisonRow, ComparisonReport
     import trendspec.strategy.examples  # noqa: F401
+    import trendspec.strategy.factor_strategy  # noqa: F401
 
     try:
         start_date = date.fromisoformat(start)

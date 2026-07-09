@@ -1,6 +1,6 @@
 # TrendSpec
 
-量化回测与选股系统，支持 A 股（CSI800）和美股（SP500 + Russell1000）。
+量化回测与选股系统，支持 A 股（全A股 ~5200 支，可选行业分组）和美股（SP500 + Russell1000）。
 
 ## 功能
 
@@ -68,8 +68,8 @@ uv run trendspec ingest sectors --market us
 # A 股日线 + 周线
 uv run trendspec ingest daily --market cn --full
 uv run trendspec ingest weekly --market cn --full
-uv run trendspec ingest components --market cn
-uv run trendspec ingest sectors --market cn
+uv run trendspec ingest components --market cn  # 全A股 universe 事件，自动带真实 IPO/DELIST（依赖 StockPull 的 list_date/delist_date）
+uv run trendspec ingest sectors --market cn      # 全A股行业分类（不再局限于 CSI800）
 
 # 1h intraday（胜率研究前置）
 uv run trendspec ingest intraday --market us --full
@@ -362,8 +362,65 @@ nohup uv run trendspec research serve --out ./research_out --port 8800 > serve.l
 | `minervini_trend` | 动量筛选 | Minervini 趋势模板 6 项过滤 |
 | `rsi_reversal` | 均值回归 | RSI 超卖买入 |
 | `sector_momentum` | 行业动量 | 行业内相对动量排名 |
+| `factor_combo` | 多因子组合 | 多因子加权 z-score 排名选 top-K，可选按行业分组（组内独立排名，非全市场统一排名） |
 
 策略参数详见 CLAUDE.md 或各策略源码。
+
+### `factor_combo` 行业分组用法
+
+`factor_combo` 的参数是嵌套结构（factors 列表 + group_by 分组字典），`backtest run`/`screen run` 的 `--param key=value` 表达不了这种结构，改用 `--spec-file` 传一个 JSON 文件：
+
+```bash
+# 回测
+uv run trendspec backtest run --strategy factor_combo --market cn \
+    --start 2024-01-01 --end 2026-05-31 \
+    --spec-file examples/factor_combo_cn_gics.json
+
+# 选股（--date 必须落在已摄入的 daily 数据范围内，否则 0 信号——见下方「常见问题」）
+uv run trendspec screen run --strategy factor_combo --market cn \
+    --date 2026-06-02 --spec-file examples/factor_combo_cn_gics.json
+```
+
+`examples/factor_combo_cn_gics.json` 是一份现成的三因子（momentum + fund_roe + fund_pe_ttm）+ `CN_GICS_GROUPS` 11 大类分组示例，可以直接改这个文件调参数，或另存一份自己的 spec：
+
+```json
+{
+  "market": "cn",
+  "factors": [
+    {"name": "momentum", "params": {"period": 60}, "direction": "high", "weight": 1.0},
+    {"name": "fund_roe", "direction": "high", "weight": 1.0}
+  ],
+  "top_k": 3,
+  "rebalance": 21,
+  "group_by": {"金融": ["银行", "证券"], "能源": ["煤炭开采"]},
+  "winsorize_pct": 0.01
+}
+```
+
+字段说明：
+- `top_k` — 每组选前 N（`group_by` 不传则为全市场统一排名前 N）
+- `group_by` — 可选，`{组名: [细分行业名...]}`；用 `CN_GICS_GROUPS`（`trendspec/data/sectors.py`）现成的11大类，或自定义
+- `winsorize_pct` — 可选，因子极值双侧截断分位数，默认 0.01
+
+程序化调用（不经 CLI，比如批量跑多组参数）用 Python 直接构造 `FactorSpec` 对象：
+
+```python
+from trendspec.research.spec import FactorSpec
+from trendspec.data.sectors import CN_GICS_GROUPS
+
+spec = FactorSpec(
+    market="cn",
+    factors=[
+        {"name": "momentum", "params": {"period": 60}, "direction": "high", "weight": 1.0},
+        {"name": "fund_roe", "direction": "high", "weight": 1.0},
+    ],
+    top_k=3, rebalance=21,
+    group_by=CN_GICS_GROUPS,
+    winsorize_pct=0.01,
+)
+```
+
+`fund_pe_ttm` 等估值类因子回测前确认 `cn_valuation_snapshot` 历史深度是否够——默认只增量拉取，早期数据可能是 null（见 StockPull README「常见问题」）。
 
 ---
 
@@ -372,7 +429,9 @@ nohup uv run trendspec research serve --out ./research_out --port 8800 > serve.l
 | 市场 | 来源 | 只数 |
 |------|------|------|
 | 美股 | SP500 + Russell1000 | ~1017 |
-| A 股 | CSI800 | ~800 |
+| A 股 | 全A股（`ingest components/sectors --market cn` 摄入） | ~5200 |
+
+`FactorSpec.group_by` 可选把A股按 `CN_GICS_GROUPS`（11大类，`trendspec/data/sectors.py`）分组，组内独立排名选股，而非全市场统一排名——见下方「可用策略」`factor_combo`。
 
 ---
 
@@ -424,3 +483,25 @@ class MyStrategy(BaseStrategy):
 ```
 
 参考 `trendspec/strategy/examples/`。
+
+---
+
+## 常见问题
+
+**`screen run` 选股结果总是 0 信号？**
+
+先查 `--date` 是否落在已摄入的 daily 数据范围内：
+
+```bash
+uv run python3 -c "import polars as pl; print(pl.read_parquet('data_lake/cn/daily/')['date'].max())"
+```
+
+`screen` 内部按目标日期在数据里查 index，超出实际数据范围（比如 daily 好几周没增量同步了）会静默返回 0 信号，不会报错。跑 `uv run trendspec ingest daily --market cn` 补到最新再选股。
+
+**`trendspec backtest list`/`screen list` 里没有某个策略？**
+
+策略要在对应 CLI 命令的模块里被 `import` 过一次（触发 `@register_strategy` 装饰器）才会出现在列表里。`factor_combo` 定义在 `trendspec/strategy/factor_strategy.py`，不在 `trendspec/strategy/examples/` 下，两个 CLI 命令都显式 import 了这个模块——如果自己加了新策略文件，确认它也被对应 CLI 命令 import 到。
+
+**CN universe 突然又只有 800/CSI800 了？**
+
+`ingest components`/`ingest sectors --market cn` 写入本地 `data_lake/`（gitignore，不进版本库）。换机器、换 worktree、或者 `data_lake/` 被清过，universe 会打回老状态直到重新跑一次这两个摄入命令。
