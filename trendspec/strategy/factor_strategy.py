@@ -159,20 +159,24 @@ class FactorStrategy(BaseStrategy):
                 iid for iid in universe
                 if ctx.sector(iid, current_date) in allowed_sectors
             }
-        # NOTE: group-aware ranking selection (per-group top_k) is Task 7's job;
-        # this keeps pre-existing (ungrouped) behavior working via the "_all" bucket.
-        ranked = [
-            iid for iid in self._ranked_by_group_date.get((current_date, "_all"), [])
-            if iid in universe
-        ]
-        top = ranked[: self._spec.top_k]
-        top_set = set(top)
 
         day = self._full_data.filter(pl.col("date") == current_date)
         close_of = {r["instrument_id"]: r["close"] for r in day.iter_rows(named=True)}
         ticker_of = {r["instrument_id"]: r["ticker"] for r in day.iter_rows(named=True)}
 
-        # SELL: 持仓掉出 top_set
+        # 候选集合：group_by 设置时是"各组 top_k 拼接"，否则是全局单一 top_k
+        # （"_all" 是唯一的组名，等价于原来的全局排名）。
+        top: list[str] = []
+        groups = self._spec.group_by if self._spec.group_by is not None else {"_all": None}
+        for group_name in groups:
+            group_ranked = [
+                iid for iid in self._ranked_by_group_date.get((current_date, group_name), [])
+                if iid in universe
+            ]
+            top.extend(group_ranked[: self._spec.top_k])
+        top_set = set(top)
+
+        # SELL: 持仓掉出候选集合 —— 全清，不留残余
         for iid in list(ctx.positions.keys()):
             if iid in top_set:
                 continue
@@ -181,13 +185,27 @@ class FactorStrategy(BaseStrategy):
                 continue
             sig = ctx.signal("SELL", iid, price, note="掉出 top_k")
             sig.ticker = ticker_of.get(iid, iid)
+            sig.shares = float(ctx.positions[iid])
 
-        # BUY: top_set 中未持仓
+        # BUY: top 中未持仓，等权资金分配，现金预算递减防超支
+        nav = ctx.available_capital
+        for iid, qty in ctx.positions.items():
+            price = close_of.get(iid)
+            if price is not None:
+                nav += qty * price
+
+        target_total_positions = len(top)
+        available = ctx.available_capital
+        per_slot_budget = nav / target_total_positions if target_total_positions > 0 else 0.0
+
         for rank_pos, iid in enumerate(top, start=1):
             if ctx.has_position(iid):
                 continue
             price = close_of.get(iid)
             if price is None or price <= 0:
+                continue
+            shares = int(min(per_slot_budget, available) / price)
+            if shares < 1:
                 continue
             sig = ctx.signal(
                 "BUY",
@@ -197,3 +215,5 @@ class FactorStrategy(BaseStrategy):
                 note=f"rank={rank_pos}",
             )
             sig.ticker = ticker_of.get(iid, iid)
+            sig.shares = float(shares)
+            available -= shares * price

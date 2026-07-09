@@ -72,6 +72,7 @@ def _run_next_once(strat, ctx, df, target_date):
     """模拟引擎：对某交易日逐 instrument 调 next()，收集信号。"""
     universe = df["instrument_id"].unique().to_list()
     ctx.set_universe(_StubUniverse(universe))
+    ctx.update_positions({}, 100_000.0)  # 提供可用资金，否则等权 sizing 预算为 0 无法出 BUY 信号
     day = df.filter(pl.col("date") == target_date)
     rows = {r["instrument_id"]: r for r in day.iter_rows(named=True)}
     ctx.clear_signals()
@@ -321,3 +322,102 @@ def test_init_single_member_group_excludes_from_ranking(tmp_path):
 
     ranked = strat._ranked_by_group_date.get((last_date, "科技"), [])
     assert "SH600999" not in ranked
+
+
+def test_next_sell_clears_full_position():
+    """SELL 信号必须带上完整持仓股数，不是遗留的默认 order_size。"""
+    df = _two_stock_data()
+    strat = FactorStrategy(params=_spec_dict())  # top_k=1
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    last_date = df["date"].max()
+    universe = df["instrument_id"].unique().to_list()
+    ctx.set_universe(_StubUniverse(universe))
+    ctx.update_positions({"SLOW_US": 250.0}, 100_000.0)  # 持有掉出 top_k 的股票
+    day = df.filter(pl.col("date") == last_date)
+    rows = {r["instrument_id"]: r for r in day.iter_rows(named=True)}
+    ctx.clear_signals()
+    for iid in universe:
+        row = rows.get(iid)
+        if row is None:
+            continue
+        ctx.update_bar(last_date, iid, row["ticker"], df, current_row=row)
+        strat.next(ctx)
+
+    sells = [s for s in ctx.pending_signals() if s.direction == "SELL"]
+    assert len(sells) == 1
+    assert sells[0].instrument_id == "SLOW_US"
+    assert sells[0].shares == 250.0
+
+
+def test_next_buy_uses_equal_weight_sizing_not_fixed_order_size():
+    """BUY 的 shares 按 NAV/持仓数等权分配，不是固定 order_size。"""
+    df = _two_stock_data()
+    d = _spec_dict()
+    d["spec"]["top_k"] = 2  # 两只都买
+    strat = FactorStrategy(params=d)
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    last_date = df["date"].max()
+    universe = df["instrument_id"].unique().to_list()
+    ctx.set_universe(_StubUniverse(universe))
+    ctx.update_positions({}, 100_000.0)
+    day = df.filter(pl.col("date") == last_date)
+    rows = {r["instrument_id"]: r for r in day.iter_rows(named=True)}
+    ctx.clear_signals()
+    for iid in universe:
+        row = rows.get(iid)
+        if row is None:
+            continue
+        ctx.update_bar(last_date, iid, row["ticker"], df, current_row=row)
+        strat.next(ctx)
+
+    buys = [s for s in ctx.pending_signals() if s.direction == "BUY"]
+    assert len(buys) == 2
+    for sig in buys:
+        assert sig.shares is not None
+        assert sig.shares != 100.0  # 不是遗留的固定 order_size 默认值
+        # 单仓金额约等于 NAV/2（考虑取整误差，允许小额偏差）
+        assert abs(sig.shares * sig.price - 100_000.0 / 2) < sig.price
+
+
+def test_next_group_by_buys_top_k_per_group(tmp_path):
+    """group_by 设置时，候选集合是每组 top_k 拼接，不是全局单一 top_k。"""
+    from trendspec.ingest.writer import write_parquet
+    from trendspec.data.markets import Market as MarketEnum
+
+    write_parquet(_sectors_df_for_two_groups(), MarketEnum.CN, "sectors", str(tmp_path))
+
+    df = _two_group_data()
+    spec_dict = {
+        "spec": {
+            "market": "cn",
+            "factors": [{"name": "momentum", "params": {"period": 60},
+                         "direction": "high", "weight": 1.0}],
+            "top_k": 1, "rebalance": 5,
+            "group_by": {"金融": ["银行"], "能源": ["煤炭开采"]},
+        }
+    }
+    strat = FactorStrategy(params=spec_dict)
+    ctx = StrategyContext(market=Market.CN, strategy=strat, data=df, root=str(tmp_path))
+    strat.init(ctx)
+
+    last_date = df["date"].max()
+    universe = df["instrument_id"].unique().to_list()
+    ctx.set_universe(_StubUniverse(universe))
+    ctx.update_positions({}, 100_000.0)
+    day = df.filter(pl.col("date") == last_date)
+    rows = {r["instrument_id"]: r for r in day.iter_rows(named=True)}
+    ctx.clear_signals()
+    for iid in universe:
+        row = rows.get(iid)
+        if row is None:
+            continue
+        ctx.update_bar(last_date, iid, row["ticker"], df, current_row=row)
+        strat.next(ctx)
+
+    buys = {s.instrument_id for s in ctx.pending_signals() if s.direction == "BUY"}
+    # 每组 top_k=1 → 金融组的 SH600000 + 能源组的 SH600900，各组强动量股各买 1 支
+    assert buys == {"SH600000", "SH600900"}
