@@ -562,6 +562,31 @@ class TestCrossSectionalFactors:
         result = factor.compute_full(sample_data)
         assert "rank_within_sector_momentum" in result.values.columns
 
+    def test_rank_within_sector_empty_sectors_returns_float64(
+        self, sample_data: pl.DataFrame, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When get_sector_index() succeeds but no sector matches any
+        instrument for the date (all_sectors_at_date returns {}), rank_values
+        stays empty and the fallback column must still be typed Float64 (not
+        Null), so that a later `.clip()` call (used for winsorization) does
+        not raise InvalidOperationError."""
+        from trendspec.factors.cross_sectional import rank_within_sector as rws_module
+
+        class _EmptySectorIndex:
+            def all_sectors_at_date(self, as_of_date: date) -> dict:
+                return {}
+
+        monkeypatch.setattr(
+            rws_module, "get_sector_index", lambda market, root: _EmptySectorIndex()
+        )
+
+        factor = RankWithinSectorFactor(factor_name="momentum", market=Market.CN)
+        result = factor.compute_full(sample_data)
+
+        col = result.values["rank_within_sector_momentum"]
+        assert col.dtype == pl.Float64
+        col.clip(0.0, 1.0)  # must not raise
+
     def test_demean_by_sector_factor(self, sample_data: pl.DataFrame) -> None:
         """Test demean by sector factor."""
         factor = DemeanBySectorFactor(factor_name="momentum", market=Market.CN)

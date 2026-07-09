@@ -203,7 +203,7 @@ class RankWithinSectorFactor(Factor):
             rank_df = pl.DataFrame({
                 "instrument_id": df_sorted["instrument_id"],
                 "date": df_sorted["date"],
-                col_name: [None] * len(df_sorted),
+                col_name: pl.Series(col_name, [None] * len(df_sorted), dtype=pl.Float64),
             })
 
         # Join back to original data
