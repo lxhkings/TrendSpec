@@ -118,7 +118,7 @@ def test_factor_combo_accepts_fundamental_factor():
     strat.init(ctx)
     # AAPL: high roe (34) + low pe (27.5) ; MSFT: roe 25, pe 25.
     # combo z-scores: confirm a ranking was produced for the date.
-    ranked = strat._ranked_by_date[date(2026, 4, 30)]
+    ranked = strat._ranked_by_group_date[(date(2026, 4, 30), "_all")]
     assert set(ranked) == {"AAPL", "MSFT"}
 
 
