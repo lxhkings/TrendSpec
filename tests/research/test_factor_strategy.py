@@ -283,3 +283,41 @@ def test_init_missing_factor_excludes_from_ranking(tmp_path):
 
     ranked = strat._ranked_by_group_date.get((last_date, "金融"), [])
     assert "SH600000" not in ranked
+
+
+def test_init_single_member_group_excludes_from_ranking(tmp_path):
+    """单成员分组下 std 为 null，z-score 无定义，该股应被剔除而非按 0 计分。"""
+    from trendspec.ingest.writer import write_parquet
+    from trendspec.data.markets import Market as MarketEnum
+
+    sectors_df = pl.concat([
+        _sectors_df_for_two_groups(),
+        pl.DataFrame({
+            "instrument_id": ["SH600999"],
+            "date": [date(2000, 1, 1)],
+            "sector": ["科技"],
+            "sector_name": [""],
+        }),
+    ])
+    write_parquet(sectors_df, MarketEnum.CN, "sectors", str(tmp_path))
+
+    df = pl.concat([
+        _two_group_data(),
+        _make_bars_cn("SH600999", "600999", 120, 100.0, 1.002),
+    ])
+    last_date = df["date"].max()
+    spec_dict = {
+        "spec": {
+            "market": "cn",
+            "factors": [{"name": "momentum", "params": {"period": 60},
+                         "direction": "high", "weight": 1.0}],
+            "top_k": 5, "rebalance": 5,
+            "group_by": {"金融": ["银行"], "能源": ["煤炭开采"], "科技": ["科技"]},
+        }
+    }
+    strat = FactorStrategy(params=spec_dict)
+    ctx = StrategyContext(market=Market.CN, strategy=strat, data=df, root=str(tmp_path))
+    strat.init(ctx)
+
+    ranked = strat._ranked_by_group_date.get((last_date, "科技"), [])
+    assert "SH600999" not in ranked

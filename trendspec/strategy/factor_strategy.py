@@ -108,7 +108,9 @@ class FactorStrategy(BaseStrategy):
 
                 score_df = score_df.join(vals, on=["instrument_id", "date"], how="left")
                 weight_cols.append(pl.col(zcol).fill_null(0.0) * term.weight)
-                missing_any = missing_any | pl.col(ncol).fill_null(True)
+                # zcol 为 null 既覆盖原始值缺失（ncol），也覆盖单成员分组下 std 为 null
+                # 导致 z-score 无定义的情况——两者都应从排名中剔除，而非按 0 计分。
+                missing_any = missing_any | pl.col(ncol).fill_null(True) | pl.col(zcol).is_null()
 
             score_df = score_df.with_columns(sum(weight_cols).alias("combo_score"))
             score_df = score_df.filter(~missing_any)
