@@ -101,7 +101,7 @@ class TestClenowBuyTableRendering:
             "信号置信度",
         ]
 
-    def test_non_clenow_buy_table_keeps_6_columns(self) -> None:
+    def test_non_clenow_buy_table_keeps_7_columns(self) -> None:
         signals = [_buy_signal("AAPL", 100.0)]
         report = ScreeningReport(
             signals=signals,
@@ -110,10 +110,10 @@ class TestClenowBuyTableRendering:
             market="us",
         )
         table = report._create_signals_table(signals, "买入信号")
-        assert len(table.columns) == 6
+        assert len(table.columns) == 7
 
-    def test_clenow_sell_table_uses_default_6_columns(self) -> None:
-        """SELL signals still use 6 columns even when strategy_name is clenow_momentum."""
+    def test_clenow_sell_table_uses_default_7_columns(self) -> None:
+        """SELL signals still use the default schema even when strategy_name is clenow_momentum."""
         sell = Signal(
             direction="SELL",
             ticker="LITE",
@@ -128,7 +128,7 @@ class TestClenowBuyTableRendering:
             market="us",
         )
         table = report._create_signals_table([sell], "卖出信号")
-        assert len(table.columns) == 6
+        assert len(table.columns) == 7
 
     def test_clenow_sector_none_renders_dash(self) -> None:
         signals = [self._clenow_signal("LITE", 1000.0, sector=None)]
@@ -280,7 +280,7 @@ class TestClenowCSVSchema:
             v = sell_row[col]
             assert v is None or v == "" or v == 0
 
-    def test_non_clenow_csv_keeps_7_columns(self, tmp_path: Path) -> None:
+    def test_non_clenow_csv_keeps_8_columns(self, tmp_path: Path) -> None:
         signals = [_buy_signal("AAPL", 100.0)]
         report = ScreeningReport(
             signals=signals,
@@ -292,6 +292,7 @@ class TestClenowCSVSchema:
         df = pl.read_csv(out)
         assert df.columns == [
             "股票代码",
+            "公司名称",
             "instrument_id",
             "日期",
             "方向",
@@ -484,3 +485,70 @@ class TestSignalHistoryIntegration:
         assert result is None  # Store returned None, no exception
         # Verify the Market enum was constructed with uppercase "US"
         mock_load.assert_called_once_with("clenow_momentum", Market.US)
+
+
+class TestCompanyNames:
+    """Tests for _get_company_names / _fetch_company_names (best-effort DB lookup)."""
+
+    def test_names_filled_into_table_and_csv(self, tmp_path: Path) -> None:
+        signals = [_buy_signal("600519", 1800.0)]
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="factor_combo",
+            market="cn",
+        )
+        with patch.object(
+            ScreeningReport, "_fetch_company_names",
+            return_value={"600519": "贵州茅台"},
+        ):
+            table = report._create_signals_table(signals, "买入信号")
+            out = report.export(tmp_path)
+
+        # rich.Table doesn't expose cell values directly by column name easily;
+        # verify via the CSV export instead, which is a faithful representation.
+        df = pl.read_csv(out)
+        assert df["公司名称"][0] == "贵州茅台"
+        assert len(table.columns) == 7
+
+    def test_db_failure_degrades_to_empty_names_not_exception(self) -> None:
+        signals = [_buy_signal("600519", 1800.0)]
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="factor_combo",
+            market="cn",
+        )
+        with patch(
+            "trendspec.screening.report.create_engine_from_settings",
+            side_effect=RuntimeError("NAS down"),
+        ):
+            names = report._get_company_names()
+
+        assert names == {}
+
+    def test_empty_ticker_list_short_circuits_without_db_call(self) -> None:
+        with patch(
+            "trendspec.screening.report.create_engine_from_settings"
+        ) as mock_engine:
+            result = ScreeningReport._fetch_company_names([])
+
+        assert result == {}
+        mock_engine.assert_not_called()
+
+    def test_names_cached_across_calls(self) -> None:
+        signals = [_buy_signal("600519", 1800.0)]
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="factor_combo",
+            market="cn",
+        )
+        with patch.object(
+            ScreeningReport, "_fetch_company_names",
+            return_value={"600519": "贵州茅台"},
+        ) as mock_fetch:
+            report._get_company_names()
+            report._get_company_names()
+
+        mock_fetch.assert_called_once()
