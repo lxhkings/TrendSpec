@@ -101,7 +101,7 @@ class TestClenowBuyTableRendering:
             "信号置信度",
         ]
 
-    def test_non_clenow_buy_table_keeps_7_columns(self) -> None:
+    def test_non_clenow_buy_table_keeps_8_columns(self) -> None:
         signals = [_buy_signal("AAPL", 100.0)]
         report = ScreeningReport(
             signals=signals,
@@ -110,9 +110,9 @@ class TestClenowBuyTableRendering:
             market="us",
         )
         table = report._create_signals_table(signals, "买入信号")
-        assert len(table.columns) == 7
+        assert len(table.columns) == 8
 
-    def test_clenow_sell_table_uses_default_7_columns(self) -> None:
+    def test_clenow_sell_table_uses_default_8_columns(self) -> None:
         """SELL signals still use the default schema even when strategy_name is clenow_momentum."""
         sell = Signal(
             direction="SELL",
@@ -128,7 +128,7 @@ class TestClenowBuyTableRendering:
             market="us",
         )
         table = report._create_signals_table([sell], "卖出信号")
-        assert len(table.columns) == 7
+        assert len(table.columns) == 8
 
     def test_clenow_sector_none_renders_dash(self) -> None:
         signals = [self._clenow_signal("LITE", 1000.0, sector=None)]
@@ -280,7 +280,7 @@ class TestClenowCSVSchema:
             v = sell_row[col]
             assert v is None or v == "" or v == 0
 
-    def test_non_clenow_csv_keeps_8_columns(self, tmp_path: Path) -> None:
+    def test_non_clenow_csv_keeps_9_columns(self, tmp_path: Path) -> None:
         signals = [_buy_signal("AAPL", 100.0)]
         report = ScreeningReport(
             signals=signals,
@@ -293,6 +293,7 @@ class TestClenowCSVSchema:
         assert df.columns == [
             "股票代码",
             "公司名称",
+            "分组",
             "instrument_id",
             "日期",
             "方向",
@@ -509,7 +510,35 @@ class TestCompanyNames:
         # verify via the CSV export instead, which is a faithful representation.
         df = pl.read_csv(out)
         assert df["公司名称"][0] == "贵州茅台"
-        assert len(table.columns) == 7
+        assert len(table.columns) == 8
+
+    def test_group_extras_shown_in_group_column(self, tmp_path: Path) -> None:
+        signals = [_buy_signal("600519", 1800.0, extras={"group": "日常消费"})]
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="factor_combo",
+            market="cn",
+        )
+        with patch.object(ScreeningReport, "_fetch_company_names", return_value={}):
+            out = report.export(tmp_path)
+
+        df = pl.read_csv(out)
+        assert df["分组"][0] == "日常消费"
+
+    def test_no_group_extras_renders_blank(self, tmp_path: Path) -> None:
+        signals = [_buy_signal("600519", 1800.0)]  # no "group" in extras
+        report = ScreeningReport(
+            signals=signals,
+            screening_date=date(2026, 5, 18),
+            strategy_name="factor_combo",
+            market="cn",
+        )
+        with patch.object(ScreeningReport, "_fetch_company_names", return_value={}):
+            out = report.export(tmp_path)
+
+        df = pl.read_csv(out)
+        assert df["分组"][0] is None or df["分组"][0] == ""
 
     def test_db_failure_degrades_to_empty_names_not_exception(self) -> None:
         signals = [_buy_signal("600519", 1800.0)]

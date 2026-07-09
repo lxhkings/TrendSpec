@@ -144,6 +144,7 @@ class ScreeningReport:
         # Chinese column names
         table.add_column("股票代码", style="cyan")
         table.add_column("公司名称", style="magenta")
+        table.add_column("分组", style="cyan")
         table.add_column("日期", style="cyan")
         table.add_column("方向", style="yellow")
         table.add_column("价格", style="green")
@@ -155,6 +156,7 @@ class ScreeningReport:
             table.add_row(
                 signal.ticker,
                 names.get(signal.ticker, ""),
+                (signal.extras or {}).get("group", ""),
                 self.screening_date.isoformat(),
                 signal.direction,
                 f"{signal.price:.2f}",
@@ -179,6 +181,7 @@ class ScreeningReport:
             records.append({
                 "股票代码": signal.ticker,
                 "公司名称": names.get(signal.ticker, ""),
+                "分组": (signal.extras or {}).get("group", ""),
                 "instrument_id": signal.instrument_id,
                 "日期": self.screening_date.isoformat(),
                 "方向": signal.direction,

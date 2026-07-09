@@ -167,13 +167,17 @@ class FactorStrategy(BaseStrategy):
         # 候选集合：group_by 设置时是"各组 top_k 拼接"，否则是全局单一 top_k
         # （"_all" 是唯一的组名，等价于原来的全局排名）。
         top: list[str] = []
+        group_of: dict[str, str] = {}
         groups = self._spec.group_by if self._spec.group_by is not None else {"_all": None}
         for group_name in groups:
             group_ranked = [
                 iid for iid in self._ranked_by_group_date.get((current_date, group_name), [])
                 if iid in universe
             ]
-            top.extend(group_ranked[: self._spec.top_k])
+            selected = group_ranked[: self._spec.top_k]
+            top.extend(selected)
+            for iid in selected:
+                group_of[iid] = group_name
         top_set = set(top)
 
         # SELL: 持仓掉出候选集合 —— 全清，不留残余
@@ -207,6 +211,7 @@ class FactorStrategy(BaseStrategy):
             shares = int(min(per_slot_budget, available) / price)
             if shares < 1:
                 continue
+            group_name = group_of.get(iid, "")
             sig = ctx.signal(
                 "BUY",
                 iid,
@@ -216,4 +221,6 @@ class FactorStrategy(BaseStrategy):
             )
             sig.ticker = ticker_of.get(iid, iid)
             sig.shares = float(shares)
+            if group_name and group_name != "_all":
+                sig.extras["group"] = group_name
             available -= shares * price

@@ -421,3 +421,69 @@ def test_next_group_by_buys_top_k_per_group(tmp_path):
     buys = {s.instrument_id for s in ctx.pending_signals() if s.direction == "BUY"}
     # 每组 top_k=1 → 金融组的 SH600000 + 能源组的 SH600900，各组强动量股各买 1 支
     assert buys == {"SH600000", "SH600900"}
+
+
+def test_next_buy_signal_carries_group_name_in_extras(tmp_path):
+    """group_by 设置时，BUY signal.extras['group'] 记录该股票所属分组，供选股报告展示。"""
+    from trendspec.ingest.writer import write_parquet
+    from trendspec.data.markets import Market as MarketEnum
+
+    write_parquet(_sectors_df_for_two_groups(), MarketEnum.CN, "sectors", str(tmp_path))
+
+    df = _two_group_data()
+    spec_dict = {
+        "spec": {
+            "market": "cn",
+            "factors": [{"name": "momentum", "params": {"period": 60},
+                         "direction": "high", "weight": 1.0}],
+            "top_k": 1, "rebalance": 5,
+            "group_by": {"金融": ["银行"], "能源": ["煤炭开采"]},
+        }
+    }
+    strat = FactorStrategy(params=spec_dict)
+    ctx = StrategyContext(market=Market.CN, strategy=strat, data=df, root=str(tmp_path))
+    strat.init(ctx)
+
+    last_date = df["date"].max()
+    universe = df["instrument_id"].unique().to_list()
+    ctx.set_universe(_StubUniverse(universe))
+    ctx.update_positions({}, 100_000.0)
+    day = df.filter(pl.col("date") == last_date)
+    rows = {r["instrument_id"]: r for r in day.iter_rows(named=True)}
+    ctx.clear_signals()
+    for iid in universe:
+        row = rows.get(iid)
+        if row is None:
+            continue
+        ctx.update_bar(last_date, iid, row["ticker"], df, current_row=row)
+        strat.next(ctx)
+
+    buys = {s.instrument_id: s for s in ctx.pending_signals() if s.direction == "BUY"}
+    assert buys["SH600000"].extras.get("group") == "金融"
+    assert buys["SH600900"].extras.get("group") == "能源"
+
+
+def test_next_buy_signal_has_no_group_extras_when_group_by_unset():
+    """group_by 未设置时（"_all" 虚拟组），不应该把内部占位符 "_all" 泄漏进 extras。"""
+    df = _two_stock_data()
+    strat = FactorStrategy(params=_spec_dict())  # top_k=1, no group_by
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    last_date = df["date"].max()
+    universe = df["instrument_id"].unique().to_list()
+    ctx.set_universe(_StubUniverse(universe))
+    ctx.update_positions({}, 100_000.0)
+    day = df.filter(pl.col("date") == last_date)
+    rows = {r["instrument_id"]: r for r in day.iter_rows(named=True)}
+    ctx.clear_signals()
+    for iid in universe:
+        row = rows.get(iid)
+        if row is None:
+            continue
+        ctx.update_bar(last_date, iid, row["ticker"], df, current_row=row)
+        strat.next(ctx)
+
+    buys = [s for s in ctx.pending_signals() if s.direction == "BUY"]
+    assert len(buys) == 1
+    assert "group" not in buys[0].extras
