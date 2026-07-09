@@ -265,8 +265,8 @@ def test_gics_groups_cover_expected_sectors():
 
 def test_gics_group_override_takes_precedence():
     # 分众传媒在 override 表里强制归"通信服务"，即使传入一个假的 sector 值
-    assert gics_group("随便什么", "SZ002027.SZ") == "通信服务"
-    assert gics_group("随便什么", "SZ002831.SZ") == "材料"
+    assert gics_group("随便什么", "SZ002027") == "通信服务"
+    assert gics_group("随便什么", "SZ002831") == "材料"
 
 
 def test_gics_group_falls_back_to_sector_mapping():

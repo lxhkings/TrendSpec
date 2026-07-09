@@ -120,9 +120,9 @@ CN_GICS_GROUPS: Final[dict[str, list[str]]] = {
 # vs 包装材料制造），整体归类没有意义，改用 TICKER_GROUP_OVERRIDES 按股票精确处理。
 
 TICKER_GROUP_OVERRIDES: Final[dict[str, str]] = {
-    "SZ002027.SZ": "通信服务",  # 分众传媒 - 广告媒体
-    "SZ300058.SZ": "通信服务",  # 蓝色光标 - 公关营销
-    "SZ002831.SZ": "材料",      # 裕同科技 - 包装材料制造
+    "SZ002027": "通信服务",  # 分众传媒 - 广告媒体
+    "SZ300058": "通信服务",  # 蓝色光标 - 公关营销
+    "SZ002831": "材料",      # 裕同科技 - 包装材料制造
 }
 
 _SECTOR_TO_GROUP: Final[dict[str, str]] = {

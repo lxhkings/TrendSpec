@@ -264,7 +264,11 @@ def ingest_components(
     from trendspec.config.settings import get_settings
     from trendspec.ingest.manifest import Manifest
     from trendspec.ingest.mariadb_client import create_engine_from_settings
-    from trendspec.ingest.stocks_db_ingestor import ingest_cn_components, ingest_us_components
+    from trendspec.ingest.stocks_db_ingestor import (
+        ingest_cn_components,
+        ingest_cn_full_universe_events,
+        ingest_us_components,
+    )
 
     market_enum = Market(market.upper())
     settings = get_settings()
@@ -282,6 +286,10 @@ def ingest_components(
             console.print(f"[red]不支持的市场: {market}[/red]")
             raise typer.Exit(1)
         console.print(f"[green]完成: {result['row_count']} 行[/green]")
+        if market_enum == Market.CN:
+            console.print("[cyan]导入 cn 全A股 IPO/DELIST 事件...[/cyan]")
+            events_result = ingest_cn_full_universe_events(engine, manifest, root)
+            console.print(f"[green]完成: {events_result['row_count']} 行[/green]")
     except Exception as e:
         console.print(f"[red]导入失败: {e}[/red]")
         raise typer.Exit(1)
