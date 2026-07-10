@@ -17,8 +17,8 @@ from rich.table import Table
 
 from trendspec.analyzer.signal_history import SignalHistoryStore
 from trendspec.config.settings import get_settings
+from trendspec.ingest.company_names import fetch_company_names
 from trendspec.data.markets import Market
-from trendspec.ingest.mariadb_client import create_engine_from_settings
 
 
 class ScreeningReport:
@@ -374,23 +374,8 @@ class ScreeningReport:
         """群辉 stocks 表查中文名，best-effort（查不到就留空，不影响选股输出）。结果缓存。"""
         if not hasattr(self, "_company_names_cache"):
             tickers = [s.ticker for s in self.signals]
-            self._company_names_cache = self._fetch_company_names(tickers)
+            self._company_names_cache = fetch_company_names(tickers, get_settings().db)
         return self._company_names_cache
-
-    @staticmethod
-    def _fetch_company_names(tickers: list[str]) -> dict[str, str]:
-        if not tickers:
-            return {}
-        try:
-            from sqlalchemy import text
-            engine = create_engine_from_settings(get_settings().db)
-            placeholders = ", ".join(f":t{i}" for i in range(len(tickers)))
-            sql = text(f"SELECT ticker, name FROM stocks WHERE ticker IN ({placeholders})")
-            params = {f"t{i}": t for i, t in enumerate(tickers)}
-            with engine.connect() as conn:
-                return {row[0]: row[1] for row in conn.execute(sql, params)}
-        except Exception:
-            return {}
 
     def _load_signal_history(self) -> pl.DataFrame | None:
         """Load cached signal history stats. Returns None on cache miss. Result is cached."""

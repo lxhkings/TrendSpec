@@ -8,6 +8,7 @@ import polars as pl
 import pytest
 
 from trendspec.analyzer.signal_history import SignalHistoryStore
+from trendspec.ingest.company_names import fetch_company_names
 from trendspec.data.markets import Market
 from trendspec.screening.report import ScreeningReport
 from trendspec.strategy.signal import Signal
@@ -489,7 +490,7 @@ class TestSignalHistoryIntegration:
 
 
 class TestCompanyNames:
-    """Tests for _get_company_names / _fetch_company_names (best-effort DB lookup)."""
+    """Tests for ScreeningReport._get_company_names (best-effort DB lookup via data.company_names)."""
 
     def test_names_filled_into_table_and_csv(self, tmp_path: Path) -> None:
         signals = [_buy_signal("600519", 1800.0)]
@@ -499,8 +500,8 @@ class TestCompanyNames:
             strategy_name="factor_combo",
             market="cn",
         )
-        with patch.object(
-            ScreeningReport, "_fetch_company_names",
+        with patch(
+            "trendspec.screening.report.fetch_company_names",
             return_value={"600519": "贵州茅台"},
         ):
             table = report._create_signals_table(signals, "买入信号")
@@ -520,7 +521,7 @@ class TestCompanyNames:
             strategy_name="factor_combo",
             market="cn",
         )
-        with patch.object(ScreeningReport, "_fetch_company_names", return_value={}):
+        with patch("trendspec.screening.report.fetch_company_names", return_value={}):
             out = report.export(tmp_path)
 
         df = pl.read_csv(out)
@@ -534,7 +535,7 @@ class TestCompanyNames:
             strategy_name="factor_combo",
             market="cn",
         )
-        with patch.object(ScreeningReport, "_fetch_company_names", return_value={}):
+        with patch("trendspec.screening.report.fetch_company_names", return_value={}):
             out = report.export(tmp_path)
 
         df = pl.read_csv(out)
@@ -549,7 +550,7 @@ class TestCompanyNames:
             market="cn",
         )
         with patch(
-            "trendspec.screening.report.create_engine_from_settings",
+            "trendspec.ingest.company_names.create_engine_from_settings",
             side_effect=RuntimeError("NAS down"),
         ):
             names = report._get_company_names()
@@ -558,9 +559,9 @@ class TestCompanyNames:
 
     def test_empty_ticker_list_short_circuits_without_db_call(self) -> None:
         with patch(
-            "trendspec.screening.report.create_engine_from_settings"
+            "trendspec.ingest.company_names.create_engine_from_settings"
         ) as mock_engine:
-            result = ScreeningReport._fetch_company_names([])
+            result = fetch_company_names([], db_settings=None)
 
         assert result == {}
         mock_engine.assert_not_called()
@@ -573,8 +574,8 @@ class TestCompanyNames:
             strategy_name="factor_combo",
             market="cn",
         )
-        with patch.object(
-            ScreeningReport, "_fetch_company_names",
+        with patch(
+            "trendspec.screening.report.fetch_company_names",
             return_value={"600519": "贵州茅台"},
         ) as mock_fetch:
             report._get_company_names()
