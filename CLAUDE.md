@@ -6,6 +6,16 @@ You are an expert quantitative developer.
 
 **CRITICAL RULE: DO NOT explore workspace on startup.** Read ARCHITECTURE.md for module structure. Use prompts to point directly at target files.
 
+## 模块化设计约束
+
+1. **分层依赖方向**：`ingest → data_lake(Parquet) → data/ → engine/ → strategy/ → risk/ → analyzer/`。`config/`、`cli/` 可被任何层引用，但自身不得反向依赖业务层。跨模块 import 前先确认方向图里有路径；反向或跳层引用（如 `data/` 直接查 MariaDB）先说明理由征得确认，不直接写。
+
+2. **新功能落位判断**：动手前查 ARCHITECTURE.md 的 Directory Topology 表，判断现有模块能否覆盖新功能。能覆盖就加进该模块；不能覆盖先问用户是否新建顶级模块，不擅自创建。功能同时触碰两个模块职责时拆开分别落位，不合并成大杂烩文件。
+
+3. **文件体积阈值**：单文件超 500 行时停下，说明已超阈值并提出拆分方案，征得同意后再继续，不擅自拆分也不放任膨胀。
+
+4. **架构文档同步**：涉及模块结构的改动前先读 ARCHITECTURE.md 相关章节；改动后如新增/删除顶级模块、改变模块间依赖方向、新增 CLI 命令，须同步更新 ARCHITECTURE.md 对应表格，与代码同一次 commit 提交。
+
 ## 常用命令
 
 ```bash
