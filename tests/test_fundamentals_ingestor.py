@@ -192,6 +192,9 @@ def _cn_indicator_payload(roe):
     return json.dumps({
         "roe": roe, "roic": roe, "netprofit_margin": 52.0, "op_of_gr": 68.0,
         "tr_yoy": 0.15, "netprofit_yoy": 0.20,
+        "debt_to_assets": 45.2, "current_ratio": 1.8, "quick_ratio": 1.2,
+        "debt_to_eqt": 82.5, "ocf_to_debt": 0.35, "ocf_to_shortdebt": 1.6,
+        "q_ocf_to_sales": 0.22, "fcff": 5000000000.0,
     })
 
 
@@ -246,6 +249,14 @@ def test_ingest_cn_fundamentals_writes_parquet(cn_fundamentals_db):
         assert row["op_margin"] == pytest.approx(68.0)
         assert row["revenue_yoy"] == pytest.approx(0.15)
         assert row["net_income_yoy"] == pytest.approx(0.20)
+        assert row["debt_to_assets"] == pytest.approx(45.2)
+        assert row["current_ratio"] == pytest.approx(1.8)
+        assert row["quick_ratio"] == pytest.approx(1.2)
+        assert row["debt_to_eqt"] == pytest.approx(82.5)
+        assert row["ocf_to_debt"] == pytest.approx(0.35)
+        assert row["ocf_to_shortdebt"] == pytest.approx(1.6)
+        assert row["q_ocf_to_sales"] == pytest.approx(0.22)
+        assert row["fcff"] == pytest.approx(5000000000.0)
 
 
 @pytest.fixture

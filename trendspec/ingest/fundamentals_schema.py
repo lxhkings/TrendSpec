@@ -55,6 +55,14 @@ CN_INDICATOR_FIELDS: Final[dict[str, str]] = {
     "op_of_gr": "op_margin",
     "tr_yoy": "revenue_yoy",
     "netprofit_yoy": "net_income_yoy",
+    "debt_to_assets": "debt_to_assets",
+    "current_ratio": "current_ratio",
+    "quick_ratio": "quick_ratio",
+    "debt_to_eqt": "debt_to_eqt",
+    "ocf_to_debt": "ocf_to_debt",
+    "ocf_to_shortdebt": "ocf_to_shortdebt",
+    "q_ocf_to_sales": "q_ocf_to_sales",
+    "fcff": "fcff",
 }
 
 
