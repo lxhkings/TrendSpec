@@ -52,3 +52,23 @@ class FundPB(Factor):
             .then(pl.col("pb"))
             .otherwise(None)
         )
+
+
+@register("fund_ps_ttm")
+class FundPSTTM(Factor):
+    """Trailing price-to-sales (precomputed, e.g. CN Tushare daily_basic
+    "ps_ttm"). Null when the column is absent (e.g. US, not currently
+    sourced) or <= 0.
+    """
+
+    description: ClassVar[str] = "Trailing price-to-sales (PIT)"
+    category: ClassVar[str] = "fundamental"
+
+    def compute(self, df: pl.DataFrame) -> pl.Expr:
+        if "ps_ttm" not in df.columns:
+            return pl.lit(None, dtype=pl.Float64)
+        return (
+            pl.when(pl.col("ps_ttm") > 0)
+            .then(pl.col("ps_ttm"))
+            .otherwise(None)
+        )

@@ -263,3 +263,16 @@ def test_cashflow_quality_factors_missing_column_yield_null():
                  "fund_q_ocf_to_sales", "fund_fcff"):
         res = get_factor(name).compute_full(bare)
         assert res.values[name].null_count() == 1
+
+
+def test_fund_ps_ttm_passthrough():
+    df = _df().with_columns(pl.Series("ps_ttm", [4.5, 8.1]))
+    res = get_factor("fund_ps_ttm").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_ps_ttm"].to_list() == [4.5, 8.1]
+
+
+def test_fund_ps_ttm_null_when_missing_or_nonpositive():
+    assert get_factor("fund_ps_ttm").compute_full(_df()).values["fund_ps_ttm"].null_count() == 2
+    df = _df().with_columns(pl.Series("ps_ttm", [0.0, -1.0]))
+    assert get_factor("fund_ps_ttm").compute_full(df).values["fund_ps_ttm"].null_count() == 2
