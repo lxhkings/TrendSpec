@@ -225,3 +225,41 @@ def test_leverage_factors_missing_column_yield_null():
                  "fund_quick_ratio", "fund_debt_to_eqt"):
         res = get_factor(name).compute_full(bare)
         assert res.values[name].null_count() == 1
+
+
+def test_fund_ocf_to_debt_passthrough():
+    df = _df().with_columns(pl.Series("ocf_to_debt", [0.35, 0.12]))
+    res = get_factor("fund_ocf_to_debt").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_ocf_to_debt"].to_list() == [0.35, 0.12]
+
+
+def test_fund_ocf_to_shortdebt_passthrough():
+    df = _df().with_columns(pl.Series("ocf_to_shortdebt", [1.6, 0.8]))
+    res = get_factor("fund_ocf_to_shortdebt").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_ocf_to_shortdebt"].to_list() == [1.6, 0.8]
+
+
+def test_fund_q_ocf_to_sales_passthrough():
+    df = _df().with_columns(pl.Series("q_ocf_to_sales", [0.22, 0.05]))
+    res = get_factor("fund_q_ocf_to_sales").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_q_ocf_to_sales"].to_list() == [0.22, 0.05]
+
+
+def test_fund_fcff_passthrough():
+    df = _df().with_columns(pl.Series("fcff", [5.0e9, -1.2e9]))
+    res = get_factor("fund_fcff").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_fcff"].to_list() == [5.0e9, -1.2e9]
+
+
+def test_cashflow_quality_factors_missing_column_yield_null():
+    bare = pl.DataFrame({
+        "instrument_id": ["AAPL"], "date": [date(2026, 4, 30)], "close": [110.0],
+    })
+    for name in ("fund_ocf_to_debt", "fund_ocf_to_shortdebt",
+                 "fund_q_ocf_to_sales", "fund_fcff"):
+        res = get_factor(name).compute_full(bare)
+        assert res.values[name].null_count() == 1
