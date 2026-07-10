@@ -1,3 +1,3 @@
-"""Fundamental factors (US): quality, growth, valuation."""
+"""Fundamental factors: quality, growth, valuation, leverage."""
 
-from trendspec.factors.fundamental import growth, quality, valuation  # noqa: F401
+from trendspec.factors.fundamental import growth, leverage, quality, valuation  # noqa: F401

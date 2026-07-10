@@ -187,3 +187,41 @@ def test_factor_strategy_no_sector_filter_keeps_full_universe():
 
     buys = {s.instrument_id for s in ctx.pending_signals() if s.is_buy()}
     assert buys == {"A", "B"}
+
+
+def test_fund_debt_to_assets_passthrough():
+    df = _df().with_columns(pl.Series("debt_to_assets", [45.2, 60.1]))
+    res = get_factor("fund_debt_to_assets").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_debt_to_assets"].to_list() == [45.2, 60.1]
+
+
+def test_fund_current_ratio_passthrough():
+    df = _df().with_columns(pl.Series("current_ratio", [1.8, 0.9]))
+    res = get_factor("fund_current_ratio").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_current_ratio"].to_list() == [1.8, 0.9]
+
+
+def test_fund_quick_ratio_passthrough():
+    df = _df().with_columns(pl.Series("quick_ratio", [1.2, 0.5]))
+    res = get_factor("fund_quick_ratio").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_quick_ratio"].to_list() == [1.2, 0.5]
+
+
+def test_fund_debt_to_eqt_passthrough():
+    df = _df().with_columns(pl.Series("debt_to_eqt", [82.5, 150.0]))
+    res = get_factor("fund_debt_to_eqt").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_debt_to_eqt"].to_list() == [82.5, 150.0]
+
+
+def test_leverage_factors_missing_column_yield_null():
+    bare = pl.DataFrame({
+        "instrument_id": ["AAPL"], "date": [date(2026, 4, 30)], "close": [110.0],
+    })
+    for name in ("fund_debt_to_assets", "fund_current_ratio",
+                 "fund_quick_ratio", "fund_debt_to_eqt"):
+        res = get_factor(name).compute_full(bare)
+        assert res.values[name].null_count() == 1
