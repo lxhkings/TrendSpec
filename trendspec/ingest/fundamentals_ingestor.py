@@ -14,10 +14,14 @@ TTM/YoY are derived on the quarterly series ordered by period_end within ticker.
 Fundamentals are low-volume, so the ingest always recomputes the full history.
 """
 
+from datetime import date, timedelta
+from typing import Final
+
 import polars as pl
 from sqlalchemy import Engine, text
 
 from trendspec.data.markets import Market
+from trendspec.ingest.stocks_db_ingestor import _fetch_df_with_progress, _resolve_start_exclusive
 from trendspec.ingest.fundamentals_schema import (
     CN_INCOME_FIELDS,
     CN_INDICATOR_FIELDS,
@@ -223,53 +227,111 @@ _CN_VALUATION_COLS = [
 ]
 
 
+_VALUATION_CHUNK_DAYS: Final[int] = 365
+
+
+def _next_chunk_end(start_exclusive: str, today: date) -> str:
+    """365-day window end after `start_exclusive`, capped at `today`."""
+    start = date.fromisoformat(start_exclusive)
+    end = start + timedelta(days=_VALUATION_CHUNK_DAYS)
+    return min(end, today).isoformat()
+
+
 def ingest_cn_valuation(
     engine: Engine,
     manifest: Manifest,
     root: str,
+    full_sync: bool = False,
+    since: str | None = None,
 ) -> dict:
     """Ingest CN daily valuation snapshots from StockPull-populated
     cn_valuation_snapshot table (flat columns, no JSON payload).
 
+    Fetches in ~365-day windows via a streaming server-side cursor, writing
+    parquet + advancing the manifest watermark after each window. The table
+    now holds 10M+ rows after full history backfill; even a single streamed
+    (unbuffered) pull of the whole table intermittently gets
+    "Connection reset by peer" from the NAS partway through (observed at
+    ~3M rows), so a full history sync must be resumable per-window rather
+    than all-or-nothing — a crash mid-run only loses the in-flight window,
+    and simply re-running (default incremental mode) picks up from the last
+    successfully committed window's watermark.
+
     Output dataset: data_lake/cn/valuation/instrument_id=<id>/<year>.parquet
     PK (instrument_id, date) where date = trade_date (same-day visible, no PIT lag).
 
-    Returns {"row_count", "date_range", "instrument_count"}.
+    Args:
+        full_sync: If True, pull all history ignoring manifest. Only the
+            first window of a full_sync run overwrites existing partition
+            files; later windows merge (write_parquet overwrite=False),
+            otherwise each window's write would wipe out the previous one's
+            rows in any partition (instrument_id, year) touched by both.
+        since: Inclusive start date 'YYYY-MM-DD'; overrides manifest/full_sync.
+
+    Returns {"row_count", "date_range", "instrument_count"} aggregated across
+    all windows fetched in this call.
     """
+    cursor = _resolve_start_exclusive(manifest, "valuation", full_sync, since)
+    today = date.today()
     cols = ", ".join(["ts_code", "trade_date"] + _CN_VALUATION_COLS)
-    sql = text(f"SELECT {cols} FROM cn_valuation_snapshot")
 
-    rows: list[dict] = []
-    with engine.connect() as conn:
-        for row in conn.execute(sql):
-            ts_code, trade_date = row[0], row[1]
-            rows.append({
-                "ts_code": ts_code, "trade_date": trade_date,
-                **dict(zip(_CN_VALUATION_COLS, row[2:], strict=True)),
-            })
+    total_row_count = 0
+    all_instrument_ids: set[str] = set()
+    overall_min_date: str | None = None
+    overall_max_date: str | None = None
+    is_first_window = True
 
-    if not rows:
+    while True:
+        window_end = _next_chunk_end(cursor, today)
+        sql = text(
+            f"SELECT {cols} FROM cn_valuation_snapshot "
+            "WHERE trade_date > :start AND trade_date <= :end"
+        )
+        df = _fetch_df_with_progress(
+            engine, sql, {"start": cursor, "end": window_end},
+            schema=["ts_code", "trade_date"] + _CN_VALUATION_COLS,
+            label=f"拉取 cn 估值快照 (至 {window_end})",
+        )
+
+        if df.is_empty():
+            manifest.update_dataset_state("valuation", 0, (cursor, window_end), 0)
+        else:
+            df = df.with_columns(pl.col("trade_date").cast(pl.Date))
+            df = df.with_columns(
+                pl.col("ts_code")
+                .map_elements(_ts_code_to_instrument_id, return_dtype=pl.Utf8)
+                .alias("instrument_id")
+            ).filter(pl.col("instrument_id").is_not_null())
+            df = df.rename({"trade_date": "date"}).drop("ts_code")
+
+            write_parquet(
+                df, Market.CN, "valuation", root,
+                overwrite=(full_sync and is_first_window),
+                dedup_keys=["instrument_id", "date"],
+            )
+
+            dates = df["date"].cast(pl.Utf8)
+            window_min, window_max = dates.min(), dates.max()
+            manifest.update_dataset_state(
+                "valuation", len(df), (window_min, window_max),
+                df["instrument_id"].n_unique(),
+            )
+
+            total_row_count += len(df)
+            all_instrument_ids.update(df["instrument_id"].to_list())
+            overall_min_date = window_min if overall_min_date is None else min(overall_min_date, window_min)
+            overall_max_date = window_max if overall_max_date is None else max(overall_max_date, window_max)
+
+        is_first_window = False
+        if window_end >= today.isoformat():
+            break
+        cursor = window_end
+
+    if total_row_count == 0:
         return {"row_count": 0, "date_range": ("", ""), "instrument_count": 0}
 
-    df = pl.DataFrame(rows).with_columns(pl.col("trade_date").cast(pl.Date))
-    df = df.with_columns(
-        pl.col("ts_code")
-        .map_elements(_ts_code_to_instrument_id, return_dtype=pl.Utf8)
-        .alias("instrument_id")
-    ).filter(pl.col("instrument_id").is_not_null())
-
-    df = df.rename({"trade_date": "date"}).drop("ts_code")
-
-    write_parquet(
-        df, Market.CN, "valuation", root,
-        overwrite=True, dedup_keys=["instrument_id", "date"],
-    )
-
-    dates = df["date"].cast(pl.Utf8)
-    date_range = (dates.min(), dates.max())
-    instrument_count = df["instrument_id"].n_unique()
-    row_count = len(df)
-    manifest.update_dataset_state("valuation", row_count, date_range, instrument_count)
-
-    return {"row_count": row_count, "date_range": date_range,
-            "instrument_count": instrument_count}
+    return {
+        "row_count": total_row_count,
+        "date_range": (overall_min_date, overall_max_date),
+        "instrument_count": len(all_instrument_ids),
+    }

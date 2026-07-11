@@ -294,3 +294,33 @@ def test_ingest_cn_valuation_writes_parquet(cn_valuation_db):
         assert row["pe_ttm"] == pytest.approx(23.15)
         assert row["pb"] == pytest.approx(9.22)
         assert row["date"] == date(2024, 12, 31)
+
+
+def test_ingest_cn_valuation_incremental_second_run_is_noop(cn_valuation_db):
+    """Second run with no new NAS rows pulls nothing (manifest watermark)."""
+    with tempfile.TemporaryDirectory() as root:
+        manifest = Manifest(Market.CN, root)
+        r1 = ingest_cn_valuation(cn_valuation_db, manifest, root)
+        assert r1["row_count"] == 1
+
+        manifest2 = Manifest(Market.CN, root)  # reload from disk
+        r2 = ingest_cn_valuation(cn_valuation_db, manifest2, root)
+        assert r2["row_count"] == 0
+
+
+def test_ingest_cn_valuation_since_filters(cn_valuation_db):
+    """`since` overrides manifest, pulling only rows on/after that date."""
+    with cn_valuation_db.connect() as conn:
+        conn.execute(text(
+            "INSERT INTO cn_valuation_snapshot VALUES "
+            "('600519.SH','2025-01-02',1530.0,0.30,1.8,25.7,23.2,9.3,13.0,11.6,191500000.0,191500000.0)"
+        ))
+        conn.commit()
+
+    with tempfile.TemporaryDirectory() as root:
+        manifest = Manifest(Market.CN, root)
+        result = ingest_cn_valuation(cn_valuation_db, manifest, root, since="2025-01-02")
+
+        assert result["row_count"] == 1
+        df = scan_parquet(root, Market.CN, "valuation").collect()
+        assert df["date"].to_list() == [date(2025, 1, 2)]

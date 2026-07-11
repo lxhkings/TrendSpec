@@ -139,11 +139,22 @@ def ingest_valuation(
         "--market",
         help="市场代码 (目前仅 cn)",
     ),
+    since: str = typer.Option(
+        None,
+        "--since",
+        help="起始日期 YYYY-MM-DD（含当天）；覆盖 manifest 增量与 --full 起点",
+    ),
+    incremental: bool = typer.Option(
+        True,
+        "--incremental/--full",
+        help="增量同步 (默认) 或全量同步",
+    ),
 ) -> None:
     """从群辉 stocks DB 导入每日估值快照（CN, PE/PB/PS）。
 
     示例:
         trendspec ingest valuation --market cn
+        trendspec ingest valuation --market cn --full
     """
     from trendspec.data.markets import Market
     from trendspec.config.settings import get_settings
@@ -151,16 +162,26 @@ def ingest_valuation(
     from trendspec.ingest.mariadb_client import create_engine_from_settings
     from trendspec.ingest.fundamentals_ingestor import ingest_cn_valuation
 
+    from datetime import date as date_type
+
+    if since is not None:
+        try:
+            date_type.fromisoformat(since)
+        except ValueError:
+            console.print("[red]日期格式错误，请使用 YYYY-MM-DD 格式[/red]")
+            raise typer.Exit(1)
+
     market_enum = Market(market.upper())
     settings = get_settings()
     engine = create_engine_from_settings(settings.db)
     root = settings.data_lake.data_lake_root
     manifest = Manifest(market_enum, root)
+    full_sync = not incremental
 
     console.print(f"[cyan]导入 {market} 估值数据...[/cyan]")
     try:
         if market_enum == Market.CN:
-            result = ingest_cn_valuation(engine, manifest, root)
+            result = ingest_cn_valuation(engine, manifest, root, full_sync=full_sync, since=since)
         else:
             console.print(f"[red]估值目前仅支持 cn，收到: {market}[/red]")
             raise typer.Exit(1)
