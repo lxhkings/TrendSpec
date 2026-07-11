@@ -30,7 +30,11 @@ def _df():
 def test_fundamental_factors_registered():
     names = list_factors()
     for n in ("fund_roe", "fund_roic", "fund_net_margin", "fund_op_margin",
-              "fund_revenue_yoy", "fund_net_income_yoy", "fund_pe_ttm", "fund_pb"):
+              "fund_revenue_yoy", "fund_net_income_yoy", "fund_pe_ttm", "fund_pb",
+              "fund_debt_to_assets", "fund_current_ratio", "fund_quick_ratio",
+              "fund_debt_to_eqt", "fund_ocf_to_debt", "fund_ocf_to_shortdebt",
+              "fund_q_ocf_to_sales", "fund_fcff", "fund_ps_ttm",
+              "fund_total_mv", "fund_circ_mv", "fund_turnover_rate"):
         assert n in names
 
 
