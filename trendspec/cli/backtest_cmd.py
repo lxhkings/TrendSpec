@@ -186,10 +186,23 @@ def backtest_run(
                 console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
                 raise typer.Exit(1)
             try:
-                run_params["spec"] = json.loads(spec_file.read_text())
+                spec_dict = json.loads(spec_file.read_text())
             except json.JSONDecodeError as e:
                 console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
                 raise typer.Exit(1)
+            # --param 覆盖 spec 顶层字段（如 --param top_pct=0.05），只搬运 FactorSpec
+            # 已知字段，其余 --param（非 factor_combo 策略自身参数）留在 run_params 里
+            from trendspec.research.spec import FactorSpec
+            spec_fields = set(FactorSpec.model_fields)
+            for k in list(run_params.keys()):
+                if k not in spec_fields:
+                    continue
+                if k == "top_pct":
+                    spec_dict.pop("top_k", None)
+                elif k == "top_k":
+                    spec_dict.pop("top_pct", None)
+                spec_dict[k] = run_params.pop(k)
+            run_params["spec"] = spec_dict
             console.print(f"  spec 文件: {spec_file}")
 
         # Run backtest
