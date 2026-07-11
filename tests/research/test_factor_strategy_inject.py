@@ -6,7 +6,7 @@ from trendspec.data.parquet_loader import bars
 from trendspec.data.universe import get_universe
 from trendspec.engine.backtest_engine import BacktestEngine
 from trendspec.engine.base_engine import EngineConfig
-from trendspec.research.factor_cache import build_combo_score
+from trendspec.research.factor_cache import compute_combo_scores
 from trendspec.strategy.factor_strategy import FactorStrategy
 
 SPEC = {
@@ -30,7 +30,7 @@ def test_injected_scores_equal_self_computed():
     m = Market.US
     df = bars(market=m, start_date=cfg.start_date, end_date=cfg.end_date)
     uni = get_universe(m, cfg.root)
-    scores = build_combo_score(df, SPEC["factors"], SPEC["market"])
+    scores = compute_combo_scores(df, SPEC["factors"], SPEC["market"], root=cfg.root)
 
     eng = BacktestEngine(cfg)
     eng.inject(data=df, universe=uni)

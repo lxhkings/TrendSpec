@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import polars as pl
 
-import trendspec.strategy.factor_strategy as factor_strategy_module
+import trendspec.research.factor_cache as factor_cache_module
 from trendspec.data.markets import Market
 from trendspec.strategy.context import StrategyContext
 from trendspec.strategy.factor_strategy import FactorStrategy
@@ -137,7 +137,7 @@ def test_init_passes_spec_market_into_get_factor_with_market(monkeypatch):
     }
 
     captured: dict = {}
-    original = factor_strategy_module.get_factor_with_market
+    original = factor_cache_module.get_factor_with_market
 
     def spy(name, params, market):
         captured["name"] = name
@@ -145,7 +145,7 @@ def test_init_passes_spec_market_into_get_factor_with_market(monkeypatch):
         captured["market"] = market
         return original(name, params, market)
 
-    monkeypatch.setattr(factor_strategy_module, "get_factor_with_market", spy)
+    monkeypatch.setattr(factor_cache_module, "get_factor_with_market", spy)
 
     strat = FactorStrategy(params=spec)
     ctx = StrategyContext(market=Market.US, strategy=strat, data=df)

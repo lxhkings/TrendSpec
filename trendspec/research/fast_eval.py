@@ -14,20 +14,28 @@ from trendspec.data.calendar import trading_days_between
 from trendspec.data.universe import get_universe
 from trendspec.engine.backtest_engine import BacktestEngine
 from trendspec.engine.base_engine import EngineConfig
-from trendspec.research.factor_cache import build_combo_score
+from trendspec.research.factor_cache import compute_combo_scores
 from trendspec.research.market_panel import MarketPanel
 from trendspec.research.panel_io import read_ipc_mmap, write_ipc
 from trendspec.strategy.factor_strategy import FactorStrategy
 
 
 def _combo_key(spec: dict) -> str:
-    """factor_combo 唯一键：只含 factors（含 params/direction/weight），不含 top_k/rebalance。"""
+    """factor_combo 唯一键：factors（含 params/direction/weight）+ group_by +
+    winsorize_pct——combo_score 的计算结果依赖这三者，缓存键必须覆盖全部，
+    否则两个 factors 相同但 group_by/winsorize_pct 不同的候选会错误共用缓存。
+    不含 top_k/rebalance（不影响打分，只影响调仓/选股）。"""
     norm = [
         {"name": f["name"], "params": dict(sorted((f.get("params") or {}).items())),
          "direction": f["direction"], "weight": f.get("weight", 1.0)}
         for f in spec["factors"]
     ]
-    return json.dumps(norm, sort_keys=True, ensure_ascii=False)
+    key = {
+        "factors": norm,
+        "group_by": spec.get("group_by"),
+        "winsorize_pct": spec.get("winsorize_pct", 0.01),
+    }
+    return json.dumps(key, sort_keys=True, ensure_ascii=False)
 
 
 def _split_windows(market: str, start: DateType, end: DateType, n: int) -> list[tuple]:
@@ -66,7 +74,11 @@ def _worker_eval_candidate(args: tuple) -> tuple[int, dict]:
     for w_start, w_end in windows:
         win_df = panel.slice(w_start, w_end)
         # 每个窗口独立计算combo_score（不复用其他窗口）
-        scores = build_combo_score(win_df, spec["factors"], market)
+        scores = compute_combo_scores(
+            win_df, spec["factors"], market,
+            group_by=spec.get("group_by"), winsorize_pct=spec.get("winsorize_pct", 0.01),
+            root=root,
+        )
 
         cfg = EngineConfig(market=Market(market.upper()),
                            start_date=w_start, end_date=w_end,
@@ -130,7 +142,12 @@ class ResearchEvaluator:
                 for spec in candidates:
                     k = _combo_key(spec)
                     if k not in combo_scores:
-                        combo_scores[k] = build_combo_score(win_df, spec["factors"], self.market)
+                        combo_scores[k] = compute_combo_scores(
+                            win_df, spec["factors"], self.market,
+                            group_by=spec.get("group_by"),
+                            winsorize_pct=spec.get("winsorize_pct", 0.01),
+                            root=self.root,
+                        )
                 window_combo_scores[(w_start, w_end)] = combo_scores
 
             results: list[dict] = []
