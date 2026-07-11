@@ -34,7 +34,9 @@ def test_fundamental_factors_registered():
               "fund_debt_to_assets", "fund_current_ratio", "fund_quick_ratio",
               "fund_debt_to_eqt", "fund_ocf_to_debt", "fund_ocf_to_shortdebt",
               "fund_q_ocf_to_sales", "fund_fcff", "fund_ps_ttm",
-              "fund_total_mv", "fund_circ_mv", "fund_turnover_rate"):
+              "fund_total_mv", "fund_circ_mv", "fund_turnover_rate",
+              "fund_revenue_qoq", "fund_net_income_qoq", "fund_revenue_cagr_3y",
+              "fund_roe_trend_4q"):
         assert n in names
 
 
