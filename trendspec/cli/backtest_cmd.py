@@ -44,6 +44,49 @@ def _print_diagnostics(diag: dict) -> None:
         console.print(f"  已消融过滤器: {ablated}")
 
 
+def _parse_param_overrides(param: list[str]) -> dict:
+    """Parse `-p key=value` CLI strings into a typed dict (int/float coerced
+    when possible, else left as string). Shared by `run` and `compare`."""
+    overrides: dict = {}
+    for kv in param:
+        if "=" not in kv:
+            console.print(f"[yellow]忽略无效 --param {kv} (需 key=value)[/yellow]")
+            continue
+        key, raw = kv.split("=", 1)
+        key, raw = key.strip(), raw.strip()
+        value: object = raw
+        try:
+            value = int(raw)
+        except ValueError:
+            try:
+                value = float(raw)
+            except ValueError:
+                pass
+        overrides[key] = value
+    return overrides
+
+
+def _load_spec_with_overrides(spec_file: Path, overrides: dict) -> dict:
+    """Load a factor_combo spec JSON, folding matching --param overrides
+    into it (top_k/top_pct stay mutually exclusive). Mutates `overrides`,
+    removing the keys it consumes — remaining keys are plain strategy
+    params for the caller to pass through separately. Shared by `run`
+    and `compare`.
+    """
+    spec_dict = json.loads(spec_file.read_text())
+    from trendspec.research.spec import FactorSpec
+    spec_fields = set(FactorSpec.model_fields)
+    for k in list(overrides.keys()):
+        if k not in spec_fields:
+            continue
+        if k == "top_pct":
+            spec_dict.pop("top_k", None)
+        elif k == "top_k":
+            spec_dict.pop("top_pct", None)
+        spec_dict[k] = overrides.pop(k)
+    return spec_dict
+
+
 @app.command("run")
 def backtest_run(
     strategy: str = typer.Option(
@@ -164,45 +207,17 @@ def backtest_run(
             run_params["ablate_filters"] = [s.strip() for s in ablate.split(",") if s.strip()]
             console.print(f"  消融过滤器: {run_params['ablate_filters']}")
         if param:
-            for kv in param:
-                if "=" not in kv:
-                    console.print(f"[yellow]忽略无效 --param {kv} (需 key=value)[/yellow]")
-                    continue
-                key, raw = kv.split("=", 1)
-                key, raw = key.strip(), raw.strip()
-                # Coerce to int/float when possible, else string
-                value: object = raw
-                try:
-                    value = int(raw)
-                except ValueError:
-                    try:
-                        value = float(raw)
-                    except ValueError:
-                        pass
-                run_params[key] = value
+            run_params.update(_parse_param_overrides(param))
             console.print(f"  策略参数覆盖: { {k: v for k, v in run_params.items() if k != 'ablate_filters'} }")
         if spec_file:
             if not spec_file.exists():
                 console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
                 raise typer.Exit(1)
             try:
-                spec_dict = json.loads(spec_file.read_text())
+                run_params["spec"] = _load_spec_with_overrides(spec_file, run_params)
             except json.JSONDecodeError as e:
                 console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
                 raise typer.Exit(1)
-            # --param 覆盖 spec 顶层字段（如 --param top_pct=0.05），只搬运 FactorSpec
-            # 已知字段，其余 --param（非 factor_combo 策略自身参数）留在 run_params 里
-            from trendspec.research.spec import FactorSpec
-            spec_fields = set(FactorSpec.model_fields)
-            for k in list(run_params.keys()):
-                if k not in spec_fields:
-                    continue
-                if k == "top_pct":
-                    spec_dict.pop("top_k", None)
-                elif k == "top_k":
-                    spec_dict.pop("top_pct", None)
-                spec_dict[k] = run_params.pop(k)
-            run_params["spec"] = spec_dict
             console.print(f"  spec 文件: {spec_file}")
 
         # Run backtest
@@ -272,8 +287,20 @@ def backtest_compare(
     sort: str = typer.Option("sharpe", "--sort", help="排序: return|annual|mdd|sharpe|trades"),
     export: Optional[str] = typer.Option(None, "--export", help="导出: csv|json|markdown"),
     exclude: Optional[str] = typer.Option(None, "--exclude", help="排除策略(逗号分隔)"),
+    spec_file: list[Path] = typer.Option(
+        [],
+        "--spec-file",
+        help="factor_combo spec JSON 路径（可重复传入，扫描多个 spec 变体而不是扫描策略列表）"
+             "，例: --spec-file examples/factor_combo_cn_pe_only.json",
+    ),
+    param: list[str] = typer.Option(
+        [],
+        "--param",
+        "-p",
+        help="覆盖每个 --spec-file 的顶层字段 key=value（可多次），仅在传了 --spec-file 时生效",
+    ),
 ) -> None:
-    """运行全部策略回测并对比绩效."""
+    """运行全部策略回测并对比绩效；传 --spec-file 时改为对比同一策略下的多个 spec 变体."""
     import time
     from trendspec.data.markets import Market
     from trendspec.engine.base_engine import EngineConfig
@@ -291,46 +318,92 @@ def backtest_compare(
         console.print(f"[red]参数错误: {e}[/red]")
         raise typer.Exit(1)
 
-    excluded = {x.strip() for x in (exclude or "").split(",") if x.strip()}
-    strategy_names = [n for n in list_strategies() if n not in excluded]
-
-    console.print(f"[cyan]对比 {len(strategy_names)} 个策略 — {market.upper()} "
-                  f"{start_date} → {end_date}[/cyan]\n")
-
+    config = EngineConfig(
+        market=market_enum,
+        start_date=start_date,
+        end_date=end_date,
+        initial_capital=capital,
+    )
     rows: list[ComparisonRow] = []
-    for name in strategy_names:
-        strategy_class = get_strategy(name)
+
+    if spec_file:
+        strategy_class = get_strategy("factor_combo")
         if strategy_class is None:
-            continue
-        console.print(f"  运行 [cyan]{name}[/cyan]...")
-        t0 = time.perf_counter()
-        try:
-            config = EngineConfig(
-                market=market_enum,
-                start_date=start_date,
-                end_date=end_date,
-                initial_capital=capital,
-            )
-            result = BacktestEngine(config).run(strategy_class)
-            m = result.metrics
-            elapsed = time.perf_counter() - t0
-            rows.append(ComparisonRow(
-                strategy_name=name,
-                total_return=m.get("total_return", 0.0),
-                annualized_return=m.get("annualized_return", 0.0),
-                max_drawdown=m.get("max_drawdown", 0.0),
-                sharpe_ratio=m.get("sharpe_ratio", 0.0),
-                total_trades=m.get("total_trades", 0),
-                final_nav=m.get("final_nav", capital),
-                elapsed_seconds=elapsed,
-            ))
-        except Exception as e:
-            elapsed = time.perf_counter() - t0
-            rows.append(ComparisonRow(
-                strategy_name=name, total_return=0, annualized_return=0,
-                max_drawdown=0, sharpe_ratio=0, total_trades=0,
-                final_nav=0, elapsed_seconds=elapsed, error=str(e),
-            ))
+            console.print("[red]未找到策略: factor_combo[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[cyan]对比 {len(spec_file)} 个 spec 变体 (factor_combo) — "
+                      f"{market.upper()} {start_date} → {end_date}[/cyan]\n")
+
+        for sf in spec_file:
+            label = sf.stem
+            if not sf.exists():
+                rows.append(ComparisonRow(
+                    strategy_name=label, total_return=0, annualized_return=0,
+                    max_drawdown=0, sharpe_ratio=0, total_trades=0,
+                    final_nav=0, elapsed_seconds=0.0, error=f"文件不存在: {sf}",
+                ))
+                continue
+            console.print(f"  运行 [cyan]{label}[/cyan]...")
+            t0 = time.perf_counter()
+            try:
+                overrides = _parse_param_overrides(param)
+                run_params = {"spec": _load_spec_with_overrides(sf, overrides)}
+                run_params.update(overrides)  # 剩余非 FactorSpec 字段的 --param 原样透传
+                result = BacktestEngine(config).run(strategy_class, params=run_params)
+                m = result.metrics
+                elapsed = time.perf_counter() - t0
+                rows.append(ComparisonRow(
+                    strategy_name=label,
+                    total_return=m.get("total_return", 0.0),
+                    annualized_return=m.get("annualized_return", 0.0),
+                    max_drawdown=m.get("max_drawdown", 0.0),
+                    sharpe_ratio=m.get("sharpe_ratio", 0.0),
+                    total_trades=m.get("total_trades", 0),
+                    final_nav=m.get("final_nav", capital),
+                    elapsed_seconds=elapsed,
+                ))
+            except Exception as e:
+                elapsed = time.perf_counter() - t0
+                rows.append(ComparisonRow(
+                    strategy_name=label, total_return=0, annualized_return=0,
+                    max_drawdown=0, sharpe_ratio=0, total_trades=0,
+                    final_nav=0, elapsed_seconds=elapsed, error=str(e),
+                ))
+    else:
+        excluded = {x.strip() for x in (exclude or "").split(",") if x.strip()}
+        strategy_names = [n for n in list_strategies() if n not in excluded]
+
+        console.print(f"[cyan]对比 {len(strategy_names)} 个策略 — {market.upper()} "
+                      f"{start_date} → {end_date}[/cyan]\n")
+
+        for name in strategy_names:
+            strategy_class = get_strategy(name)
+            if strategy_class is None:
+                continue
+            console.print(f"  运行 [cyan]{name}[/cyan]...")
+            t0 = time.perf_counter()
+            try:
+                result = BacktestEngine(config).run(strategy_class)
+                m = result.metrics
+                elapsed = time.perf_counter() - t0
+                rows.append(ComparisonRow(
+                    strategy_name=name,
+                    total_return=m.get("total_return", 0.0),
+                    annualized_return=m.get("annualized_return", 0.0),
+                    max_drawdown=m.get("max_drawdown", 0.0),
+                    sharpe_ratio=m.get("sharpe_ratio", 0.0),
+                    total_trades=m.get("total_trades", 0),
+                    final_nav=m.get("final_nav", capital),
+                    elapsed_seconds=elapsed,
+                ))
+            except Exception as e:
+                elapsed = time.perf_counter() - t0
+                rows.append(ComparisonRow(
+                    strategy_name=name, total_return=0, annualized_return=0,
+                    max_drawdown=0, sharpe_ratio=0, total_trades=0,
+                    final_nav=0, elapsed_seconds=elapsed, error=str(e),
+                ))
 
     report = ComparisonReport(rows, market, (start_date, end_date))
     report.output(sort_key=sort)
