@@ -16,6 +16,8 @@ You are an expert quantitative developer.
 
 4. **架构文档同步**：涉及模块结构的改动前先读 ARCHITECTURE.md 相关章节；改动后如新增/删除顶级模块、改变模块间依赖方向、新增 CLI 命令，须同步更新 ARCHITECTURE.md 对应表格，与代码同一次 commit 提交。
 
+5. **CLI 命令间共用逻辑抽函数**：同一个 CLI 文件里多个 command 出现相同的参数解析/文件加载逻辑（如 `--param key=value` 解析、`--spec-file` 加载）时，抽成模块级函数复用，不要每个 command 各自手写一份——曾经出现过同一段 `--spec-file` 解析代码在 `run` 和新加的 `compare` 之间即将被复制第二遍。
+
 ## 常用命令
 
 ```bash
@@ -80,3 +82,6 @@ class MyStrategy(BaseStrategy):
 - 数据库：SQLite 内存库模拟 MariaDB，`conftest.py` 中有基础 fixtures
 - Pitfall PIT 场景覆盖：退市股票、行业重分类、除权复权
 - 不使用 mock 验证数据模型层行为
+- **SQLite mock schema 不要每个测试文件各写一份**：新测试需要连表结构时，先查 `conftest.py` 有没有现成 fixture；没有就在 `conftest.py` 新增共用 fixture，不要在测试文件里手写 `CREATE TABLE`。曾经出现两个测试文件各自手写同一张表却打错同一个字（`weekly_prices` vs 生产代码实际用的 `prices_weekly`），两处都静默挂了好几周没人发现。
+- **测试用 SQLite fixture 里的表名/列名要跟被测生产代码实际查询的对上**，不要凭印象编——新增/修改 fixture 前先读一遍对应 ingest 函数的 SQL，而不是照抄旁边一个可能已经过期的测试。
+- MariaDB 专属语法（如 `COLLATE utf8mb4_unicode_ci`）在 SQLite fixture 里跑不通时，优先在 fixture 侧注册兼容处理（如 `sqlalchemy.event` 注册同名 no-op collation），不要为了让测试通过而改生产 SQL。
