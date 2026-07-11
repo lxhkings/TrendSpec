@@ -40,7 +40,7 @@ ResearchOrchestrator
 | `engine/` | 执行编排（回测/选股） | `base_engine.py` (BaseEngine, EngineConfig, EngineResult), `backtest_engine.py` (BacktestEngine), `screening_engine.py` (ScreeningEngine), `broker.py` (Broker), `portfolio.py` (Portfolio), `costs.py` (CostsModel) |
 | `strategy/` | 策略框架（扩展点） | `base.py` (BaseStrategy, @register_strategy), `context.py` (StrategyContext), `signal.py` (Signal), `factor_strategy.py` (FactorStrategy), `indicators.py` (MA/EMA/RSI/MACD/ATR/Bollinger) |
 | `factors/` | 因子计算引擎 | `base.py` (Factor), `registry.py` (Registry + @register), `price/`, `technical/`, `volume/`, `cross_sectional/`, `sector/`, `fundamental/` |
-| `research/` | LLM 驱动策略研究管道 | `orchestrator.py` (ResearchOrchestrator), `agent.py` (HypothesisAgent), `spec.py` (FactorSpec/FactorTerm), `llm_client.py` (LLMClient), `walkforward.py`, `fast_eval.py`, `search.py`, `report.py`, `ledger.py` |
+| `research/` | LLM 驱动策略研究管道 | `orchestrator.py` (ResearchOrchestrator), `agent.py` (HypothesisAgent), `spec.py` (FactorSpec/FactorTerm), `llm_client.py` (LLMClient), `walkforward.py`, `fast_eval.py`, `factor_eval.py` (RankIC/分层回测), `search.py`, `report.py`, `ledger.py` |
 | `risk/` | 风控规则链 | `base.py` (RiskRule/Allow/Reject), `pipeline.py` (RiskPipeline), `position_limit.py`, `sector_limit.py`, `drawdown_halt.py`, `liquidity.py`, `price_limit.py`, `sector_neutral.py` |
 | `screening/` | 选股输出报告 | `report.py` (ScreeningReport — rich 表格 + CSV) |
 | `analyzer/` | 回测绩效分析 | `metrics.py` (PerformanceMetrics), `equity_curve.py` (EquityCurve), `trade_log.py` (TradeLogAnalyzer), `report.py` (BacktestReport), `signal_history.py`, `strategy_comparison.py` |
@@ -61,7 +61,9 @@ trendspec (Typer)
 ├── backtest run --strategy NAME --market us|cn --start DATE --end DATE [--params]
 ├── research
 │   ├── run --theme STR [--fast] [--goal STR] [--initial-cap FLOAT]
-│   └── serve (启动 dashboard)
+│   ├── serve (启动 dashboard)
+│   ├── ic --spec-file PATH --market us|cn --start DATE [--end DATE] [--horizon N]
+│   └── quantile --spec-file PATH --market us|cn --start DATE [--end DATE] [--horizon N] [--n-quantiles N]
 ├── signal-history
 │   ├── build
 │   └── status
@@ -90,6 +92,7 @@ trendspec (Typer)
 | `ResearchOrchestrator` | `research/orchestrator.py` | 研究循环主控 |
 | `HypothesisAgent` | `research/agent.py` | LLM 策略假设生成 |
 | `FactorSpec` / `FactorTerm` | `research/spec.py` | Pydantic 因子组合规范 |
+| `compute_rank_ic` / `compute_quantile_returns` | `research/factor_eval.py` | RankIC / 分层回测评估 |
 | `Settings` | `config/settings.py` | `get_settings()` 聚合配置 |
 | `Manifest` | `ingest/manifest.py` | 摄入同步状态跟踪 |
 
