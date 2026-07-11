@@ -4,7 +4,13 @@ import polars as pl
 import pytest
 
 import trendspec.factors  # noqa: F401 触发因子注册
-from trendspec.research.factor_eval import _attach_forward_returns, compute_rank_ic, summarize_ic
+from trendspec.research.factor_eval import (
+    _attach_forward_returns,
+    compute_rank_ic,
+    summarize_ic,
+    compute_quantile_returns,
+    compute_top_minus_bottom,
+)
 
 
 def _panel() -> pl.DataFrame:
@@ -110,3 +116,33 @@ def test_summarize_ic_empty_returns_none():
     empty = pl.DataFrame({"date": [], "rank_ic": []}, schema={"date": pl.Date, "rank_ic": pl.Float64})
     summary = summarize_ic(empty)
     assert summary == {"ic_mean": None, "ic_std": None, "ir": None, "ic_win_rate": None}
+
+
+def test_compute_quantile_returns_columns_and_labels():
+    df = _panel_with_monotonic_relation()
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    qr = compute_quantile_returns(df, factors, market="cn", horizon=5, n_quantiles=5)
+    assert set(qr.columns) == {"date", "quantile", "avg_fwd_return"}
+    assert set(qr["quantile"].unique().to_list()) <= {"0", "1", "2", "3", "4"}
+
+
+def test_compute_quantile_returns_is_monotonic_for_monotonic_relation():
+    df = _panel_with_monotonic_relation()
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    qr = compute_quantile_returns(df, factors, market="cn", horizon=5, n_quantiles=5)
+    avg_by_q = (
+        qr.group_by("quantile")
+        .agg(pl.col("avg_fwd_return").mean().alias("mean_ret"))
+        .sort("quantile")
+    )
+    rets = avg_by_q["mean_ret"].to_list()
+    assert rets == sorted(rets)  # 分位越高，平均前瞻收益越高（单调递增）
+
+
+def test_compute_top_minus_bottom_positive_for_monotonic_relation():
+    df = _panel_with_monotonic_relation()
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    qr = compute_quantile_returns(df, factors, market="cn", horizon=5, n_quantiles=5)
+    tmb = compute_top_minus_bottom(qr, n_quantiles=5)
+    assert set(tmb.columns) == {"date", "top_minus_bottom"}
+    assert tmb["top_minus_bottom"].mean() > 0

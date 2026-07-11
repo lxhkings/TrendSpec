@@ -71,3 +71,57 @@ def summarize_ic(ic_df: pl.DataFrame) -> dict[str, float | None]:
     win_rate = (ic_df["rank_ic"] > 0).sum() / ic_df.height
 
     return {"ic_mean": ic_mean, "ic_std": ic_std, "ir": ir, "ic_win_rate": win_rate}
+
+
+def compute_quantile_returns(
+    panel: pl.DataFrame,
+    factors: list[dict[str, Any]],
+    market: str,
+    horizon: int = 20,
+    n_quantiles: int = 5,
+    group_by: dict[str, list[str]] | None = None,
+    winsorize_pct: float = 0.01,
+    root: str | None = None,
+) -> pl.DataFrame:
+    """逐日按 combo_score 切 n_quantiles 组（qcut，按 date 分组切），
+    每组算 fwd_ret_{horizon}d 简单平均。不跑 BacktestEngine，只看因子
+    分层是否单调——研究阶段分析工具，不是可执行策略。"""
+    scores = compute_combo_scores(panel, factors, market, group_by, winsorize_pct, root)
+    fwd = _attach_forward_returns(panel, horizon)
+    ret_col = f"fwd_ret_{horizon}d"
+
+    joined = scores.join(
+        fwd.select(["instrument_id", "date", ret_col]),
+        on=["instrument_id", "date"],
+        how="inner",
+    ).filter(pl.col("combo_score").is_not_null() & pl.col(ret_col).is_not_null())
+
+    labels = [str(i) for i in range(n_quantiles)]
+    bucketed = joined.with_columns(
+        pl.col("combo_score").qcut(n_quantiles, labels=labels).over("date").alias("quantile")
+    )
+
+    return (
+        bucketed.group_by(["date", "quantile"])
+        .agg(pl.col(ret_col).mean().alias("avg_fwd_return"))
+        .with_columns(pl.col("quantile").cast(pl.String))
+        .sort(["date", "quantile"])
+    )
+
+
+def compute_top_minus_bottom(quantile_df: pl.DataFrame, n_quantiles: int) -> pl.DataFrame:
+    """quantile_df: compute_quantile_returns 的输出。返回每日 (最高组-最低组)
+    平均前瞻收益之差；只保留当天两组都有数据的日期。"""
+    top_label = str(n_quantiles - 1)
+    top = quantile_df.filter(pl.col("quantile") == top_label).select(
+        ["date", pl.col("avg_fwd_return").alias("top")]
+    )
+    bottom = quantile_df.filter(pl.col("quantile") == "0").select(
+        ["date", pl.col("avg_fwd_return").alias("bottom")]
+    )
+    return (
+        top.join(bottom, on="date", how="inner")
+        .with_columns((pl.col("top") - pl.col("bottom")).alias("top_minus_bottom"))
+        .select(["date", "top_minus_bottom"])
+        .sort("date")
+    )
