@@ -1,0 +1,25 @@
+{
+  "market": "cn",
+  "factors": [
+    {
+      "name": "clenow_momentum",
+      "params": {
+        "period": 90
+      },
+      "direction": "high",
+      "weight": 1.0
+    },
+    {
+      "name": "fund_roe",
+      "direction": "high",
+      "weight": 1.0
+    },
+    {
+      "name": "fund_pe_ttm",
+      "direction": "low",
+      "weight": 1.0
+    }
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "三因子组合：用clenow动量替代原始N日收益率动量，对照原组合(Sharpe 0.13 @ top1%/周调仓)"
+}

@@ -1,0 +1,15 @@
+{
+  "market": "cn",
+  "factors": [
+    {
+      "name": "clenow_momentum",
+      "params": {
+        "period": 90
+      },
+      "direction": "high",
+      "weight": 1.0
+    }
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "单因子隔离测试：仅clenow动量（替代原始N日收益率动量）"
+}

@@ -45,6 +45,7 @@ from trendspec.factors.registry import (
 
 # Price factors
 from trendspec.factors.price import (
+    ClenowMomentumFactor,
     MomentumFactor as PriceMomentumFactor,
     MomentumRankFactor,
     VolatilityFactor as PriceVolatilityFactor,
@@ -97,6 +98,7 @@ __all__ = [
     "MomentumRankFactor",
     "PriceVolatilityFactor",
     "VolatilityRankFactor",
+    "ClenowMomentumFactor",
     # Volume factors
     "TurnoverFactor",
     "VolumeRatioFactor",
