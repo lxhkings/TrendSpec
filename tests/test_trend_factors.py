@@ -3,7 +3,9 @@ from datetime import date
 import polars as pl
 import pytest
 
+import trendspec.factors  # noqa: F401  (触发注册)
 from trendspec.factors.fundamental.trend import _quarterly_series, _asof_join_quarterly_result, _quarterly_shift_compute
+from trendspec.factors.registry import get_factor
 
 
 def _daily_df() -> pl.DataFrame:
@@ -114,3 +116,17 @@ def test_quarterly_shift_compute_missing_column_returns_empty():
         df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
     )
     assert result.is_empty()
+
+
+def test_fund_revenue_qoq_passthrough():
+    df = _daily_df()
+    res = get_factor("fund_revenue_qoq").compute_full(df)
+    aaa = res.values.filter(pl.col("instrument_id") == "AAA").sort("date")
+    row = aaa.filter(pl.col("date") == date(2020, 8, 1)).row(0, named=True)
+    assert row["fund_revenue_qoq"] == pytest.approx(0.1)
+
+
+def test_fund_net_income_qoq_missing_column_yields_null():
+    df = _daily_df()  # 没有 net_income 列
+    res = get_factor("fund_net_income_qoq").compute_full(df)
+    assert res.values["fund_net_income_qoq"].null_count() == df.height

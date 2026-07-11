@@ -97,3 +97,35 @@ def _quarterly_shift_compute(
 
     q = q.with_columns(pl.when(valid).then(raw).otherwise(None).alias("result"))
     return q.select(["instrument_id", "date", "result"])
+
+
+@register("fund_revenue_qoq")
+class FundRevenueQoQ(Factor):
+    description: ClassVar[str] = "Revenue QoQ growth (quarter vs immediately prior quarter, PIT)"
+    category: ClassVar[str] = "fundamental"
+
+    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
+        if "end_date" not in df.columns or "total_revenue" not in df.columns:
+            return pl.lit(None, dtype=pl.Float64)
+        result = _quarterly_shift_compute(
+            df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+        )
+        if result.is_empty():
+            return pl.lit(None, dtype=pl.Float64)
+        return _asof_join_quarterly_result(df, result).alias(self.name)
+
+
+@register("fund_net_income_qoq")
+class FundNetIncomeQoQ(Factor):
+    description: ClassVar[str] = "Net income QoQ growth (quarter vs immediately prior quarter, PIT)"
+    category: ClassVar[str] = "fundamental"
+
+    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
+        if "end_date" not in df.columns or "net_income" not in df.columns:
+            return pl.lit(None, dtype=pl.Float64)
+        result = _quarterly_shift_compute(
+            df, "net_income", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+        )
+        if result.is_empty():
+            return pl.lit(None, dtype=pl.Float64)
+        return _asof_join_quarterly_result(df, result).alias(self.name)

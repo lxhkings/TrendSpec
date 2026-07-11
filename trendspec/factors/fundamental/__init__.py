@@ -1,4 +1,4 @@
-"""Fundamental factors: quality, growth, valuation, leverage, cashflow_quality, size_liquidity."""
+"""Fundamental factors: quality, growth, valuation, leverage, cashflow_quality, size_liquidity, trend."""
 
 from trendspec.factors.fundamental import (
     cashflow_quality,
@@ -6,8 +6,9 @@ from trendspec.factors.fundamental import (
     leverage,
     quality,
     size_liquidity,
+    trend,
     valuation,
-)
+)  # noqa: F401
 
 __all__ = [
     "cashflow_quality",
@@ -15,5 +16,6 @@ __all__ = [
     "leverage",
     "quality",
     "size_liquidity",
+    "trend",
     "valuation",
 ]
