@@ -134,6 +134,7 @@ def _build(strat, specs, positions=None, cash=1_000_000.0, n_hist=25, cur_date=R
 
     strat._full_data = data
     strat._last_rebalance_date = None
+    strat._regime_ok = {}  # 空字典 = 无 gate 数据时 next() 视为放行（regime_ok.get(d, True)）
     strat._rs_short = {(iid, cur_date): e60 for iid, e60, _e120, _dv in specs}
     strat._rs_long = {(iid, cur_date): e120 for iid, _e60, e120, _dv in specs}
 
