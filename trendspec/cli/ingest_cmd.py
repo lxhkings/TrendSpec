@@ -384,24 +384,50 @@ def ingest_indices(
         raise typer.Exit(1)
 
 
+_STATUS_DATASETS = (
+    "daily", "weekly", "intraday", "components", "sectors",
+    "fundamentals", "valuation", "indices",
+)
+
+
 @app.command("status")
 def ingest_status(
     market: str = typer.Option("us", "--market", help="市场代码 (cn, us)"),
 ) -> None:
-    """显示摄入状态."""
-    from trendspec.data.markets import Market
+    """显示各数据集在 data_lake 中的实际全量统计（非最近一次增量批次）。"""
+    import polars as pl
+    from rich.table import Table
+
     from trendspec.config.settings import get_settings
-    from trendspec.ingest.manifest import Manifest
+    from trendspec.data.markets import Market
+    from trendspec.data.parquet_loader import _lazyframe_is_empty, scan_parquet
 
     market_enum = Market(market.upper())
     settings = get_settings()
     root = settings.data_lake.data_lake_root
-    manifest = Manifest(market_enum, root)
 
-    for dataset in ("daily", "components", "sectors"):
-        state = manifest.get_dataset_state(dataset)
-        if state:
-            console.print(f"[green]{dataset}:[/green] {state.get('row_count', 0)} 行, "
-                          f"日期: {state.get('date_range', {})}")
-        else:
-            console.print(f"[yellow]{dataset}:[/yellow] 未同步")
+    table = Table(title=f"摄入状态 — {market.upper()}")
+    table.add_column("数据集")
+    table.add_column("行数", justify="right")
+    table.add_column("日期范围")
+    table.add_column("标的数", justify="right")
+
+    for dataset in _STATUS_DATASETS:
+        lf = scan_parquet(root, market_enum, dataset)
+        if _lazyframe_is_empty(lf):
+            table.add_row(dataset, "-", "未同步", "-")
+            continue
+        stats = lf.select([
+            pl.len().alias("row_count"),
+            pl.col("date").min().alias("min_date"),
+            pl.col("date").max().alias("max_date"),
+            pl.col("instrument_id").n_unique().alias("instrument_count"),
+        ]).collect().row(0, named=True)
+        table.add_row(
+            dataset,
+            f"{stats['row_count']:,}",
+            f"{stats['min_date']} ~ {stats['max_date']}",
+            f"{stats['instrument_count']:,}",
+        )
+
+    console.print(table)
