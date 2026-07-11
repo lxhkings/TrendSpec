@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import polars as pl
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 
 from trendspec.config.settings import Settings
 from trendspec.data.markets import Market
@@ -179,6 +179,69 @@ def insert_sqlite_data(engine, table_name: str, data: list[tuple]) -> None:
         params = [dict(zip(columns, row)) for row in data]
         conn.execute(sql, params)
         conn.commit()
+
+
+# =============================================================================
+# Weekly Prices SQLite Mock (shared by test_weekly_loader.py + test_weekly_ingestor.py)
+# =============================================================================
+
+
+@pytest.fixture
+def weekly_prices_db():
+    """SQLite mock of Synology `prices_weekly` + `stocks` + `index_constituents`.
+
+    Single source of truth for this schema's table/column names — a prior
+    drift (fixture used `weekly_prices`, production code queries
+    `prices_weekly`) was hand-duplicated with the same wrong name in two
+    test files and silently broke both for weeks.
+
+    `ingest_us_weekly`'s query hardcodes `COLLATE utf8mb4_unicode_ci`
+    (MariaDB-only) for ticker matching; SQLite has no such collation
+    built in, so this registers a no-op stand-in on every connection
+    rather than altering the production SQL for testability.
+    """
+    engine = create_engine("sqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def _register_collation(dbapi_connection, _connection_record):
+        dbapi_connection.create_collation(
+            "utf8mb4_unicode_ci", lambda a, b: (a > b) - (a < b)
+        )
+
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE prices_weekly (ticker TEXT, date DATE, open REAL, high REAL,
+                                         low REAL, close REAL, volume INTEGER)
+        """))
+        conn.execute(text("""
+            CREATE TABLE stocks (ticker TEXT PRIMARY KEY, exchange TEXT,
+                                  gics_sector TEXT, gics_industry TEXT, is_active INTEGER)
+        """))
+        conn.execute(text("""
+            CREATE TABLE index_constituents (index_id TEXT, snapshot_date DATE, ticker TEXT)
+        """))
+        conn.execute(text("""
+            INSERT INTO index_constituents VALUES
+            ('SP500', '2024-01-01', 'AAPL'),
+            ('SP500', '2024-01-01', 'MSFT')
+        """))
+        conn.execute(text("""
+            INSERT INTO stocks VALUES
+            ('AAPL', 'NYSE', 'Tech', 'Hardware', 1),
+            ('MSFT', 'Nasdaq', 'Tech', 'Software', 1),
+            ('600000', 'SSE', 'Financials', 'Banks', 1),
+            ('000001', 'SZSE', 'Financials', 'Banks', 1)
+        """))
+        conn.execute(text("""
+            INSERT INTO prices_weekly VALUES
+            ('AAPL',   '2024-01-05', 180.0, 188.0, 179.0, 187.0, 250000000),
+            ('AAPL',   '2024-01-12', 187.0, 192.0, 185.0, 190.0, 260000000),
+            ('MSFT',   '2024-01-05', 365.0, 375.0, 364.0, 373.0, 100000000),
+            ('600000', '2024-01-05', 7.0,   7.3,   6.9,   7.2,   50000000),
+            ('000001', '2024-01-05', 10.0,  10.5,  9.9,   10.3,  80000000)
+        """))
+        conn.commit()
+    yield engine
 
 
 # =============================================================================
