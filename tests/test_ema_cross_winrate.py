@@ -217,10 +217,11 @@ def test_recent_golden_cross_enriches_and_filters():
         "worst_ret": [-0.10, -0.08],
         "median_bars": [10.0, 8.0],
         "median_mfe": [0.15, 0.18],
+        "total_return": [0.20, 0.04],
     })
     out = recent_golden_cross(cross, max_bars_since=2, stats=stats, min_samples=3)
     ids = out["instrument_id"].to_list()
-    assert ids == ["A", "C"]          # B 剔除；A(median 0.12) 在前，C(N=0)排尾
+    assert ids == ["A", "C"]          # B 剔除；A(total_return 非空)在前，C(N=0, total_return 为空)排尾
     a = out.filter(pl.col("instrument_id") == "A").row(0, named=True)
     assert a["N"] == 5
     assert abs(a["progress_pct"] - 2 / 10.0) < 1e-9      # bars_since/median_bars
