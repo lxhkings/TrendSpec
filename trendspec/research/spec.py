@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from trendspec.factors.registry import list_factors
 
@@ -28,7 +28,11 @@ class FactorSpec(BaseModel):
 
     market: str
     factors: list[FactorTerm] = Field(min_length=1)
-    top_k: int = Field(gt=0)
+    top_k: int | None = Field(default=None, gt=0)
+    top_pct: float | None = Field(default=None, gt=0, le=1)
+    """可选：按每组（或全局，group_by 未设时）当日 PIT 候选数量的百分比取
+    top（如 0.05 = 前 5%），随 universe 每日浮动动态计算，而非固定数量。
+    与 top_k 二选一。"""
     rebalance: int = Field(gt=0)
     rationale: str = ""
     sector_filter: list[str] | None = None
@@ -40,3 +44,9 @@ class FactorSpec(BaseModel):
     全局模式，向后兼容。"""
     winsorize_pct: float = 0.01
     """入模前每个因子的双侧截断分位数（默认 1%/99%），组内计算。"""
+
+    @model_validator(mode="after")
+    def _exactly_one_of_top_k_top_pct(self) -> "FactorSpec":
+        if (self.top_k is None) == (self.top_pct is None):
+            raise ValueError("top_k 和 top_pct 必须二选一（恰好设置一个）")
+        return self

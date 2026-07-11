@@ -174,7 +174,11 @@ class FactorStrategy(BaseStrategy):
                 iid for iid in self._ranked_by_group_date.get((current_date, group_name), [])
                 if iid in universe
             ]
-            selected = group_ranked[: self._spec.top_k]
+            if self._spec.top_pct is not None:
+                cap = max(1, round(len(group_ranked) * self._spec.top_pct))
+            else:
+                cap = self._spec.top_k
+            selected = group_ranked[:cap]
             top.extend(selected)
             for iid in selected:
                 group_of[iid] = group_name
