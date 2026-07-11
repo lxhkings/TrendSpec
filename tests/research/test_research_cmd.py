@@ -130,3 +130,21 @@ def test_research_ic_command_handles_single_ic_date_no_crash(tmp_path):
     assert result.exit_code == 0, result.output
     assert "IC均值" in result.output
     assert "N/A" in result.output
+
+
+def test_research_quantile_command_prints_groups(tmp_path):
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps({
+        "market": "cn",
+        "factors": [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}],
+    }))
+
+    with patch("trendspec.research.market_panel.MarketPanel.load", return_value=_mock_panel()):
+        result = runner.invoke(app, [
+            "quantile", "--spec-file", str(spec_path), "--market", "cn",
+            "--start", "2020-01-01", "--end", "2020-02-10", "--horizon", "5",
+            "--n-quantiles", "3",
+        ])
+
+    assert result.exit_code == 0, result.output
+    assert "top-bottom" in result.output

@@ -4,6 +4,7 @@ import json
 from datetime import date
 from pathlib import Path
 
+import polars as pl
 import typer
 from rich.console import Console
 
@@ -134,3 +135,56 @@ def research_ic(
         f"IC均值={summary['ic_mean']:.4f}  IC标准差={ic_std_str}  "
         f"IR={ir_str}  IC胜率={summary['ic_win_rate']:.2%}"
     )
+
+
+@app.command("quantile")
+def research_quantile(
+    spec_file: Path = typer.Option(
+        ..., "--spec-file",
+        help="FactorSpec JSON 文件路径（只读 factors/group_by/winsorize_pct 字段）",
+    ),
+    market: str = typer.Option("cn", "--market", "-m", help="市场"),
+    start: str = typer.Option(..., "--start", help="起始 YYYY-MM-DD"),
+    end: str = typer.Option(None, "--end", help="结束 YYYY-MM-DD，默认今日"),
+    horizon: int = typer.Option(20, "--horizon", help="前瞻收益天数"),
+    n_quantiles: int = typer.Option(5, "--n-quantiles", help="分层组数"),
+) -> None:
+    """分层回测：全market按因子分切 N 组，看各组平均前瞻收益是否单调
+    （不跑 BacktestEngine，不含交易成本，只看因子分层有没有信息量）。"""
+    import trendspec.factors  # noqa: F401 — 触发因子注册
+    from trendspec.research.factor_eval import compute_quantile_returns, compute_top_minus_bottom
+    from trendspec.research.market_panel import MarketPanel
+
+    if not spec_file.exists():
+        console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
+        raise typer.Exit(1)
+    try:
+        spec = json.loads(spec_file.read_text())
+    except json.JSONDecodeError as e:
+        console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
+        raise typer.Exit(1)
+
+    start_date = date.fromisoformat(start)
+    end_date = date.fromisoformat(end) if end else date.today()
+    panel = MarketPanel.load(market, start_date, end_date)
+
+    qr = compute_quantile_returns(
+        panel.data, spec["factors"], market, horizon=horizon, n_quantiles=n_quantiles,
+        group_by=spec.get("group_by"), winsorize_pct=spec.get("winsorize_pct", 0.01),
+    )
+    if qr.is_empty():
+        console.print("[yellow]没有可用样本（数据太少或因子分全空）[/yellow]")
+        return
+
+    avg_by_q = (
+        qr.group_by("quantile").agg(pl.col("avg_fwd_return").mean().alias("mean_ret")).sort("quantile")
+    )
+    console.print(f"[cyan]分层回测[/cyan] {n_quantiles} 组 (horizon={horizon})")
+    for row in avg_by_q.iter_rows(named=True):
+        console.print(f"  组{row['quantile']}: 平均前瞻收益={row['mean_ret']:.4%}")
+
+    tmb = compute_top_minus_bottom(qr, n_quantiles=n_quantiles)
+    if tmb.is_empty():
+        console.print("[yellow]top-bottom 价差: 无法计算（缺最高或最低组数据）[/yellow]")
+    else:
+        console.print(f"top-bottom 价差均值: {tmb['top_minus_bottom'].mean():.4%}")
