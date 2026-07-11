@@ -276,3 +276,33 @@ def test_fund_ps_ttm_null_when_missing_or_nonpositive():
     assert get_factor("fund_ps_ttm").compute_full(_df()).values["fund_ps_ttm"].null_count() == 2
     df = _df().with_columns(pl.Series("ps_ttm", [0.0, -1.0]))
     assert get_factor("fund_ps_ttm").compute_full(df).values["fund_ps_ttm"].null_count() == 2
+
+
+def test_fund_total_mv_passthrough():
+    df = _df().with_columns(pl.Series("total_mv", [1.9e11, 5.0e10]))
+    res = get_factor("fund_total_mv").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_total_mv"].to_list() == [1.9e11, 5.0e10]
+
+
+def test_fund_circ_mv_passthrough():
+    df = _df().with_columns(pl.Series("circ_mv", [1.5e11, 4.0e10]))
+    res = get_factor("fund_circ_mv").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_circ_mv"].to_list() == [1.5e11, 4.0e10]
+
+
+def test_fund_turnover_rate_passthrough():
+    df = _df().with_columns(pl.Series("turnover_rate", [0.31, 1.2]))
+    res = get_factor("fund_turnover_rate").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_turnover_rate"].to_list() == [0.31, 1.2]
+
+
+def test_size_liquidity_factors_missing_column_yield_null():
+    bare = pl.DataFrame({
+        "instrument_id": ["AAPL"], "date": [date(2026, 4, 30)], "close": [110.0],
+    })
+    for name in ("fund_total_mv", "fund_circ_mv", "fund_turnover_rate"):
+        res = get_factor(name).compute_full(bare)
+        assert res.values[name].null_count() == 1
