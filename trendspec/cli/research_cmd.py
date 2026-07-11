@@ -128,8 +128,9 @@ def research_ic(
     if summary["ic_mean"] is None:
         console.print("[yellow]没有可用样本（数据太少或因子分全空）[/yellow]")
         return
+    ic_std_str = f"{summary['ic_std']:.4f}" if summary['ic_std'] is not None else "N/A"
     ir_str = f"{summary['ir']:.4f}" if summary['ir'] is not None else "N/A"
     console.print(
-        f"IC均值={summary['ic_mean']:.4f}  IC标准差={summary['ic_std']:.4f}  "
+        f"IC均值={summary['ic_mean']:.4f}  IC标准差={ic_std_str}  "
         f"IR={ir_str}  IC胜率={summary['ic_win_rate']:.2%}"
     )

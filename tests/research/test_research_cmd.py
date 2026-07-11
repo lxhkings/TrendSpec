@@ -74,6 +74,19 @@ def _mock_panel():
     return MarketPanel(data=pl.DataFrame(rows))
 
 
+def _mock_panel_single_ic():
+    """Create panel with exactly 26 days so horizon=20 yields exactly 1 IC date."""
+    from trendspec.research.market_panel import MarketPanel
+    rows = []
+    for iid, (base, multiplier) in [("A", (10.0, 1.0)), ("B", (20.0, 0.9)), ("C", (30.0, 1.1))]:
+        for i in range(26):
+            d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+            # Use different patterns to avoid rank correlation becoming null
+            close = base + i * multiplier
+            rows.append({"instrument_id": iid, "date": d, "close": close})
+    return MarketPanel(data=pl.DataFrame(rows))
+
+
 def test_research_ic_command_prints_summary(tmp_path):
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps({
@@ -98,3 +111,22 @@ def test_research_ic_command_missing_spec_file_exits_with_error(tmp_path):
     ])
     assert result.exit_code == 1
     assert "不存在" in result.output
+
+
+def test_research_ic_command_handles_single_ic_date_no_crash(tmp_path):
+    """Test that single IC date (ic_std=None) is handled gracefully without TypeError."""
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps({
+        "market": "cn",
+        "factors": [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}],
+    }))
+
+    with patch("trendspec.research.market_panel.MarketPanel.load", return_value=_mock_panel_single_ic()):
+        result = runner.invoke(app, [
+            "ic", "--spec-file", str(spec_path), "--market", "cn",
+            "--start", "2020-01-01", "--end", "2020-01-21", "--horizon", "20",
+        ])
+
+    assert result.exit_code == 0, result.output
+    assert "IC均值" in result.output
+    assert "N/A" in result.output
