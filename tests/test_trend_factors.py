@@ -159,3 +159,26 @@ def test_fund_revenue_cagr_3y_missing_column_yields_null():
     df = _daily_df()  # 没有跨 3 年的数据，也没有额外列缺失场景在这里测；用 _daily_df 只验证接口不炸
     res = get_factor("fund_revenue_cagr_3y").compute_full(df)
     assert res.values["fund_revenue_cagr_3y"].null_count() == df.height
+
+
+def _roe_df() -> pl.DataFrame:
+    """FFF：5 个季度 ROE 依次 10, 11, 12, 13, 18（第5季相对第1季 +8）。"""
+    ends = [date(2020, 3, 31), date(2020, 6, 30), date(2020, 9, 30),
+            date(2020, 12, 31), date(2021, 3, 31)]
+    roes = [10.0, 11.0, 12.0, 13.0, 18.0]
+    rows = [{"instrument_id": "FFF", "date": e, "end_date": e, "roe": r}
+            for e, r in zip(ends, roes, strict=True)]
+    return pl.DataFrame(rows).sort("date")
+
+
+def test_fund_roe_trend_4q_is_point_diff_not_ratio():
+    df = _roe_df()
+    res = get_factor("fund_roe_trend_4q").compute_full(df)
+    last = res.values.sort("date").tail(1).row(0, named=True)
+    assert last["fund_roe_trend_4q"] == pytest.approx(8.0)  # 18 - 10，不是比率
+
+
+def test_fund_roe_trend_4q_missing_column_yields_null():
+    df = _daily_df()  # 没有 roe 列
+    res = get_factor("fund_roe_trend_4q").compute_full(df)
+    assert res.values["fund_roe_trend_4q"].null_count() == df.height

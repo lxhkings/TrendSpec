@@ -146,3 +146,19 @@ class FundRevenueCagr3Y(Factor):
         if result.is_empty():
             return pl.lit(None, dtype=pl.Float64)
         return _asof_join_quarterly_result(df, result).alias(self.name)
+
+
+@register("fund_roe_trend_4q")
+class FundRoeTrend4Q(Factor):
+    description: ClassVar[str] = "ROE change vs 4 quarters ago, absolute points not ratio (PIT)"
+    category: ClassVar[str] = "fundamental"
+
+    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
+        if "end_date" not in df.columns or "roe" not in df.columns:
+            return pl.lit(None, dtype=pl.Float64)
+        result = _quarterly_shift_compute(
+            df, "roe", n=4, gap_min_months=10, gap_max_months=14, mode="diff",
+        )
+        if result.is_empty():
+            return pl.lit(None, dtype=pl.Float64)
+        return _asof_join_quarterly_result(df, result).alias(self.name)
