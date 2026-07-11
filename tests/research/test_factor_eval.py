@@ -4,12 +4,13 @@ import polars as pl
 import pytest
 
 import trendspec.factors  # noqa: F401 触发因子注册
+from trendspec.research.factor_cache import compute_combo_scores
 from trendspec.research.factor_eval import (
     _attach_forward_returns,
-    compute_rank_ic,
-    summarize_ic,
     compute_quantile_returns,
+    compute_rank_ic,
     compute_top_minus_bottom,
+    summarize_ic,
 )
 
 
@@ -146,3 +147,87 @@ def test_compute_top_minus_bottom_positive_for_monotonic_relation():
     tmb = compute_top_minus_bottom(qr, n_quantiles=5)
     assert set(tmb.columns) == {"date", "top_minus_bottom"}
     assert tmb["top_minus_bottom"].mean() > 0
+
+
+def test_compute_quantile_returns_per_date_qcut_regression():
+    """Regression test: verify .over("date") is used in qcut, not global qcut.
+
+    Constructs a 4-instrument panel where factor ranking changes significantly
+    across dates:
+    - Days 0-14: Instruments ranked by momentum as A > B > C > D
+    - Days 15-29: Instruments ranked by momentum as D > C > B > A (reversed!)
+
+    Per-date qcut (correct, with .over("date")): Each date bucketing reflects
+    that date's cross-sectional ranking. E.g., A is in high quantile early, low
+    quantile late.
+
+    Global qcut (buggy, no .over("date")): All dates pooled for bucketing.
+    A's high average momentum score across all dates locks it into high quantile
+    throughout, even though its per-date ranking reverses—hiding the key fact
+    that good momentum doesn't always coincide with good forward returns on all dates.
+
+    This test extracts the per-date quantile assignment from the bucketed data
+    and asserts the correct and buggy approaches assign instruments differently.
+    It will FAIL if .over("date") is accidentally removed from compute_quantile_returns.
+    """
+    rows = []
+
+    # Four instruments with distinct, inverted momentum patterns
+    for i in range(30):
+        d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+
+        # A: high momentum days 0-14, flat 15-29
+        price_a = 100.0 * (1.04 ** min(i, 14))
+        rows.append({"instrument_id": "A", "date": d, "close": price_a})
+
+        # B: medium momentum days 0-14, medium 15-29
+        price_b = 100.0 * (1.02 ** i)
+        rows.append({"instrument_id": "B", "date": d, "close": price_b})
+
+        # C: low momentum days 0-14, medium 15-29
+        price_c = 100.0 * (1.01 ** min(i, 14)) * (1.02 ** max(0, i - 14))
+        rows.append({"instrument_id": "C", "date": d, "close": price_c})
+
+        # D: flat days 0-14, high momentum 15-29
+        price_d = 100.0 * (1.04 ** max(0, i - 14))
+        rows.append({"instrument_id": "D", "date": d, "close": price_d})
+
+    df = pl.DataFrame(rows)
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+
+    # Correct result using compute_quantile_returns (uses .over("date"))
+    correct_result = compute_quantile_returns(df, factors, market="cn", horizon=5, n_quantiles=2)
+
+    # Manually compute what GLOBAL qcut would produce (without .over("date"))
+    scores = compute_combo_scores(df, factors, market="cn", group_by=None, winsorize_pct=0.01, root=None)
+    fwd = _attach_forward_returns(df, horizon=5)
+    ret_col = "fwd_ret_5d"
+
+    joined = scores.join(
+        fwd.select(["instrument_id", "date", ret_col]),
+        on=["instrument_id", "date"],
+        how="inner",
+    ).filter(pl.col("combo_score").is_not_null() & pl.col(ret_col).is_not_null())
+
+    # Simulate buggy version: global qcut (no .over("date"))
+    labels = ["0", "1"]
+    buggy_bucketed = joined.with_columns(
+        pl.col("combo_score").qcut(2, labels=labels).alias("quantile")  # No .over("date")!
+    )
+
+    buggy_result = (
+        buggy_bucketed.group_by(["date", "quantile"])
+        .agg(pl.col(ret_col).mean().alias("avg_fwd_return"))
+        .with_columns(pl.col("quantile").cast(pl.String))
+        .sort(["date", "quantile"])
+    )
+
+    # Core assertion: per-date qcut and global qcut must produce DIFFERENT results.
+    # With 4 instruments and 2 quantiles, when ranking flips across dates, the
+    # bucketing should differ—global qcut locks A into high quantile (its average
+    # is highest), while per-date qcut puts A into low quantile on days 15-29.
+    assert not correct_result.equals(buggy_result), (
+        "Per-date qcut (correct) should differ from global qcut (buggy) when factor "
+        "ranking changes across dates. If this assertion fails, .over('date') may have "
+        "been accidentally removed from the qcut call in compute_quantile_returns."
+    )
