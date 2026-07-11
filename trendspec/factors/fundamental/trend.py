@@ -129,3 +129,20 @@ class FundNetIncomeQoQ(Factor):
         if result.is_empty():
             return pl.lit(None, dtype=pl.Float64)
         return _asof_join_quarterly_result(df, result).alias(self.name)
+
+
+@register("fund_revenue_cagr_3y")
+class FundRevenueCagr3Y(Factor):
+    description: ClassVar[str] = "Revenue 3-year CAGR (12 quarters back, PIT)"
+    category: ClassVar[str] = "fundamental"
+
+    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
+        if "end_date" not in df.columns or "total_revenue" not in df.columns:
+            return pl.lit(None, dtype=pl.Float64)
+        result = _quarterly_shift_compute(
+            df, "total_revenue", n=12, gap_min_months=34, gap_max_months=38,
+            mode="cagr", cagr_years=3.0,
+        )
+        if result.is_empty():
+            return pl.lit(None, dtype=pl.Float64)
+        return _asof_join_quarterly_result(df, result).alias(self.name)

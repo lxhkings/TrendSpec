@@ -130,3 +130,32 @@ def test_fund_net_income_qoq_missing_column_yields_null():
     df = _daily_df()  # 没有 net_income 列
     res = get_factor("fund_net_income_qoq").compute_full(df)
     assert res.values["fund_net_income_qoq"].null_count() == df.height
+
+
+def _cagr_df() -> pl.DataFrame:
+    """DDD：13 个季度末，营收从 100 按年化 10% 复利增长（12 季度=3年间隔）。"""
+    rows = []
+    rev = 100.0
+    ends = [
+        date(2020, 3, 31), date(2020, 6, 30), date(2020, 9, 30), date(2020, 12, 31),
+        date(2021, 3, 31), date(2021, 6, 30), date(2021, 9, 30), date(2021, 12, 31),
+        date(2022, 3, 31), date(2022, 6, 30), date(2022, 9, 30), date(2022, 12, 31),
+        date(2023, 3, 31),
+    ]
+    for end in ends:
+        rows.append({"instrument_id": "DDD", "date": end, "end_date": end, "total_revenue": rev})
+        rev *= 1.1 ** 0.25
+    return pl.DataFrame(rows).sort("date")
+
+
+def test_fund_revenue_cagr_3y_matches_expected_rate():
+    df = _cagr_df()
+    res = get_factor("fund_revenue_cagr_3y").compute_full(df)
+    last = res.values.sort("date").tail(1).row(0, named=True)
+    assert last["fund_revenue_cagr_3y"] == pytest.approx(0.10, abs=0.01)
+
+
+def test_fund_revenue_cagr_3y_missing_column_yields_null():
+    df = _daily_df()  # 没有跨 3 年的数据，也没有额外列缺失场景在这里测；用 _daily_df 只验证接口不炸
+    res = get_factor("fund_revenue_cagr_3y").compute_full(df)
+    assert res.values["fund_revenue_cagr_3y"].null_count() == df.height
