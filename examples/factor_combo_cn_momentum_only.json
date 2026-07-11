@@ -1,0 +1,15 @@
+{
+  "market": "cn",
+  "factors": [
+    {
+      "name": "momentum",
+      "params": {
+        "period": 60
+      },
+      "direction": "high",
+      "weight": 1.0
+    }
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "单因子隔离测试：仅动量"
+}

@@ -1,0 +1,12 @@
+{
+  "market": "cn",
+  "factors": [
+    {
+      "name": "fund_pe_ttm",
+      "direction": "low",
+      "weight": 1.0
+    }
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "单因子隔离测试：仅PE(低估值优先)"
+}

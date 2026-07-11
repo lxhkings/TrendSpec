@@ -1,0 +1,25 @@
+{
+  "market": "cn",
+  "factors": [
+    {
+      "name": "momentum",
+      "params": {
+        "period": 60
+      },
+      "direction": "high",
+      "weight": 1.0
+    },
+    {
+      "name": "fund_roe",
+      "direction": "high",
+      "weight": 1.0
+    },
+    {
+      "name": "fund_pe_ttm",
+      "direction": "low",
+      "weight": 1.0
+    }
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "全A股不分组，全局动量+质量(ROE)+估值(PE)三因子等权z-score排名。top_pct/top_k/rebalance 由 --param 传入，不写死在文件里"
+}

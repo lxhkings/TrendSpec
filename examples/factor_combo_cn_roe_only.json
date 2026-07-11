@@ -1,0 +1,12 @@
+{
+  "market": "cn",
+  "factors": [
+    {
+      "name": "fund_roe",
+      "direction": "high",
+      "weight": 1.0
+    }
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "单因子隔离测试：仅ROE"
+}
