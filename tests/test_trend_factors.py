@@ -3,7 +3,7 @@ from datetime import date
 import polars as pl
 import pytest
 
-from trendspec.factors.fundamental.trend import _quarterly_series, _asof_join_quarterly_result
+from trendspec.factors.fundamental.trend import _quarterly_series, _asof_join_quarterly_result, _quarterly_shift_compute
 
 
 def _daily_df() -> pl.DataFrame:
@@ -60,3 +60,57 @@ def test_asof_join_quarterly_result_preserves_row_order():
         (pl.col("instrument_id") == "AAA") & (pl.col("date") == date(2020, 5, 1))
     ).row(0, named=True)
     assert row_before["qoq"] is None  # 5-1 落在 Q1 生效期，Q1 没有更早季度对比，null
+
+
+def test_quarterly_shift_compute_ratio_mode():
+    df = _daily_df()
+    result = _quarterly_shift_compute(
+        df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+    )
+    aaa = result.filter(pl.col("instrument_id") == "AAA").sort("date")
+    assert aaa["result"].to_list() == [None, pytest.approx(0.1), pytest.approx(0.1)]
+    bbb = result.filter(pl.col("instrument_id") == "BBB")
+    assert bbb["result"].to_list() == [None]  # 只有 1 季，没有上一季可比
+
+
+def test_quarterly_shift_compute_diff_mode():
+    df = _daily_df()
+    result = _quarterly_shift_compute(
+        df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="diff",
+    )
+    aaa = result.filter(pl.col("instrument_id") == "AAA").sort("date")
+    assert aaa["result"].to_list() == [None, pytest.approx(10.0), pytest.approx(11.0)]
+
+
+def test_quarterly_shift_compute_cagr_mode_requires_positive_base():
+    rows = [
+        {"instrument_id": "EEE", "date": date(2020, 4, 15), "end_date": date(2020, 3, 31), "rev": -50.0},
+        {"instrument_id": "EEE", "date": date(2023, 4, 15), "end_date": date(2023, 3, 31), "rev": 100.0},
+    ]
+    df = pl.DataFrame(rows).rename({"rev": "total_revenue"}).sort("date")
+    result = _quarterly_shift_compute(
+        df, "total_revenue", n=1, gap_min_months=34, gap_max_months=38, mode="cagr", cagr_years=3.0,
+    )
+    assert result.filter(pl.col("date") == date(2023, 4, 15))["result"].to_list() == [None]
+
+
+def test_quarterly_shift_compute_gap_out_of_range_yields_null():
+    """跳过一季（gap=6个月）时，用 QoQ 的 2~4 月容忍区间应判 null，不能拿相隔两季的
+    数值硬算成"环比"。"""
+    rows = [
+        {"instrument_id": "CCC", "date": date(2020, 4, 15), "end_date": date(2020, 3, 31), "total_revenue": 100.0},
+        {"instrument_id": "CCC", "date": date(2020, 10, 15), "end_date": date(2020, 9, 30), "total_revenue": 130.0},
+    ]
+    df = pl.DataFrame(rows).sort("date")
+    result = _quarterly_shift_compute(
+        df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+    )
+    assert result["result"].to_list() == [None, None]
+
+
+def test_quarterly_shift_compute_missing_column_returns_empty():
+    df = _daily_df().drop("total_revenue")
+    result = _quarterly_shift_compute(
+        df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+    )
+    assert result.is_empty()

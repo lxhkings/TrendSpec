@@ -51,3 +51,49 @@ def _asof_join_quarterly_result(
         on="date", by="instrument_id", strategy="backward",
     ).sort("_row_idx")
     return joined["result"]
+
+
+def _quarterly_shift_compute(
+    df: pl.DataFrame,
+    value_col: str,
+    n: int,
+    gap_min_months: int,
+    gap_max_months: int,
+    mode: Literal["ratio", "cagr", "diff"],
+    cagr_years: float | None = None,
+) -> pl.DataFrame:
+    """季度序列上 shift(n) 对比，返回 (instrument_id, date, result)。
+
+    mode="ratio": (cur-base)/|base|；mode="cagr": (cur/base)**(1/cagr_years)-1
+    （要求 base>0，cagr_years 必填）；mode="diff": cur-base（原始差值）。
+
+    end_date 与 shift(n) 那行 end_date 的月份差不落在 [gap_min_months,
+    gap_max_months] 内时判 null——防止漏报导致 shift(n) 实际跳过了缺的那季，
+    比出一个语义错位的"环比"/"同比"。
+    """
+    q = _quarterly_series(df, value_col)
+    empty = pl.DataFrame(schema={"instrument_id": pl.Utf8, "date": pl.Date, "result": pl.Float64})
+    if q.is_empty():
+        return empty
+
+    cur = pl.col(value_col)
+    base = pl.col(value_col).shift(n).over("instrument_id")
+    base_end_date = pl.col("end_date").shift(n).over("instrument_id")
+    gap_months = (
+        (pl.col("end_date").dt.year() - base_end_date.dt.year()) * 12
+        + (pl.col("end_date").dt.month() - base_end_date.dt.month())
+    )
+    gap_ok = gap_months.is_between(gap_min_months, gap_max_months)
+
+    if mode == "cagr":
+        raw = (cur / base) ** (1.0 / cagr_years) - 1.0
+        valid = gap_ok & base.is_not_null() & (base > 0)
+    elif mode == "ratio":
+        raw = (cur - base) / base.abs()
+        valid = gap_ok & base.is_not_null() & (base != 0)
+    else:
+        raw = cur - base
+        valid = gap_ok & base.is_not_null()
+
+    q = q.with_columns(pl.when(valid).then(raw).otherwise(None).alias("result"))
+    return q.select(["instrument_id", "date", "result"])
