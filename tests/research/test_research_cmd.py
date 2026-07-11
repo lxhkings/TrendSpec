@@ -1,5 +1,9 @@
+import json
 from pathlib import Path
+from unittest.mock import patch
+import datetime as dt
 
+import polars as pl
 from typer.testing import CliRunner
 
 from trendspec.cli.research_cmd import app
@@ -58,3 +62,39 @@ def test_run_with_theme_flag_completes(tmp_path: Path, monkeypatch):
     ])
     assert result.exit_code == 0, result.output
     assert list(tmp_path.glob("strategy-*.md"))
+
+
+def _mock_panel():
+    from trendspec.research.market_panel import MarketPanel
+    rows = []
+    for iid, base in [("A", 10.0), ("B", 20.0), ("C", 30.0)]:
+        for i in range(40):
+            d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+            rows.append({"instrument_id": iid, "date": d, "close": base + i})
+    return MarketPanel(data=pl.DataFrame(rows))
+
+
+def test_research_ic_command_prints_summary(tmp_path):
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps({
+        "market": "cn",
+        "factors": [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}],
+    }))
+
+    with patch("trendspec.research.market_panel.MarketPanel.load", return_value=_mock_panel()):
+        result = runner.invoke(app, [
+            "ic", "--spec-file", str(spec_path), "--market", "cn",
+            "--start", "2020-01-01", "--end", "2020-02-10", "--horizon", "5",
+        ])
+
+    assert result.exit_code == 0, result.output
+    assert "IC均值" in result.output
+
+
+def test_research_ic_command_missing_spec_file_exits_with_error(tmp_path):
+    missing = tmp_path / "does_not_exist.json"
+    result = runner.invoke(app, [
+        "ic", "--spec-file", str(missing), "--market", "cn", "--start", "2020-01-01",
+    ])
+    assert result.exit_code == 1
+    assert "不存在" in result.output
