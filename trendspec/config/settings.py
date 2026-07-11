@@ -54,10 +54,16 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def connection_url(self) -> str:
-        """Build SQLAlchemy connection URL with URL-encoded credentials."""
+        """Build SQLAlchemy connection URL with URL-encoded credentials.
+
+        connect_timeout/read_timeout bound how long a hung/unresponsive NAS
+        connection can block the caller — without them, a stalled TCP socket
+        blocks forever with no way to recover short of killing the process.
+        """
         return (
             f"mysql+pymysql://{quote_plus(self.user)}:{quote_plus(self.password)}"
             f"@{self.host}:{self.port}/{self.name}?charset={self.charset}"
+            f"&connect_timeout=10&read_timeout=120"
         )
 
 
