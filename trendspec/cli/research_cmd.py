@@ -12,6 +12,22 @@ app = typer.Typer(help="AI 自动因子研究闭环")
 console = Console()
 
 
+def _load_factor_spec_json(spec_file: Path) -> dict:
+    """Load and validate a factor spec JSON file for research ic/quantile commands.
+
+    Only reads factors/group_by/winsorize_pct — no top_k/rebalance validation.
+    Exits cleanly via typer.Exit(1) on missing file or invalid JSON.
+    """
+    if not spec_file.exists():
+        console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
+        raise typer.Exit(1)
+    try:
+        return json.loads(spec_file.read_text())
+    except json.JSONDecodeError as e:
+        console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
+        raise typer.Exit(1) from None
+
+
 @app.command("run")
 def research_run(
     market: str = typer.Option("us", "--market", "-m", help="市场 (us)"),
@@ -106,14 +122,7 @@ def research_ic(
     from trendspec.research.factor_eval import compute_rank_ic, summarize_ic
     from trendspec.research.market_panel import MarketPanel
 
-    if not spec_file.exists():
-        console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
-        raise typer.Exit(1)
-    try:
-        spec = json.loads(spec_file.read_text())
-    except json.JSONDecodeError as e:
-        console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
-        raise typer.Exit(1)
+    spec = _load_factor_spec_json(spec_file)
 
     start_date = date.fromisoformat(start)
     end_date = date.fromisoformat(end) if end else date.today()
@@ -155,14 +164,7 @@ def research_quantile(
     from trendspec.research.factor_eval import compute_quantile_returns, compute_top_minus_bottom
     from trendspec.research.market_panel import MarketPanel
 
-    if not spec_file.exists():
-        console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
-        raise typer.Exit(1)
-    try:
-        spec = json.loads(spec_file.read_text())
-    except json.JSONDecodeError as e:
-        console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
-        raise typer.Exit(1)
+    spec = _load_factor_spec_json(spec_file)
 
     start_date = date.fromisoformat(start)
     end_date = date.fromisoformat(end) if end else date.today()
