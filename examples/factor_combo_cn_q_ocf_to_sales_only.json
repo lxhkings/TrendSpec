@@ -1,0 +1,6 @@
+{
+  "market": "cn",
+  "factors": [{"name": "fund_q_ocf_to_sales", "direction": "high", "weight": 1.0}],
+  "winsorize_pct": 0.01,
+  "rationale": "单因子隔离测试：仅单季经营现金流/营收（盈余质量）"
+}

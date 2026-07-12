@@ -1,0 +1,6 @@
+{
+  "market": "cn",
+  "factors": [{"name": "fund_debt_to_assets", "direction": "low", "weight": 1.0}],
+  "winsorize_pct": 0.01,
+  "rationale": "单因子隔离测试：仅资产负债率（低杠杆优先）"
+}

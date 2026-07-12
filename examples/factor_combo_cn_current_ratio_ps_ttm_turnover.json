@@ -1,0 +1,10 @@
+{
+  "market": "cn",
+  "factors": [
+    {"name": "fund_current_ratio", "direction": "high", "weight": 1.0},
+    {"name": "fund_ps_ttm", "direction": "low", "weight": 1.0},
+    {"name": "fund_turnover_rate", "direction": "low", "weight": 1.0}
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "三维度组合：流动比率(杠杆) + 市销率(估值) + 换手率(流动性)，互不相关的三个信号等权"
+}

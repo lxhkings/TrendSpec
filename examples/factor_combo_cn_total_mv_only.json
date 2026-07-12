@@ -1,0 +1,6 @@
+{
+  "market": "cn",
+  "factors": [{"name": "fund_total_mv", "direction": "low", "weight": 1.0}],
+  "winsorize_pct": 0.01,
+  "rationale": "单因子隔离测试：仅总市值（小市值优先，经典规模因子）"
+}
