@@ -106,3 +106,18 @@ def test_filter_bad_op_rejected():
     d["filters"] = [{"name": "momentum", "op": "!=", "value": 0.0}]
     with pytest.raises(ValueError):
         FactorSpec(**d)
+
+
+def test_framework_v1_example_parses():
+    import json
+    from pathlib import Path
+
+    p = Path(__file__).parents[2] / "examples" / "factor_combo_cn_framework_v1.json"
+    spec = FactorSpec(**json.loads(p.read_text()))
+    assert spec.market == "cn"
+    assert len(spec.filters) == 3
+    assert {t.name for t in spec.filters} == {
+        "fund_op_margin", "fund_q_ocf_to_sales", "fund_total_revenue"
+    }
+    assert "fund_revenue_yoy_band" in {t.name for t in spec.factors}
+    assert spec.group_by is not None
