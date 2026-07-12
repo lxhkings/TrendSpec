@@ -185,6 +185,32 @@ class TestRiskRules:
         result = rule.check(signal, portfolio, context)
         assert result.is_allowed()
 
+    def test_max_position_size_rule_falls_back_to_order_size_when_shares_none(
+        self, portfolio: Portfolio, context: StrategyContext
+    ) -> None:
+        """Signals that don't set shares (e.g. simple strategies using ctx.signal())
+        keep sizing off ctx.get_param("order_size") for the check, same as before."""
+        signal = Signal("BUY", "600000", "SH600000", 200.0)  # shares=None
+        rule = MaxPositionSize(max_pct=0.15)
+        # order_size=100 (from context fixture) * price 200 = 20000, way over 15% of 10000 equity
+        result = rule.check(signal, portfolio, context)
+        assert result.is_rejected()
+
+    def test_max_position_size_rule_uses_signal_shares_when_set(
+        self, portfolio: Portfolio, context: StrategyContext
+    ) -> None:
+        """A strategy-computed real position size must be checked against the cap,
+        not the generic default order_size — regression test for the bug where
+        MaxPositionSize always sized off ctx.get_param("order_size", 100) even when
+        the signal carried the strategy's real intended share count."""
+        # price 10.5 * default order_size 100 = 1050 -> 10.5% of 10000 equity, would
+        # have passed a 15% cap under the old (order_size-only) behavior.
+        signal = Signal("BUY", "600000", "SH600000", 10.5, shares=2000.0)
+        # real intended value: 10.5 * 2000 = 21000, far over equity -> must reject
+        rule = MaxPositionSize(max_pct=0.15)
+        result = rule.check(signal, portfolio, context)
+        assert result.is_rejected()
+
     def test_min_capital_rule_allow(self, signal: Signal, portfolio: Portfolio, context: StrategyContext) -> None:
         """Test MinCapital rule allows when sufficient."""
         rule = MinCapital(min_capital=1000.0)

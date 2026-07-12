@@ -238,7 +238,8 @@ class MaxPositionSize(RiskRule):
 
         max_pct = self.params.get("max_pct", 0.10)
         position_value = portfolio.position_value(signal.instrument_id)
-        proposed_value = signal.price * ctx.get_param("order_size", 100)
+        order_size = signal.shares if signal.shares is not None else ctx.get_param("order_size", 100)
+        proposed_value = signal.price * order_size
 
         # Check if new position would exceed max pct of equity
         if portfolio.equity > 0 and (position_value + proposed_value) / portfolio.equity > max_pct:
