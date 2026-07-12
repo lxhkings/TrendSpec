@@ -18,6 +18,31 @@ from trendspec.data.sectors import TICKER_GROUP_OVERRIDES
 from trendspec.factors.registry import get_factor, get_factor_with_market
 
 
+_FILTER_OPS = {
+    ">": lambda col, v: col > v,
+    ">=": lambda col, v: col >= v,
+    "<": lambda col, v: col < v,
+    "<=": lambda col, v: col <= v,
+}
+
+
+def _apply_filters(
+    df: pl.DataFrame, filters: list[dict[str, Any]], market: str
+) -> pl.DataFrame:
+    """按 filters 逐条 semi-join 剔除不合格 (instrument_id, date) 行。
+
+    Polars 比较遇 null 结果为 null，被 filter 丢弃——缺失值自然落入
+    "剔除"分支，与 FilterTerm 的语义一致。
+    """
+    for term in filters:
+        factor = get_factor_with_market(term["name"], term.get("params") or {}, market)
+        result = factor.compute_full(df)
+        cond = _FILTER_OPS[term["op"]](pl.col(result.name), term["value"])
+        passed = result.values.filter(cond).select(["instrument_id", "date"])
+        df = df.join(passed, on=["instrument_id", "date"], how="semi")
+    return df
+
+
 def compute_combo_scores(
     df: pl.DataFrame,
     factors: list[dict[str, Any]],
@@ -25,6 +50,7 @@ def compute_combo_scores(
     group_by: dict[str, list[str]] | None = None,
     winsorize_pct: float = 0.01,
     root: str | None = None,
+    filters: list[dict[str, Any]] | None = None,
 ) -> pl.DataFrame:
     """按 factors 对截面做（可选按行业分组）winsorize + z-score 加权，
     产出 (instrument_id, date, _group, combo_score)。
@@ -37,7 +63,11 @@ def compute_combo_scores(
 
     group_by: {组名: [行业代码, ...]}；为 None 时全部落一个虚拟组 "_all"
         （等价于原全局排名）。设置时需要 root 以读取 sectors 数据集。
+    filters: [{name, params, op, value}, ...]；AND 语义，在 winsorize/z-score
+        之前按原始因子值剔除不合格行，因子值缺失（null 比较）一并剔除。
     """
+    if filters:
+        df = _apply_filters(df, filters, market)
     if group_by is not None:
         if root is None:
             raise ValueError("group_by 需要提供 root 以读取 sectors 数据集")

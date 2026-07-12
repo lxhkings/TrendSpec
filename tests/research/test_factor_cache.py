@@ -51,3 +51,62 @@ def test_compute_combo_scores_normalizes_market_for_cross_sectional_factor():
     ]
     score = compute_combo_scores(df, factors, market="us")
     assert set(score.columns) == {"instrument_id", "date", "_group", "combo_score"}
+
+
+def _panel_with_margin():
+    """A/B/C/D 四只股票，op_margin: A=10.0(过), B=-5.0(不过), C=null(缺失,不过),
+    D=8.0(过)。过滤后须留 ≥2 名存活者(A,D)，否则单一存活者会撞上
+    compute_combo_scores 既有的"单成员分组 std 无定义即剔除"规则（该规则本身
+    正确，见 test_factor_strategy.py::test_init_single_member_group_excludes_from_ranking），
+    与本测试想验证的"过滤剔除不达标/缺失行"语义无关，会造成误报。不复用共享
+    _panel()（只有 A/B/C），自建含 D 的四股面板。"""
+    df = _panel()
+    extra_rows = []
+    for i in range(40):
+        d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+        extra_rows.append({"instrument_id": "D", "date": d,
+                            "open": 40.0 + i, "high": 40.0 + i + 1,
+                            "low": 40.0 + i - 1, "close": 40.0 + i, "volume": 1000 + i,
+                            "ticker": "D"})
+    df = pl.concat([df, pl.DataFrame(extra_rows)])
+    margin = {"A": 10.0, "B": -5.0, "C": None, "D": 8.0}
+    return df.with_columns(
+        pl.col("instrument_id").replace_strict(margin, default=None).alias("op_margin")
+    )
+
+
+def test_filters_exclude_failing_and_missing_rows():
+    df = _panel_with_margin()
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    filters = [{"name": "fund_op_margin", "params": {}, "op": ">", "value": 0.0}]
+    score = compute_combo_scores(df, factors, market="cn", filters=filters)
+    survivors = set(score["instrument_id"].unique().to_list())
+    assert survivors == {"A", "D"}  # B 不达标剔除；C 缺失值也剔除
+
+
+def test_filters_none_keeps_existing_behavior():
+    df = _panel_with_margin()
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    a = compute_combo_scores(df, factors, market="cn")
+    b = compute_combo_scores(df, factors, market="cn", filters=None)
+    assert a.equals(b)
+
+
+def test_filters_zscore_stats_computed_on_survivors():
+    """过滤在 z-score 之前生效：幸存者 z 统计只含幸存者。
+
+    A/B 存活（op_margin>0=[10,5]），C 剔除。单因子 fund_op_margin 排序，
+    两名幸存者 z 分应互为相反数（均值中心化后对称）。
+    """
+    df = _panel().with_columns(
+        pl.col("instrument_id").replace_strict(
+            {"A": 10.0, "B": 5.0, "C": -1.0}, default=None
+        ).alias("op_margin")
+    )
+    factors = [{"name": "fund_op_margin", "params": {}, "direction": "high", "weight": 1.0}]
+    filters = [{"name": "fund_op_margin", "params": {}, "op": ">", "value": 0.0}]
+    score = compute_combo_scores(df, factors, market="cn", filters=filters)
+    one_day = score.filter(pl.col("date") == score["date"].min()).sort("instrument_id")
+    assert one_day["instrument_id"].to_list() == ["A", "B"]
+    vals = one_day["combo_score"].to_list()
+    assert abs(vals[0] + vals[1]) < 1e-9
