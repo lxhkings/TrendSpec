@@ -1,0 +1,18 @@
+{
+  "market": "cn",
+  "filters": [
+    {"name": "fund_revenue_qoq", "op": ">", "value": 0.20},
+    {"name": "fund_revenue_qoq_prev", "op": ">", "value": 0.20},
+    {"name": "fund_net_income_qoq", "op": ">", "value": 0.20},
+    {"name": "fund_net_income_qoq_prev", "op": ">", "value": 0.20},
+    {"name": "fund_net_margin", "op": ">", "value": 0.15},
+    {"name": "ema_alignment", "op": ">", "value": 0.0}
+  ],
+  "factors": [
+    {"name": "ema_alignment", "direction": "high", "weight": 1.0}
+  ],
+  "top_k": 20,
+  "rebalance": 20,
+  "winsorize_pct": 0.01,
+  "rationale": "营收/净利润连续两季度单季环比均>20% + 净利率>15% 硬过滤，按 EMA20/60/120 多头排列强度排序取前20。"
+}
