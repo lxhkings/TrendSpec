@@ -23,6 +23,22 @@ class FactorTerm(BaseModel):
         return v
 
 
+class FilterTerm(BaseModel):
+    """硬过滤项：按因子原始值做阈值剔除，排名前生效；因子值缺失视为不合格。"""
+
+    name: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    op: Literal[">", ">=", "<", "<="]
+    value: float
+
+    @field_validator("name")
+    @classmethod
+    def _name_registered(cls, v: str) -> str:
+        if v not in list_factors():
+            raise ValueError(f"未注册因子: {v}（可用: {', '.join(list_factors())}）")
+        return v
+
+
 class FactorSpec(BaseModel):
     """声明式因子组合策略 spec。"""
 
@@ -44,6 +60,9 @@ class FactorSpec(BaseModel):
     全局模式，向后兼容。"""
     winsorize_pct: float = 0.01
     """入模前每个因子的双侧截断分位数（默认 1%/99%），组内计算。"""
+    filters: list[FilterTerm] = Field(default_factory=list)
+    """可选：硬阈值过滤链（AND 语义），在 winsorize/z-score/排名之前对
+    原始因子值逐条剔除；任一 filter 因子值缺失的标的一并剔除。"""
 
     @model_validator(mode="after")
     def _exactly_one_of_top_k_top_pct(self) -> "FactorSpec":

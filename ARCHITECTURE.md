@@ -91,7 +91,7 @@ trendspec (Typer)
 | `BacktestReport` | `analyzer/report.py` | 中文 rich 表格输出 |
 | `ResearchOrchestrator` | `research/orchestrator.py` | 研究循环主控 |
 | `HypothesisAgent` | `research/agent.py` | LLM 策略假设生成 |
-| `FactorSpec` / `FactorTerm` | `research/spec.py` | Pydantic 因子组合规范 |
+| `FactorSpec` / `FactorTerm` / `FilterTerm` | `research/spec.py` | Pydantic 因子组合规范（含硬过滤层 filters） |
 | `compute_rank_ic` / `compute_quantile_returns` | `research/factor_eval.py` | RankIC / 分层回测评估 |
 | `Settings` | `config/settings.py` | `get_settings()` 聚合配置 |
 | `Manifest` | `ingest/manifest.py` | 摄入同步状态跟踪 |

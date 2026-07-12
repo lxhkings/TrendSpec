@@ -1,6 +1,6 @@
 import pytest
 
-from trendspec.research.spec import FactorSpec, FactorTerm
+from trendspec.research.spec import FactorSpec, FactorTerm, FilterTerm
 
 
 def _valid_spec_dict():
@@ -74,3 +74,35 @@ def test_group_by_round_trips_through_model_dump():
     spec = FactorSpec(**d)
     again = FactorSpec(**spec.model_dump())
     assert again.group_by == {"金融": ["银行"]}
+
+
+def test_filters_default_empty():
+    spec = FactorSpec(**_valid_spec_dict())
+    assert spec.filters == []
+
+
+def test_filters_parse_and_round_trip():
+    d = _valid_spec_dict()
+    d["filters"] = [
+        {"name": "momentum", "op": ">", "value": 0.0},
+        {"name": "volatility", "op": ">=", "value": 1e9},
+    ]
+    spec = FactorSpec(**d)
+    assert len(spec.filters) == 2
+    assert spec.filters[0].op == ">"
+    again = FactorSpec(**spec.model_dump())
+    assert again.filters[1].value == 1e9
+
+
+def test_filter_unknown_factor_rejected():
+    d = _valid_spec_dict()
+    d["filters"] = [{"name": "no_such_factor", "op": ">", "value": 0.0}]
+    with pytest.raises(ValueError, match="未注册因子"):
+        FactorSpec(**d)
+
+
+def test_filter_bad_op_rejected():
+    d = _valid_spec_dict()
+    d["filters"] = [{"name": "momentum", "op": "!=", "value": 0.0}]
+    with pytest.raises(ValueError):
+        FactorSpec(**d)
