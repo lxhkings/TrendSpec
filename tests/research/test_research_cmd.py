@@ -1,7 +1,7 @@
+import datetime as dt
 import json
 from pathlib import Path
 from unittest.mock import patch
-import datetime as dt
 
 import polars as pl
 from typer.testing import CliRunner
