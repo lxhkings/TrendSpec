@@ -167,6 +167,12 @@ def test_fund_net_income_qoq_missing_column_yields_null():
     assert res.values["fund_net_income_qoq"].null_count() == df.height
 
 
+def test_fund_net_income_qoq_prev_missing_column_yields_null():
+    df = _daily_df()  # 没有 net_income 列
+    res = get_factor("fund_net_income_qoq_prev").compute_full(df)
+    assert res.values["fund_net_income_qoq_prev"].null_count() == df.height
+
+
 def _cagr_df() -> pl.DataFrame:
     """DDD：13 个季度末，营收从 100 按年化 10% 复利增长（12 季度=3年间隔）。"""
     rows = []
