@@ -36,7 +36,7 @@ def test_fundamental_factors_registered():
               "fund_q_ocf_to_sales", "fund_fcff", "fund_ps_ttm",
               "fund_total_mv", "fund_circ_mv", "fund_turnover_rate",
               "fund_revenue_qoq", "fund_net_income_qoq", "fund_revenue_cagr_3y",
-              "fund_roe_trend_4q", "fund_total_revenue"):
+              "fund_roe_trend_4q", "fund_total_revenue", "fund_revenue_yoy_band"):
         assert n in names
 
 
@@ -324,3 +324,26 @@ def test_fund_total_revenue_passthrough():
 def test_fund_total_revenue_null_when_column_missing():
     res = get_factor("fund_total_revenue").compute_full(_df())
     assert res.values["fund_total_revenue"].null_count() == 2
+
+
+def test_fund_revenue_yoy_band_prefers_moderate_growth():
+    df = _df().with_columns(pl.Series("revenue_yoy", [17.5, 80.0]))
+    res = get_factor("fund_revenue_yoy_band").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    scores = vals["fund_revenue_yoy_band"].to_list()
+    assert scores[0] == 0.0          # 正中理想值
+    assert scores[1] == -62.5        # 过高增速被惩罚
+    assert scores[0] > scores[1]
+
+
+def test_fund_revenue_yoy_band_custom_center():
+    df = _df().with_columns(pl.Series("revenue_yoy", [10.0, 30.0]))
+    res = get_factor("fund_revenue_yoy_band", {"center": 10.0}).compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_revenue_yoy_band"].to_list() == [0.0, -20.0]
+
+
+def test_fund_revenue_yoy_band_null_when_column_missing():
+    df = _df().drop("revenue_yoy")
+    res = get_factor("fund_revenue_yoy_band").compute_full(df)
+    assert res.values["fund_revenue_yoy_band"].null_count() == 2
