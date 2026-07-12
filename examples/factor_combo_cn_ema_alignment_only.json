@@ -1,0 +1,8 @@
+{
+  "market": "cn",
+  "factors": [
+    {"name": "ema_alignment", "params": {"fast": 20, "mid": 60, "slow": 120}, "direction": "high", "weight": 1.0}
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "单因子隔离测试：仅EMA多头排列强度（2点钟方向），不叠加基本面"
+}

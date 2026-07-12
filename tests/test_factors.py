@@ -60,6 +60,7 @@ from trendspec.factors.sector import (
 )
 from trendspec.factors.technical import (
     MABiasFactor,
+    EMAAlignmentFactor,
 )
 from trendspec.factors.volume import (
     TurnoverFactor,
@@ -494,6 +495,24 @@ class TestTechnicalFactors:
         factor = MABiasFactor(period=10, ma_type="EMA")
         result = factor.compute_full(sample_data)
         assert "ma_bias_10_ema" in result.values.columns
+
+    def test_ema_alignment_factor_bullish(self, sample_data: pl.DataFrame) -> None:
+        """Rising prices: alignment score should be positive at the last bar."""
+        factor = EMAAlignmentFactor(fast=2, mid=5, slow=10)
+        result = factor.compute_full(sample_data)
+        col = "ema_alignment_2_5_10"
+        assert col in result.values.columns
+        last = result.values.sort("date").tail(1).row(0, named=True)
+        assert last[col] > 0
+
+    def test_ema_alignment_factor_bearish(self, sample_data: pl.DataFrame) -> None:
+        """Falling prices: alignment score should be negative at the last bar."""
+        falling = sample_data.with_columns(pl.col("close").reverse())
+        factor = EMAAlignmentFactor(fast=2, mid=5, slow=10)
+        result = factor.compute_full(falling)
+        col = "ema_alignment_2_5_10"
+        last = result.values.sort("date").tail(1).row(0, named=True)
+        assert last[col] < 0
 
 
 # =============================================================================

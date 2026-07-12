@@ -61,6 +61,7 @@ from trendspec.factors.volume import (
 # Technical factors
 from trendspec.factors.technical import (
     MABiasFactor,
+    EMAAlignmentFactor,
 )
 
 # Sector factors
@@ -104,6 +105,7 @@ __all__ = [
     "VolumeRatioFactor",
     # Technical factors
     "MABiasFactor",
+    "EMAAlignmentFactor",
     # Sector factors
     "SectorMomentumFactor",
     "SectorRelativeStrengthFactor",

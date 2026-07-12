@@ -1,0 +1,12 @@
+{
+  "market": "cn",
+  "factors": [
+    {"name": "fund_op_margin", "direction": "high", "weight": 1.0},
+    {"name": "fund_fcff", "direction": "high", "weight": 1.0},
+    {"name": "fund_ocf_to_debt", "direction": "high", "weight": 0.8},
+    {"name": "fund_revenue_yoy", "direction": "high", "weight": 0.6},
+    {"name": "fund_ps_ttm", "direction": "low", "weight": 0.5}
+  ],
+  "winsorize_pct": 0.01,
+  "rationale": "对应《投资分析框架》基本面三层：运营利润率(fund_op_margin=EBIT margin代理)+自由现金流(fund_fcff)+经营现金流质量(fund_ocf_to_debt) 权重最高，验证商业模式是否真正赚钱；营收增速(fund_revenue_yoy)权重中等，对应15%-20%成长性偏好；市销率(fund_ps_ttm，低权重反向)对应估值层，避免为高预期过度付费。未覆盖：①收入规模门槛(≥1亿美元，无对应绝对营收因子)②经营/自由现金流为正的硬性过滤(此spec仅排序打分，不做过滤，负现金流股票只是排名靠后而非被剔除)③商业模式/护城河(定性，不可量化)④筹码峰支撑位/2点钟趋势方向(技术面，此spec不含价格类因子，需另配 momentum/clenow_momentum 或后续按图形位置择时买入)"
+}
