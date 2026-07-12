@@ -77,7 +77,7 @@ def _worker_eval_candidate(args: tuple) -> tuple[int, dict]:
         scores = compute_combo_scores(
             win_df, spec["factors"], market,
             group_by=spec.get("group_by"), winsorize_pct=spec.get("winsorize_pct", 0.01),
-            root=root,
+            root=root, filters=spec.get("filters"),
         )
 
         cfg = EngineConfig(market=Market(market.upper()),
@@ -146,7 +146,7 @@ class ResearchEvaluator:
                             win_df, spec["factors"], self.market,
                             group_by=spec.get("group_by"),
                             winsorize_pct=spec.get("winsorize_pct", 0.01),
-                            root=self.root,
+                            root=self.root, filters=spec.get("filters"),
                         )
                 window_combo_scores[(w_start, w_end)] = combo_scores
 

@@ -15,7 +15,7 @@ console = Console()
 def _load_factor_spec_json(spec_file: Path) -> dict:
     """Load and validate a factor spec JSON file for research ic/quantile commands.
 
-    Only reads factors/group_by/winsorize_pct — no top_k/rebalance validation.
+    Only reads factors/filters/group_by/winsorize_pct — no top_k/rebalance validation.
     Exits cleanly via typer.Exit(1) on missing file or invalid JSON.
     """
     if not spec_file.exists():
@@ -110,7 +110,7 @@ def research_serve(
 def research_ic(
     spec_file: Path = typer.Option(
         ..., "--spec-file",
-        help="FactorSpec JSON 文件路径（只读 factors/group_by/winsorize_pct 字段）",
+        help="FactorSpec JSON 文件路径（只读 factors/filters/group_by/winsorize_pct 字段）",
     ),
     market: str = typer.Option("cn", "--market", "-m", help="市场"),
     start: str = typer.Option(..., "--start", help="起始 YYYY-MM-DD"),
@@ -131,6 +131,7 @@ def research_ic(
     ic_df = compute_rank_ic(
         panel.data, spec["factors"], market, horizon=horizon,
         group_by=spec.get("group_by"), winsorize_pct=spec.get("winsorize_pct", 0.01),
+        filters=spec.get("filters"),
     )
     summary = summarize_ic(ic_df)
 
@@ -150,7 +151,7 @@ def research_ic(
 def research_quantile(
     spec_file: Path = typer.Option(
         ..., "--spec-file",
-        help="FactorSpec JSON 文件路径（只读 factors/group_by/winsorize_pct 字段）",
+        help="FactorSpec JSON 文件路径（只读 factors/filters/group_by/winsorize_pct 字段）",
     ),
     market: str = typer.Option("cn", "--market", "-m", help="市场"),
     start: str = typer.Option(..., "--start", help="起始 YYYY-MM-DD"),
@@ -173,6 +174,7 @@ def research_quantile(
     qr = compute_quantile_returns(
         panel.data, spec["factors"], market, horizon=horizon, n_quantiles=n_quantiles,
         group_by=spec.get("group_by"), winsorize_pct=spec.get("winsorize_pct", 0.01),
+        filters=spec.get("filters"),
     )
     if qr.is_empty():
         console.print("[yellow]没有可用样本（数据太少或因子分全空）[/yellow]")

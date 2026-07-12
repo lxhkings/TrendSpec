@@ -43,6 +43,7 @@ class FactorStrategy(BaseStrategy):
                 group_by=spec.group_by,
                 winsorize_pct=spec.winsorize_pct,
                 root=ctx._root,
+                filters=[t.model_dump() for t in spec.filters],
             )
 
         # 缓存：每 (date, group) 按分降序 iid 列表 + (date,iid)->score

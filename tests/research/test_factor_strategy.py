@@ -68,6 +68,46 @@ def test_direction_low_inverts_rank():
     assert strat._ranked_by_group_date[(last_date, "_all")][0] == "SLOW_US"
 
 
+def test_factor_strategy_filters_exclude_instrument():
+    # SLOW_US 的 op_margin 为负 → 被硬过滤剔除，任何日期都不得进入排名。
+    # 加入第三只中性股 MID_US，使过滤后组内仍有 >=2 个成员——否则过滤后
+    # "_all" 组退化为单成员，z-score 的 std 无定义（与
+    # test_init_single_member_group_excludes_from_ranking 是同一条既有规则），
+    # 会把唯一幸存者也一并剔除，而这与本测试要验证的"filters 接线是否生效"
+    # 是两回事，用第三只股规避这个无关的边界情况。
+    df = pl.concat([_two_stock_data(), _make_bars("MID_US", 120, 100.0, 1.002)]).with_columns(
+        pl.when(pl.col("instrument_id") == "SLOW_US")
+        .then(-5.0)
+        .otherwise(10.0)
+        .alias("op_margin")
+    )
+    d = _spec_dict()
+    d["spec"]["filters"] = [{"name": "fund_op_margin", "op": ">", "value": 0.0}]
+    strat = FactorStrategy(params=d)
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    ranked_all = {iid for iids in strat._ranked_by_group_date.values() for iid in iids}
+    assert "SLOW_US" not in ranked_all
+    assert "FAST_US" in ranked_all
+
+
+def test_factor_strategy_no_filters_keeps_all():
+    # 同一面板不带 filters → 两只股都在排名里（对照组）
+    df = _two_stock_data().with_columns(
+        pl.when(pl.col("instrument_id") == "SLOW_US")
+        .then(-5.0)
+        .otherwise(10.0)
+        .alias("op_margin")
+    )
+    strat = FactorStrategy(params=_spec_dict())
+    ctx = StrategyContext(market=Market.US, strategy=strat, data=df)
+    strat.init(ctx)
+
+    ranked_all = {iid for iids in strat._ranked_by_group_date.values() for iid in iids}
+    assert ranked_all == {"FAST_US", "SLOW_US"}
+
+
 def _run_next_once(strat, ctx, df, target_date):
     """模拟引擎：对某交易日逐 instrument 调 next()，收集信号。"""
     universe = df["instrument_id"].unique().to_list()

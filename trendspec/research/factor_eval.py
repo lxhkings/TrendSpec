@@ -34,10 +34,13 @@ def compute_rank_ic(
     group_by: dict[str, list[str]] | None = None,
     winsorize_pct: float = 0.01,
     root: str | None = None,
+    filters: list[dict[str, Any]] | None = None,
 ) -> pl.DataFrame:
     """逐日截面 RankIC：combo_score 与 fwd_ret_{horizon}d 的秩相关（Spearman，
     用 .rank() 转秩再算 Pearson 相关实现，等价、免 scipy 依赖）。"""
-    scores = compute_combo_scores(panel, factors, market, group_by, winsorize_pct, root)
+    scores = compute_combo_scores(
+        panel, factors, market, group_by, winsorize_pct, root, filters=filters
+    )
     fwd = _attach_forward_returns(panel, horizon)
     ret_col = f"fwd_ret_{horizon}d"
 
@@ -82,11 +85,14 @@ def compute_quantile_returns(
     group_by: dict[str, list[str]] | None = None,
     winsorize_pct: float = 0.01,
     root: str | None = None,
+    filters: list[dict[str, Any]] | None = None,
 ) -> pl.DataFrame:
     """逐日按 combo_score 切 n_quantiles 组（qcut，按 date 分组切），
     每组算 fwd_ret_{horizon}d 简单平均。不跑 BacktestEngine，只看因子
     分层是否单调——研究阶段分析工具，不是可执行策略。"""
-    scores = compute_combo_scores(panel, factors, market, group_by, winsorize_pct, root)
+    scores = compute_combo_scores(
+        panel, factors, market, group_by, winsorize_pct, root, filters=filters
+    )
     fwd = _attach_forward_returns(panel, horizon)
     ret_col = f"fwd_ret_{horizon}d"
 
