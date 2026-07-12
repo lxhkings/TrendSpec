@@ -3,8 +3,8 @@
 跨期计算型因子（tushare 原始数据没有现成字段），跟 quality.py/growth.py 的
 _ColumnFactor 直通模式不同——需要从日频 df 里按 end_date 变化点还原出真正的
 季度序列再做 shift 对比。三个模块级函数（_quarterly_series /
-_quarterly_shift_compute / _asof_join_quarterly_result）被本文件全部 4 个
-Factor 共用，不要在 Factor.compute() 里各自重新实现一遍这套逻辑。
+_quarterly_shift_compute / _asof_join_quarterly_result）被本文件全部 Factor
+共用，不要在 Factor.compute() 里各自重新实现一遍这套逻辑。
 """
 
 from typing import ClassVar, Literal
