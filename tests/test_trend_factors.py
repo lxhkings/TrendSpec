@@ -118,6 +118,33 @@ def test_quarterly_shift_compute_missing_column_returns_empty():
     assert result.is_empty()
 
 
+def test_quarterly_shift_compute_anchor_shift_zero_matches_default():
+    df = _daily_df()
+    default = _quarterly_shift_compute(
+        df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+    )
+    explicit = _quarterly_shift_compute(
+        df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+        anchor_shift=0,
+    )
+    assert default["result"].to_list() == explicit["result"].to_list()
+
+
+def test_quarterly_shift_compute_anchor_shift_one_gives_prior_quarter_growth():
+    """AAA 3 季营收 100→110→121。anchor_shift=1 时看的是"上一季度的环比"：
+    在 Q3 那一行(10-15)，上一季度环比 = Q2 vs Q1 = (110-100)/100 = 0.1。
+    Q1/Q2 两行都没有足够早的季度可比，应为 None。"""
+    df = _daily_df()
+    result = _quarterly_shift_compute(
+        df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+        anchor_shift=1,
+    )
+    aaa = result.filter(pl.col("instrument_id") == "AAA").sort("date")
+    assert aaa["result"].to_list() == [None, None, pytest.approx(0.1)]
+    bbb = result.filter(pl.col("instrument_id") == "BBB")
+    assert bbb["result"].to_list() == [None]  # 只有 1 季，anchor_shift=1 后更没有可比对象
+
+
 def test_fund_revenue_qoq_passthrough():
     df = _daily_df()
     res = get_factor("fund_revenue_qoq").compute_full(df)

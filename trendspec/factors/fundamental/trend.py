@@ -61,11 +61,16 @@ def _quarterly_shift_compute(
     gap_max_months: int,
     mode: Literal["ratio", "cagr", "diff"],
     cagr_years: float | None = None,
+    anchor_shift: int = 0,
 ) -> pl.DataFrame:
     """季度序列上 shift(n) 对比，返回 (instrument_id, date, result)。
 
     mode="ratio": (cur-base)/|base|；mode="cagr": (cur/base)**(1/cagr_years)-1
     （要求 base>0，cagr_years 必填）；mode="diff": cur-base（原始差值）。
+
+    anchor_shift: 把"当前季度"锚点往前挪 N 季（默认 0 = 最新季度）。
+    anchor_shift=1 时比较的是 t-1 vs t-1-n，用来算"上一季度的环比"而不是
+    "最新季度的环比"。默认值 0 与旧行为完全一致。
 
     end_date 与 shift(n) 那行 end_date 的月份差不落在 [gap_min_months,
     gap_max_months] 内时判 null——防止漏报导致 shift(n) 实际跳过了缺的那季，
@@ -76,12 +81,13 @@ def _quarterly_shift_compute(
     if q.is_empty():
         return empty
 
-    cur = pl.col(value_col)
-    base = pl.col(value_col).shift(n).over("instrument_id")
-    base_end_date = pl.col("end_date").shift(n).over("instrument_id")
+    cur = pl.col(value_col).shift(anchor_shift).over("instrument_id")
+    base = pl.col(value_col).shift(anchor_shift + n).over("instrument_id")
+    cur_end_date = pl.col("end_date").shift(anchor_shift).over("instrument_id")
+    base_end_date = pl.col("end_date").shift(anchor_shift + n).over("instrument_id")
     gap_months = (
-        (pl.col("end_date").dt.year() - base_end_date.dt.year()) * 12
-        + (pl.col("end_date").dt.month() - base_end_date.dt.month())
+        (cur_end_date.dt.year() - base_end_date.dt.year()) * 12
+        + (cur_end_date.dt.month() - base_end_date.dt.month())
     )
     gap_ok = gap_months.is_between(gap_min_months, gap_max_months)
 
