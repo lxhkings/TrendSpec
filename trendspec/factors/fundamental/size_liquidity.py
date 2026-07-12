@@ -1,10 +1,16 @@
-"""Size and liquidity fundamental factors: pass-through of daily valuation-snapshot columns."""
+"""Size and liquidity fundamental factors: pass-through of daily valuation-snapshot columns.
+
+fund_total_revenue is the exception: it passes through the quarterly
+fundamentals dataset (via quality._ColumnFactor), kept here because it is
+a size measure.
+"""
 
 from typing import ClassVar
 
 import polars as pl
 
 from trendspec.factors.base import Factor
+from trendspec.factors.fundamental.quality import _ColumnFactor as _FundamentalsColumnFactor
 from trendspec.factors.registry import register
 
 
@@ -42,3 +48,9 @@ class FundCircMv(_ColumnFactor):
 class FundTurnoverRate(_ColumnFactor):
     description = "Turnover rate, daily (PIT)"
     column = "turnover_rate"
+
+
+@register("fund_total_revenue")
+class FundTotalRevenue(_FundamentalsColumnFactor):
+    description = "Quarterly total revenue, absolute (fundamentals dataset, PIT)"
+    column = "total_revenue"

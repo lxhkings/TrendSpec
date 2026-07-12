@@ -36,7 +36,7 @@ def test_fundamental_factors_registered():
               "fund_q_ocf_to_sales", "fund_fcff", "fund_ps_ttm",
               "fund_total_mv", "fund_circ_mv", "fund_turnover_rate",
               "fund_revenue_qoq", "fund_net_income_qoq", "fund_revenue_cagr_3y",
-              "fund_roe_trend_4q"):
+              "fund_roe_trend_4q", "fund_total_revenue"):
         assert n in names
 
 
@@ -312,3 +312,15 @@ def test_size_liquidity_factors_missing_column_yield_null():
     for name in ("fund_total_mv", "fund_circ_mv", "fund_turnover_rate"):
         res = get_factor(name).compute_full(bare)
         assert res.values[name].null_count() == 1
+
+
+def test_fund_total_revenue_passthrough():
+    df = _df().with_columns(pl.Series("total_revenue", [1.0e9, 5.0e8]))
+    res = get_factor("fund_total_revenue").compute_full(df)
+    vals = res.values.sort("instrument_id")
+    assert vals["fund_total_revenue"].to_list() == [1.0e9, 5.0e8]
+
+
+def test_fund_total_revenue_null_when_column_missing():
+    res = get_factor("fund_total_revenue").compute_full(_df())
+    assert res.values["fund_total_revenue"].null_count() == 2
