@@ -121,6 +121,25 @@ class FundRevenueQoQ(Factor):
         return _asof_join_quarterly_result(df, result).alias(self.name)
 
 
+@register("fund_revenue_qoq_prev")
+class FundRevenueQoQPrev(Factor):
+    description: ClassVar[str] = (
+        "Revenue QoQ growth for the quarter prior to the latest one (t-1 vs t-2, PIT)"
+    )
+    category: ClassVar[str] = "fundamental"
+
+    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
+        if "end_date" not in df.columns or "total_revenue" not in df.columns:
+            return pl.lit(None, dtype=pl.Float64)
+        result = _quarterly_shift_compute(
+            df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+            anchor_shift=1,
+        )
+        if result.is_empty():
+            return pl.lit(None, dtype=pl.Float64)
+        return _asof_join_quarterly_result(df, result).alias(self.name)
+
+
 @register("fund_net_income_qoq")
 class FundNetIncomeQoQ(Factor):
     description: ClassVar[str] = "Net income QoQ growth (quarter vs immediately prior quarter, PIT)"

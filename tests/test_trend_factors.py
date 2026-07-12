@@ -153,6 +153,14 @@ def test_fund_revenue_qoq_passthrough():
     assert row["fund_revenue_qoq"] == pytest.approx(0.1)
 
 
+def test_fund_revenue_qoq_prev_passthrough():
+    df = _daily_df()
+    res = get_factor("fund_revenue_qoq_prev").compute_full(df)
+    aaa = res.values.filter(pl.col("instrument_id") == "AAA").sort("date")
+    row = aaa.filter(pl.col("date") == date(2020, 11, 1)).row(0, named=True)
+    assert row["fund_revenue_qoq_prev"] == pytest.approx(0.1)  # Q2 vs Q1 = (110-100)/100
+
+
 def test_fund_net_income_qoq_missing_column_yields_null():
     df = _daily_df()  # 没有 net_income 列
     res = get_factor("fund_net_income_qoq").compute_full(df)
