@@ -128,5 +128,5 @@
     ]
   },
   "winsorize_pct": 0.01,
-  "rationale": "投资分析框架v1：硬过滤(经营利润率>0为EBIT代理、季度经营现金流/营收>0、年营收≥7亿元≈1亿美元) + 行业组内排序(增速适中度+利润率+FCFF+均线多头排列)，落实'margin只能同商业模式比'与'排除结构性亏损/现金流为负'原则"
+  "rationale": "投资分析框架v1：硬过滤(经营利润率>0为EBIT代理、季度经营现金流/营收>0、年营收≥7亿元≈1亿美元) + 行业组内排序(增速适中度+利润率+FCFF+均线多头排列)，落实'margin只能同商业模式比'与'排除结构性亏损/现金流为负'原则。示例性质，尚未做业绩基线对比(Sharpe 0.19/年化3.81%/最大回撤27.31%，2018-2026 CN，无同期基线可比)。仅 backtest run 可跑通——research ic/quantile 因既有管道缺口(MarketPanel.load 不 merge fundamentals；research_cmd 未透传 root 给 group_by)暂不支持本 spec，见 docs/superpowers/plans/2026-07-12-framework-factors.md Task 7"
 }
