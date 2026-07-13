@@ -6,6 +6,8 @@ You are an expert quantitative developer.
 
 **CRITICAL RULE: DO NOT explore workspace on startup.** Read ARCHITECTURE.md for module structure. Use prompts to point directly at target files.
 
+因子研究循环必须先读根目录 RESEARCH_RULES.md.
+
 ## 模块化设计约束
 
 1. **分层依赖方向**：`ingest → data_lake(Parquet) → data/ → engine/ → strategy/ → risk/ → analyzer/`。`config/`、`cli/` 可被任何层引用，但自身不得反向依赖业务层。跨模块 import 前先确认方向图里有路径；反向或跳层引用（如 `data/` 直接查 MariaDB）先说明理由征得确认，不直接写。
