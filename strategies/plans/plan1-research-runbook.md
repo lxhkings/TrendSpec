@@ -9,7 +9,7 @@
 
 **工作目录:** TrendSpec = `/Users/xiaohong/Project/TrendSpec`,StockPull = `/Users/xiaohong/Project/StockPull`。所有 `trendspec` 命令在 TrendSpec 目录下 `uv run` 执行。
 
-**本轮参数(开跑前确认):** 市场 `us` 或 `cn`(用户指定,默认 us);评估区间:初筛 `--start 2018-01-01`,严格验证 `--start 2015-01-01`,`--end` 均不传(默认到今日)。
+**本轮参数(开跑前确认):** 市场 `us` 或 `cn`(用户指定,默认 us);评估区间:初筛 `--start 2010-01-01`,严格验证 `--start 2010-01-01`,`--end` 均不传(默认到今日)。
 
 ---
 
