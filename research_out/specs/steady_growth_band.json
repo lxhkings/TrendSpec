@@ -1,0 +1,6 @@
+{
+  "factors": [
+    {"name": "fund_revenue_yoy_band", "params": {"center": 17.5}, "direction": "high", "weight": 1.0}
+  ],
+  "winsorize_pct": 0.01
+}

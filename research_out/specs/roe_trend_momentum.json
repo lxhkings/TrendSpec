@@ -1,0 +1,6 @@
+{
+  "factors": [
+    {"name": "fund_roe_trend_4q", "direction": "high", "weight": 1.0}
+  ],
+  "winsorize_pct": 0.01
+}
