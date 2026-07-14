@@ -1,0 +1,6 @@
+{
+  "factors": [
+    {"name": "volatility", "params": {"period": 20}, "direction": "low", "weight": 1.0}
+  ],
+  "winsorize_pct": 0.01
+}
