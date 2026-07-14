@@ -4,6 +4,7 @@ from datetime import date as DateType
 
 import polars as pl
 
+from trendspec.data.fundamentals import merge_fundamentals, merge_valuation
 from trendspec.data.markets import Market
 from trendspec.data.parquet_loader import bars
 from trendspec.data.universe import Universe, get_universe
@@ -26,6 +27,18 @@ class MarketPanel:
         m = Market(market.upper())
         df = bars(market=m, start_date=start, end_date=end,
                   adjustment_mode=adjustment_mode, root=root)
+        # Best-effort fundamentals/valuation PIT merge (no-op if dataset absent),
+        # mirrors BaseEngine.load_data so research ic/quantile see the same columns.
+        try:
+            if not df.is_empty():
+                df = merge_fundamentals(df, m, root)
+        except Exception:
+            pass
+        try:
+            if not df.is_empty():
+                df = merge_valuation(df, m, root)
+        except Exception:
+            pass
         uni = get_universe(m, root)
         return cls(data=df, universe=uni)
 
