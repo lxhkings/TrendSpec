@@ -23,39 +23,45 @@ git checkout factor-research 2>/dev/null || git checkout -b factor-research
 git status   # 必须 clean;不 clean 先停,报告后终止
 ```
 
-- [ ] **0.2 数据新鲜度检查 → 按需增量**(不再无条件每轮跑 StockPull;同步耗时可达1-2小时,数据已新鲜时跳过)
+- [ ] **0.2 数据校验 + 本地摄入**(StockPull 不再是研究轮次的固定步骤——它只从外部 API 抓数据写 NAS MariaDB,和"这轮测哪个因子假设"无关,由用户按自己的节奏独立触发;这一步只读本地 Parquet 状态,绝不自动跑 StockPull)
 
-```bash
-cd /Users/xiaohong/Project/TrendSpec
-uv run trendspec ingest status --market us   # 或 cn，本轮先看一眼当前状态
-```
-
-daily/valuation 最新日期落后最近交易日 **≥1 个交易日** → 触发下方 StockPull 增量;
-已覆盖最近交易日(落后 0 个交易日) → **跳过 StockPull**,报告里记一句「数据已新鲜,跳过同步」,直接进 0.3。
-
-```bash
-cd /Users/xiaohong/Project/StockPull
-uv run main.py prices daily --market us     # 本轮跑 cn 就 --market cn
-uv run main.py futu sync                    # 美股基本面(本轮 us 时)
-uv run main.py tushare sync --market cn     # A股基本面+估值(本轮 cn 时)
-uv run main.py status
-```
-
-任一命令报错 → **停**,跳到 Phase 6 写故障报告,本轮终止。
-
-- [ ] **0.3 TrendSpec 摄入**
+先把 MariaDB 已有数据同步进本地 Parquet(这步快、幂等,默认执行,不判断):
 
 ```bash
 cd /Users/xiaohong/Project/TrendSpec
 uv run trendspec ingest daily --market us          # 或 cn
 uv run trendspec ingest fundamentals --market us   # 或 cn
 uv run trendspec ingest valuation --market cn      # 仅 cn 需要
-uv run trendspec ingest status --market us         # 或 cn
 ```
 
-`ingest status` 输出里最新日期落后最近交易日超过 3 个交易日,或有报错 → **停**,故障报告,终止。
+再取新鲜度证据,原样粘进报告草稿(Phase 6 模板第 1 节):
 
-- [ ] **0.4 数据新鲜度证据**:把 `ingest status` 原始输出完整粘贴进本轮报告草稿(Phase 6 模板第 1 节)。
+```bash
+uv run trendspec ingest status --market us          # 或 cn
+```
+
+按各数据集自己的更新节奏判断,不用同一套日频阈值卡所有数据集:
+
+| 数据集 | 判断标准 |
+|---|---|
+| daily / valuation(日频) | 最新日期落后最近交易日 ≥1 个交易日 → 不新鲜 |
+| fundamentals(季度频) | 最新日期落后当前日期 >100 天 → 不新鲜;否则视为新鲜,不用管 |
+| shareholder_return | 默认不检查;只有当轮某假设显式依赖分红/回购/股东类因子时才检查 |
+
+**只有「被标记不新鲜的数据集」恰好是「当轮假设会用到的」,才停下来问用户**(不相关的陈旧数据集不阻塞流程)。停下时把建议的 StockPull 刷新命令写清楚(按需选 scope,不要无脑 `--scope all`——`shareholder_return` 那块因为没有批量接口、要逐股票调三个接口,单独跑往往要 1-2 小时):
+
+```bash
+cd /Users/xiaohong/Project/StockPull
+uv run main.py tushare sync --market cn --scope prices              # 只需要日线新鲜时
+uv run main.py tushare sync --market cn --scope financial           # 只需要财务数据新鲜时
+uv run main.py tushare sync --market cn --scope valuation           # 只需要估值数据新鲜时
+uv run main.py tushare sync --market cn --scope shareholder_return  # 仅当轮假设依赖股东回报类因子时
+uv run main.py tushare flush                                        # sync 后必须 flush 才落 MariaDB
+```
+
+用户确认刷新后,回到本步骤开头重新跑 `trendspec ingest` + `ingest status` 校验;用户确认不刷新或数据集与本轮无关 → 直接进 Phase 1。
+
+`ingest status`/`ingest daily`/`ingest fundamentals`/`ingest valuation` 任一命令报错 → **停**,跳到 Phase 6 写故障报告,本轮终止(这一条不变,仍是失败即停)。
 
 ## Phase 1:读历史,建「已试清单」
 
