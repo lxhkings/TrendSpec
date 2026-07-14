@@ -23,7 +23,15 @@ git checkout factor-research 2>/dev/null || git checkout -b factor-research
 git status   # 必须 clean;不 clean 先停,报告后终止
 ```
 
-- [ ] **0.2 StockPull 行情+基本面增量**
+- [ ] **0.2 数据新鲜度检查 → 按需增量**(不再无条件每轮跑 StockPull;同步耗时可达1-2小时,数据已新鲜时跳过)
+
+```bash
+cd /Users/xiaohong/Project/TrendSpec
+uv run trendspec ingest status --market us   # 或 cn，本轮先看一眼当前状态
+```
+
+daily/valuation 最新日期落后最近交易日 **≥1 个交易日** → 触发下方 StockPull 增量;
+已覆盖最近交易日(落后 0 个交易日) → **跳过 StockPull**,报告里记一句「数据已新鲜,跳过同步」,直接进 0.3。
 
 ```bash
 cd /Users/xiaohong/Project/StockPull
