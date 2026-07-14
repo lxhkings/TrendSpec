@@ -1,0 +1,7 @@
+{
+  "factors": [
+    {"name": "fund_roe", "direction": "high", "weight": 0.5},
+    {"name": "fund_pb", "direction": "low", "weight": 0.5}
+  ],
+  "winsorize_pct": 0.01
+}
