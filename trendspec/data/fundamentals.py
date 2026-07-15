@@ -52,3 +52,26 @@ def merge_valuation(daily: pl.DataFrame, market: Market, root: str | None) -> pl
     if _lazyframe_is_empty(lf):
         return daily
     return merge_fundamentals_frame(daily, lf.collect())
+
+
+def enrich_daily_panel(
+    daily: pl.DataFrame, market: Market, root: str | None
+) -> pl.DataFrame:
+    """Best-effort fundamentals + valuation PIT merge onto a daily OHLCV frame.
+
+    Mirrors the historical BaseEngine.load_data / MarketPanel.load inline blocks:
+    empty input is returned as-is; each merge is wrapped in bare
+    ``except Exception: pass`` so a missing dataset or merge error never fails load.
+    Does not call ``bars()`` — callers load OHLCV first, then enrich.
+    """
+    if daily.is_empty():
+        return daily
+    try:
+        daily = merge_fundamentals(daily, market, root)
+    except Exception:
+        pass
+    try:
+        daily = merge_valuation(daily, market, root)
+    except Exception:
+        pass
+    return daily

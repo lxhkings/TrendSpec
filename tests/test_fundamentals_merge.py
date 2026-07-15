@@ -4,7 +4,8 @@ from datetime import date
 
 import polars as pl
 
-from trendspec.data.fundamentals import merge_fundamentals_frame
+from trendspec.data.fundamentals import enrich_daily_panel, merge_fundamentals_frame
+from trendspec.data.markets import Market
 
 
 def _daily():
@@ -42,3 +43,16 @@ def test_merge_empty_fundamentals_returns_daily_unchanged():
     daily = _daily()
     merged = merge_fundamentals_frame(daily, pl.DataFrame())
     assert merged.equals(daily)
+
+
+def test_enrich_daily_panel_empty_returns_unchanged():
+    empty = pl.DataFrame(
+        schema={
+            "instrument_id": pl.Utf8,
+            "date": pl.Date,
+            "close": pl.Float64,
+        }
+    )
+    out = enrich_daily_panel(empty, Market.CN, root=None)
+    assert out.is_empty()
+    assert out.equals(empty)
