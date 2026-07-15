@@ -1,6 +1,13 @@
 import pytest
+from pydantic import ValidationError
 
-from trendspec.research.spec import FactorSpec, FactorTerm, FilterTerm
+import trendspec.factors  # noqa: F401 — 触发因子注册，name 校验才过
+from trendspec.research.spec import (
+    FactorSpec,
+    FactorTerm,
+    FilterTerm,
+    parse_research_eval_spec,
+)
 
 
 def _valid_spec_dict():
@@ -121,3 +128,81 @@ def test_framework_v1_example_parses():
     }
     assert "fund_revenue_yoy_band" in {t.name for t in spec.factors}
     assert spec.group_by is not None
+
+
+def test_parse_research_eval_spec_accepts_factors_and_filters():
+    raw = {
+        "factors": [
+            {"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}
+        ],
+        "filters": [
+            {"name": "momentum", "params": {"period": 5}, "op": ">", "value": 0.0}
+        ],
+        "winsorize_pct": 0.02,
+    }
+    out = parse_research_eval_spec(raw)
+    assert len(out["factors"]) == 1
+    assert out["factors"][0]["name"] == "momentum"
+    assert out["factors"][0]["direction"] == "high"
+    assert len(out["filters"]) == 1
+    assert out["filters"][0]["op"] == ">"
+    assert out["winsorize_pct"] == 0.02
+
+
+def test_parse_research_eval_spec_defaults_filters_empty_and_winsorize():
+    raw = {
+        "factors": [
+            {"name": "momentum", "params": {"period": 5}, "direction": "high"}
+        ],
+    }
+    out = parse_research_eval_spec(raw)
+    assert out["filters"] == []
+    assert out["winsorize_pct"] == 0.01
+
+
+def test_parse_research_eval_spec_rejects_bad_filter_op():
+    raw = {
+        "factors": [
+            {"name": "momentum", "params": {"period": 5}, "direction": "high"}
+        ],
+        "filters": [{"name": "momentum", "op": "!=", "value": 0.0}],
+    }
+    with pytest.raises(ValidationError):
+        parse_research_eval_spec(raw)
+
+
+def test_parse_research_eval_spec_rejects_unknown_factor_name():
+    raw = {
+        "factors": [
+            {"name": "no_such_factor_xyz", "direction": "high"}
+        ],
+    }
+    with pytest.raises(ValidationError):
+        parse_research_eval_spec(raw)
+
+
+def test_parse_research_eval_spec_rejects_missing_direction():
+    raw = {
+        "factors": [
+            {"name": "momentum", "params": {"period": 5}}
+        ],
+    }
+    with pytest.raises(ValidationError):
+        parse_research_eval_spec(raw)
+
+
+def test_parse_research_eval_spec_rejects_empty_factors():
+    raw = {"factors": []}
+    with pytest.raises(ValidationError):
+        parse_research_eval_spec(raw)
+
+
+def test_parse_research_eval_spec_preserves_group_by():
+    raw = {
+        "factors": [
+            {"name": "momentum", "params": {"period": 5}, "direction": "high"}
+        ],
+        "group_by": {"金融": ["银行"]},
+    }
+    out = parse_research_eval_spec(raw)
+    assert out["group_by"] == {"金融": ["银行"]}

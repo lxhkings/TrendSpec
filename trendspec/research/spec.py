@@ -39,6 +39,44 @@ class FilterTerm(BaseModel):
         return v
 
 
+class _ResearchEvalSpec(BaseModel):
+    """ic/quantile 子集：不要求 market/top_k/rebalance。"""
+
+    factors: list[FactorTerm] = Field(min_length=1)
+    filters: list[FilterTerm] = Field(default_factory=list)
+    group_by: dict[str, list[str]] | None = None
+    winsorize_pct: float = 0.01
+
+
+def parse_research_eval_spec(raw: dict[str, Any]) -> dict[str, Any]:
+    """Validate the ic/quantile subset of a factor-spec JSON object.
+
+    Requires non-empty ``factors`` (each a FactorTerm). Optional ``filters``
+    (FilterTerm list, default []), optional ``group_by``, optional
+    ``winsorize_pct`` (default 0.01). Ignores market/top_k/rebalance if present.
+
+    Returns a plain dict with dumped factors/filters for compute_* callers.
+    Raises pydantic.ValidationError on invalid input.
+    """
+    # Only pick known keys so extra full-FactorSpec fields do not break parsing
+    payload = {
+        "factors": raw.get("factors"),
+        "filters": raw.get("filters", []),
+        "winsorize_pct": raw.get("winsorize_pct", 0.01),
+    }
+    if "group_by" in raw:
+        payload["group_by"] = raw.get("group_by")
+    parsed = _ResearchEvalSpec.model_validate(payload)
+    out: dict[str, Any] = {
+        "factors": [t.model_dump() for t in parsed.factors],
+        "filters": [t.model_dump() for t in parsed.filters],
+        "winsorize_pct": parsed.winsorize_pct,
+    }
+    if parsed.group_by is not None:
+        out["group_by"] = parsed.group_by
+    return out
+
+
 class FactorSpec(BaseModel):
     """声明式因子组合策略 spec。"""
 
