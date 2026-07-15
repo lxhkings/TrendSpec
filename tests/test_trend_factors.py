@@ -223,3 +223,29 @@ def test_fund_roe_trend_4q_missing_column_yields_null():
     df = _daily_df()  # 没有 roe 列
     res = get_factor("fund_roe_trend_4q").compute_full(df)
     assert res.values["fund_roe_trend_4q"].null_count() == df.height
+
+
+import inspect
+
+from trendspec.factors.fundamental import trend as trend_mod
+
+
+def test_quarterly_factors_share_base_compute():
+    """六个跨季因子应共用基类 compute，而不是各自拷贝方法体。"""
+    names = [
+        "fund_revenue_qoq",
+        "fund_revenue_qoq_prev",
+        "fund_net_income_qoq",
+        "fund_net_income_qoq_prev",
+        "fund_revenue_cagr_3y",
+        "fund_roe_trend_4q",
+    ]
+    base = trend_mod._QuarterlyShiftFactor
+    methods = []
+    for n in names:
+        cls = type(get_factor(n))
+        assert issubclass(cls, base), f"{n} should subclass _QuarterlyShiftFactor"
+        # 子类不应再 override compute（MRO 上 compute 来自 base）
+        assert "compute" not in cls.__dict__, f"{n} should not define its own compute"
+        methods.append(inspect.getattr_static(cls, "compute"))
+    assert len(set(methods)) == 1

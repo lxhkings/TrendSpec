@@ -3,8 +3,9 @@
 跨期计算型因子（tushare 原始数据没有现成字段），跟 quality.py/growth.py 的
 _ColumnFactor 直通模式不同——需要从日频 df 里按 end_date 变化点还原出真正的
 季度序列再做 shift 对比。三个模块级函数（_quarterly_series /
-_quarterly_shift_compute / _asof_join_quarterly_result）被本文件全部 Factor
-共用，不要在 Factor.compute() 里各自重新实现一遍这套逻辑。
+_quarterly_shift_compute / _asof_join_quarterly_result）与
+_QuarterlyShiftFactor 基类被本文件全部 Factor 共用，不要在 Factor.compute()
+里各自重新实现一遍这套逻辑。
 """
 
 from typing import ClassVar, Literal
@@ -105,104 +106,102 @@ def _quarterly_shift_compute(
     return q.select(["instrument_id", "date", "result"])
 
 
-@register("fund_revenue_qoq")
-class FundRevenueQoQ(Factor):
-    description: ClassVar[str] = "Revenue QoQ growth (quarter vs immediately prior quarter, PIT)"
+class _QuarterlyShiftFactor(Factor):
+    """跨季 shift 因子共用壳：ClassVar 描述列与 gap，compute 只写一次。"""
+
     category: ClassVar[str] = "fundamental"
+    value_col: ClassVar[str] = ""
+    n: ClassVar[int] = 1
+    gap_min_months: ClassVar[int] = 2
+    gap_max_months: ClassVar[int] = 4
+    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
+    cagr_years: ClassVar[float | None] = None
+    anchor_shift: ClassVar[int] = 0
 
     def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
-        if "end_date" not in df.columns or "total_revenue" not in df.columns:
+        if "end_date" not in df.columns or self.value_col not in df.columns:
             return pl.lit(None, dtype=pl.Float64)
         result = _quarterly_shift_compute(
-            df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
+            df,
+            self.value_col,
+            n=self.n,
+            gap_min_months=self.gap_min_months,
+            gap_max_months=self.gap_max_months,
+            mode=self.mode,
+            cagr_years=self.cagr_years,
+            anchor_shift=self.anchor_shift,
         )
         if result.is_empty():
             return pl.lit(None, dtype=pl.Float64)
         return _asof_join_quarterly_result(df, result).alias(self.name)
+
+
+@register("fund_revenue_qoq")
+class FundRevenueQoQ(_QuarterlyShiftFactor):
+    description: ClassVar[str] = "Revenue QoQ growth (quarter vs immediately prior quarter, PIT)"
+    value_col: ClassVar[str] = "total_revenue"
+    n: ClassVar[int] = 1
+    gap_min_months: ClassVar[int] = 2
+    gap_max_months: ClassVar[int] = 4
+    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
+    anchor_shift: ClassVar[int] = 0
 
 
 @register("fund_revenue_qoq_prev")
-class FundRevenueQoQPrev(Factor):
+class FundRevenueQoQPrev(_QuarterlyShiftFactor):
     description: ClassVar[str] = (
         "Revenue QoQ growth for the quarter prior to the latest one (t-1 vs t-2, PIT)"
     )
-    category: ClassVar[str] = "fundamental"
-
-    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
-        if "end_date" not in df.columns or "total_revenue" not in df.columns:
-            return pl.lit(None, dtype=pl.Float64)
-        result = _quarterly_shift_compute(
-            df, "total_revenue", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
-            anchor_shift=1,
-        )
-        if result.is_empty():
-            return pl.lit(None, dtype=pl.Float64)
-        return _asof_join_quarterly_result(df, result).alias(self.name)
+    value_col: ClassVar[str] = "total_revenue"
+    n: ClassVar[int] = 1
+    gap_min_months: ClassVar[int] = 2
+    gap_max_months: ClassVar[int] = 4
+    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
+    anchor_shift: ClassVar[int] = 1
 
 
 @register("fund_net_income_qoq")
-class FundNetIncomeQoQ(Factor):
+class FundNetIncomeQoQ(_QuarterlyShiftFactor):
     description: ClassVar[str] = "Net income QoQ growth (quarter vs immediately prior quarter, PIT)"
-    category: ClassVar[str] = "fundamental"
-
-    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
-        if "end_date" not in df.columns or "net_income" not in df.columns:
-            return pl.lit(None, dtype=pl.Float64)
-        result = _quarterly_shift_compute(
-            df, "net_income", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
-        )
-        if result.is_empty():
-            return pl.lit(None, dtype=pl.Float64)
-        return _asof_join_quarterly_result(df, result).alias(self.name)
+    value_col: ClassVar[str] = "net_income"
+    n: ClassVar[int] = 1
+    gap_min_months: ClassVar[int] = 2
+    gap_max_months: ClassVar[int] = 4
+    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
+    anchor_shift: ClassVar[int] = 0
 
 
 @register("fund_net_income_qoq_prev")
-class FundNetIncomeQoQPrev(Factor):
+class FundNetIncomeQoQPrev(_QuarterlyShiftFactor):
     description: ClassVar[str] = (
         "Net income QoQ growth for the quarter prior to the latest one (t-1 vs t-2, PIT)"
     )
-    category: ClassVar[str] = "fundamental"
-
-    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
-        if "end_date" not in df.columns or "net_income" not in df.columns:
-            return pl.lit(None, dtype=pl.Float64)
-        result = _quarterly_shift_compute(
-            df, "net_income", n=1, gap_min_months=2, gap_max_months=4, mode="ratio",
-            anchor_shift=1,
-        )
-        if result.is_empty():
-            return pl.lit(None, dtype=pl.Float64)
-        return _asof_join_quarterly_result(df, result).alias(self.name)
+    value_col: ClassVar[str] = "net_income"
+    n: ClassVar[int] = 1
+    gap_min_months: ClassVar[int] = 2
+    gap_max_months: ClassVar[int] = 4
+    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
+    anchor_shift: ClassVar[int] = 1
 
 
 @register("fund_revenue_cagr_3y")
-class FundRevenueCagr3Y(Factor):
+class FundRevenueCagr3Y(_QuarterlyShiftFactor):
     description: ClassVar[str] = "Revenue 3-year CAGR (12 quarters back, PIT)"
-    category: ClassVar[str] = "fundamental"
-
-    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
-        if "end_date" not in df.columns or "total_revenue" not in df.columns:
-            return pl.lit(None, dtype=pl.Float64)
-        result = _quarterly_shift_compute(
-            df, "total_revenue", n=12, gap_min_months=34, gap_max_months=38,
-            mode="cagr", cagr_years=3.0,
-        )
-        if result.is_empty():
-            return pl.lit(None, dtype=pl.Float64)
-        return _asof_join_quarterly_result(df, result).alias(self.name)
+    value_col: ClassVar[str] = "total_revenue"
+    n: ClassVar[int] = 12
+    gap_min_months: ClassVar[int] = 34
+    gap_max_months: ClassVar[int] = 38
+    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "cagr"
+    cagr_years: ClassVar[float | None] = 3.0
+    anchor_shift: ClassVar[int] = 0
 
 
 @register("fund_roe_trend_4q")
-class FundRoeTrend4Q(Factor):
+class FundRoeTrend4Q(_QuarterlyShiftFactor):
     description: ClassVar[str] = "ROE change vs 4 quarters ago, absolute points not ratio (PIT)"
-    category: ClassVar[str] = "fundamental"
-
-    def compute(self, df: pl.DataFrame) -> pl.Expr | pl.Series:
-        if "end_date" not in df.columns or "roe" not in df.columns:
-            return pl.lit(None, dtype=pl.Float64)
-        result = _quarterly_shift_compute(
-            df, "roe", n=4, gap_min_months=10, gap_max_months=14, mode="diff",
-        )
-        if result.is_empty():
-            return pl.lit(None, dtype=pl.Float64)
-        return _asof_join_quarterly_result(df, result).alias(self.name)
+    value_col: ClassVar[str] = "roe"
+    n: ClassVar[int] = 4
+    gap_min_months: ClassVar[int] = 10
+    gap_max_months: ClassVar[int] = 14
+    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "diff"
+    anchor_shift: ClassVar[int] = 0
