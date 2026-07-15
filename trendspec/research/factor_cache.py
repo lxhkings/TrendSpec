@@ -26,17 +26,35 @@ _FILTER_OPS = {
 }
 
 
+def _key(name: str, params: dict[str, Any]) -> tuple:
+    return (name, tuple(sorted(params.items())))
+
+
 def _apply_filters(
-    df: pl.DataFrame, filters: list[dict[str, Any]], market: str
+    df: pl.DataFrame,
+    filters: list[dict[str, Any]],
+    market: str,
+    cache: dict[tuple, Any] | None = None,
 ) -> pl.DataFrame:
     """按 filters 逐条 semi-join 剔除不合格 (instrument_id, date) 行。
 
     Polars 比较遇 null 结果为 null，被 filter 丢弃——缺失值自然落入
     "剔除"分支，与 FilterTerm 的语义一致。
+
+    cache: 可选 memo，key 与模块 _key 相同，value 为 FactorResult。
+    仅用于本阶段（同一 df 快照）内去重。
     """
+    if cache is None:
+        cache = {}
     for term in filters:
-        factor = get_factor_with_market(term["name"], term.get("params") or {}, market)
-        result = factor.compute_full(df)
+        k = _key(term["name"], term.get("params") or {})
+        result = cache.get(k)
+        if result is None:
+            factor = get_factor_with_market(
+                term["name"], term.get("params") or {}, market
+            )
+            result = factor.compute_full(df)
+            cache[k] = result
         cond = _FILTER_OPS[term["op"]](pl.col(result.name), term["value"])
         passed = result.values.filter(cond).select(["instrument_id", "date"])
         df = df.join(passed, on=["instrument_id", "date"], how="semi")
@@ -67,7 +85,8 @@ def compute_combo_scores(
         之前按原始因子值剔除不合格行，因子值缺失（null 比较）一并剔除。
     """
     if filters:
-        df = _apply_filters(df, filters, market)
+        filter_cache: dict[tuple, Any] = {}
+        df = _apply_filters(df, filters, market, cache=filter_cache)
     if group_by is not None:
         if root is None:
             raise ValueError("group_by 需要提供 root 以读取 sectors 数据集")
@@ -108,11 +127,18 @@ def compute_combo_scores(
     )
     score_df = score_df.filter(pl.col("_group").is_not_null())
 
+    score_cache: dict[tuple, Any] = {}
     weight_cols: list[pl.Expr] = []
     missing_any = pl.lit(False)
     for i, term in enumerate(factors):
-        factor = get_factor_with_market(term["name"], term.get("params") or {}, market)
-        result = factor.compute_full(df)
+        k = _key(term["name"], term.get("params") or {})
+        result = score_cache.get(k)
+        if result is None:
+            factor = get_factor_with_market(
+                term["name"], term.get("params") or {}, market
+            )
+            result = factor.compute_full(df)
+            score_cache[k] = result
         col = result.name
         sign = 1.0 if term["direction"] == "high" else -1.0
         zcol = f"_z_{i}"
@@ -146,10 +172,6 @@ def compute_combo_scores(
     return score_df.filter(~missing_any).select(
         ["instrument_id", "date", "_group", "combo_score"]
     )
-
-
-def _key(name: str, params: dict[str, Any]) -> tuple:
-    return (name, tuple(sorted(params.items())))
 
 
 class FactorCache:

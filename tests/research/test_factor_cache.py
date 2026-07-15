@@ -3,6 +3,7 @@ import datetime as dt
 import polars as pl
 
 import trendspec.factors  # noqa: F401 触发注册
+import trendspec.research.factor_cache as factor_cache_module
 from trendspec.research.factor_cache import FactorCache, compute_combo_scores
 
 
@@ -110,3 +111,92 @@ def test_filters_zscore_stats_computed_on_survivors():
     assert one_day["instrument_id"].to_list() == ["A", "B"]
     vals = one_day["combo_score"].to_list()
     assert abs(vals[0] + vals[1]) < 1e-9
+
+
+def test_apply_filters_same_factor_twice_computes_once(monkeypatch):
+    """两个 filter 使用同一 name+params 时，filter 阶段只 compute_full 一次。"""
+    df = _panel_with_margin()
+    calls: list[tuple] = []
+    real_gfm = factor_cache_module.get_factor_with_market
+
+    def spy(name, params, market):
+        factor = real_gfm(name, params, market)
+        real_full = factor.compute_full
+
+        def tracked_full(frame):
+            calls.append((name, tuple(sorted((params or {}).items())), id(frame)))
+            return real_full(frame)
+
+        factor.compute_full = tracked_full  # type: ignore[method-assign]
+        return factor
+
+    monkeypatch.setattr(factor_cache_module, "get_factor_with_market", spy)
+
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    filters = [
+        {"name": "fund_op_margin", "params": {}, "op": ">", "value": 0.0},
+        {"name": "fund_op_margin", "params": {}, "op": ">", "value": -1.0},  # 同 key，更松
+    ]
+    score = compute_combo_scores(df, factors, market="cn", filters=filters)
+    assert score.height > 0
+    filter_calls = [c for c in calls if c[0] == "fund_op_margin"]
+    assert len(filter_calls) == 1, f"expected 1 filter-stage compute, got {filter_calls}"
+
+
+def test_score_stage_duplicate_factors_compute_once(monkeypatch):
+    """factors 列表两个相同 name+params 时，score 阶段只 compute_full 一次。"""
+    df = _panel()
+    calls: list[str] = []
+    real_gfm = factor_cache_module.get_factor_with_market
+
+    def spy(name, params, market):
+        factor = real_gfm(name, params, market)
+        real_full = factor.compute_full
+
+        def tracked_full(frame):
+            calls.append(name)
+            return real_full(frame)
+
+        factor.compute_full = tracked_full  # type: ignore[method-assign]
+        return factor
+
+    monkeypatch.setattr(factor_cache_module, "get_factor_with_market", spy)
+
+    factors = [
+        {"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 0.5},
+        {"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 0.5},
+    ]
+    score = compute_combo_scores(df, factors, market="us")
+    assert score.height > 0
+    assert calls.count("momentum") == 1
+
+
+def test_filter_and_score_same_factor_may_compute_twice(monkeypatch):
+    """同因子既在 filters 又在 factors：允许每阶段各一次（共 2），禁止跨阶段强制 1 次。"""
+    df = _panel_with_margin()
+    calls: list[str] = []
+    real_gfm = factor_cache_module.get_factor_with_market
+
+    def spy(name, params, market):
+        factor = real_gfm(name, params, market)
+        real_full = factor.compute_full
+
+        def tracked_full(frame):
+            calls.append(name)
+            return real_full(frame)
+
+        factor.compute_full = tracked_full  # type: ignore[method-assign]
+        return factor
+
+    monkeypatch.setattr(factor_cache_module, "get_factor_with_market", spy)
+
+    factors = [
+        {"name": "fund_op_margin", "params": {}, "direction": "high", "weight": 1.0},
+    ]
+    filters = [
+        {"name": "fund_op_margin", "params": {}, "op": ">", "value": 0.0},
+    ]
+    score = compute_combo_scores(df, factors, market="cn", filters=filters)
+    assert score.height > 0
+    # 行为冻结下允许 2；实现 memo 后仍应为 2，不能误改成 1 若那样会改截面语义
+    assert calls.count("fund_op_margin") == 2
