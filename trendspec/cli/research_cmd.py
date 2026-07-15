@@ -15,16 +15,28 @@ console = Console()
 def _load_factor_spec_json(spec_file: Path) -> dict:
     """Load and validate a factor spec JSON file for research ic/quantile commands.
 
-    Only reads factors/filters/group_by/winsorize_pct — no top_k/rebalance validation.
-    Exits cleanly via typer.Exit(1) on missing file or invalid JSON.
+    Validates factors/filters/group_by/winsorize_pct via parse_research_eval_spec.
+    Does not require top_k/rebalance/market. Exits via typer.Exit(1) on missing
+    file, invalid JSON, or validation errors.
     """
     if not spec_file.exists():
         console.print(f"[red]--spec-file 不存在: {spec_file}[/red]")
         raise typer.Exit(1)
     try:
-        return json.loads(spec_file.read_text())
+        raw = json.loads(spec_file.read_text())
     except json.JSONDecodeError as e:
         console.print(f"[red]--spec-file 不是合法 JSON: {e}[/red]")
+        raise typer.Exit(1) from None
+
+    # 延迟 import：保证调用方已 import trendspec.factors 完成注册
+    from pydantic import ValidationError
+
+    from trendspec.research.spec import parse_research_eval_spec
+
+    try:
+        return parse_research_eval_spec(raw)
+    except ValidationError as e:
+        console.print(f"[red]--spec-file 校验失败: {e}[/red]")
         raise typer.Exit(1) from None
 
 
