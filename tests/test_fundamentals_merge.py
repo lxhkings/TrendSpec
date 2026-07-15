@@ -1,6 +1,7 @@
 """PIT merge of fundamentals into the daily frame (no lookahead)."""
 
 from datetime import date
+from pathlib import Path
 
 import polars as pl
 
@@ -56,3 +57,16 @@ def test_enrich_daily_panel_empty_returns_unchanged():
     out = enrich_daily_panel(empty, Market.CN, root=None)
     assert out.is_empty()
     assert out.equals(empty)
+
+
+def test_call_sites_use_enrich_daily_panel_not_inline_merges():
+    root = Path(__file__).resolve().parents[1]
+    engine = (root / "trendspec/engine/base_engine.py").read_text()
+    panel = (root / "trendspec/research/market_panel.py").read_text()
+    assert "enrich_daily_panel" in engine
+    assert "enrich_daily_panel" in panel
+    # load 路径不应再内联调用这两个名字（import 行除外：允许 from ... import enrich only）
+    assert "merge_fundamentals(" not in engine
+    assert "merge_valuation(" not in engine
+    assert "merge_fundamentals(" not in panel
+    assert "merge_valuation(" not in panel
