@@ -249,3 +249,10 @@ def test_quarterly_factors_share_base_compute():
         assert "compute" not in cls.__dict__, f"{n} should not define its own compute"
         methods.append(inspect.getattr_static(cls, "compute"))
     assert len(set(methods)) == 1
+
+
+def test_qoq_prev_anchor_shift_is_one():
+    assert type(get_factor("fund_revenue_qoq_prev")).anchor_shift == 1
+    assert type(get_factor("fund_revenue_qoq")).anchor_shift == 0
+    assert type(get_factor("fund_revenue_cagr_3y")).cagr_years == 3.0
+    assert type(get_factor("fund_roe_trend_4q")).mode == "diff"

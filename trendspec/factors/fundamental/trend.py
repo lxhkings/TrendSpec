@@ -140,11 +140,6 @@ class _QuarterlyShiftFactor(Factor):
 class FundRevenueQoQ(_QuarterlyShiftFactor):
     description: ClassVar[str] = "Revenue QoQ growth (quarter vs immediately prior quarter, PIT)"
     value_col: ClassVar[str] = "total_revenue"
-    n: ClassVar[int] = 1
-    gap_min_months: ClassVar[int] = 2
-    gap_max_months: ClassVar[int] = 4
-    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
-    anchor_shift: ClassVar[int] = 0
 
 
 @register("fund_revenue_qoq_prev")
@@ -153,10 +148,6 @@ class FundRevenueQoQPrev(_QuarterlyShiftFactor):
         "Revenue QoQ growth for the quarter prior to the latest one (t-1 vs t-2, PIT)"
     )
     value_col: ClassVar[str] = "total_revenue"
-    n: ClassVar[int] = 1
-    gap_min_months: ClassVar[int] = 2
-    gap_max_months: ClassVar[int] = 4
-    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
     anchor_shift: ClassVar[int] = 1
 
 
@@ -164,11 +155,6 @@ class FundRevenueQoQPrev(_QuarterlyShiftFactor):
 class FundNetIncomeQoQ(_QuarterlyShiftFactor):
     description: ClassVar[str] = "Net income QoQ growth (quarter vs immediately prior quarter, PIT)"
     value_col: ClassVar[str] = "net_income"
-    n: ClassVar[int] = 1
-    gap_min_months: ClassVar[int] = 2
-    gap_max_months: ClassVar[int] = 4
-    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
-    anchor_shift: ClassVar[int] = 0
 
 
 @register("fund_net_income_qoq_prev")
@@ -177,10 +163,6 @@ class FundNetIncomeQoQPrev(_QuarterlyShiftFactor):
         "Net income QoQ growth for the quarter prior to the latest one (t-1 vs t-2, PIT)"
     )
     value_col: ClassVar[str] = "net_income"
-    n: ClassVar[int] = 1
-    gap_min_months: ClassVar[int] = 2
-    gap_max_months: ClassVar[int] = 4
-    mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "ratio"
     anchor_shift: ClassVar[int] = 1
 
 
@@ -193,7 +175,6 @@ class FundRevenueCagr3Y(_QuarterlyShiftFactor):
     gap_max_months: ClassVar[int] = 38
     mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "cagr"
     cagr_years: ClassVar[float | None] = 3.0
-    anchor_shift: ClassVar[int] = 0
 
 
 @register("fund_roe_trend_4q")
@@ -204,4 +185,3 @@ class FundRoeTrend4Q(_QuarterlyShiftFactor):
     gap_min_months: ClassVar[int] = 10
     gap_max_months: ClassVar[int] = 14
     mode: ClassVar[Literal["ratio", "cagr", "diff"]] = "diff"
-    anchor_shift: ClassVar[int] = 0
