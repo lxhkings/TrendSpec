@@ -2,7 +2,7 @@ from datetime import datetime, date
 
 import polars as pl
 
-from trendspec.research.ema_cross_winrate import (
+from trendspec.analyzer.ema_cross_winrate import (
     aggregate,
     compute_adv20_daily,
     compute_ema_cross,

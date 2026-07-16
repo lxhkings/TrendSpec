@@ -3,7 +3,7 @@ from datetime import datetime
 import numpy as np
 import polars as pl
 
-from trendspec.research.ema_cross_winrate import run_novice_simulations, simulate_novice
+from trendspec.analyzer.ema_cross_winrate import run_novice_simulations, simulate_novice
 
 
 def _dt(day, hour):

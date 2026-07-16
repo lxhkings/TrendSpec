@@ -59,7 +59,7 @@ def winrate_ema_cross(
         trendspec winrate ema-cross --market us --no-csv  # 不导出 CSV
     """
     from trendspec.data.markets import Market
-    from trendspec.research.ema_cross_winrate import run_winrate
+    from trendspec.analyzer.ema_cross_winrate import run_winrate
 
     market_enum = Market(market.upper())
     start_dt = datetime.fromisoformat(start) if start else None
@@ -164,7 +164,7 @@ def winrate_montecarlo(
         trendspec winrate montecarlo --market us --sims 500 --seed 42
     """
     from trendspec.data.markets import Market
-    from trendspec.research.ema_cross_winrate import monte_carlo, run_winrate
+    from trendspec.analyzer.ema_cross_winrate import monte_carlo, run_winrate
 
     market_enum = Market(market.upper())
     start_dt = datetime.fromisoformat(start) if start else None
@@ -246,7 +246,7 @@ def winrate_novice_sim(
     """
     from trendspec.data.markets import Market
     from trendspec.data.parquet_loader import read_intraday
-    from trendspec.research.ema_cross_winrate import compute_ema_cross, run_novice_simulations
+    from trendspec.analyzer.ema_cross_winrate import compute_ema_cross, run_novice_simulations
 
     market_enum = Market(market.upper())
     start_dt = datetime.fromisoformat(start) if start else None

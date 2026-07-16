@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from trendspec.research.ema_cross_winrate import monte_carlo
+from trendspec.analyzer.ema_cross_winrate import monte_carlo
 
 
 def _pool(rets):
