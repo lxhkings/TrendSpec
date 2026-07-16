@@ -44,7 +44,7 @@ ResearchOrchestrator
 | `research/` | LLM 驱动策略研究管道；编排/评估；FactorSpec 见 combo（research.spec 为 re-export） | `orchestrator.py` (ResearchOrchestrator), `agent.py` (HypothesisAgent), `llm_client.py` (LLMClient), `walkforward.py`, `fast_eval.py`, `factor_eval.py` (RankIC/分层回测), `search.py`, `report.py`, `ledger.py` |
 | `risk/` | 风控规则链 | `base.py` (RiskRule/Allow/Reject), `pipeline.py` (RiskPipeline), `position_limit.py`, `sector_limit.py`, `drawdown_halt.py`, `liquidity.py`, `price_limit.py`, `sector_neutral.py` |
 | `screening/` | 选股输出报告 | `report.py` (ScreeningReport — rich 表格 + CSV) |
-| `analyzer/` | 回测绩效分析 | `metrics.py` (PerformanceMetrics), `equity_curve.py` (EquityCurve), `trade_log.py` (TradeLogAnalyzer), `report.py` (BacktestReport), `signal_history.py`, `strategy_comparison.py` |
+| `analyzer/` | 回测绩效分析 | `metrics.py` (PerformanceMetrics), `equity_curve.py` (EquityCurve), `trade_log.py` (TradeLogAnalyzer), `report.py` (BacktestReport), `signal_history.py`, `strategy_comparison.py`, `ema_cross_winrate.py` (胜率/蒙特卡洛工具) |
 | `config/` | pydantic-settings 配置 | `settings.py` (Settings → Database/DataLake/Backtest/RiskSettings) |
 | `cli/` | Typer CLI 命令组 | `main.py` (app), `ingest_cmd.py`, `backtest_cmd.py`, `screen_cmd.py`, `research_cmd.py`, `signal_history_cmd.py`, `winrate_cmd.py` |
 
