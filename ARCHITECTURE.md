@@ -20,13 +20,13 @@ trendspec/engine/  ───►  trendspec/strategy/  ───►  trendspec/ri
 trendspec/analyzer/   (PerformanceMetrics, EquityCurve, BacktestReport)
 ```
 
-Research 管道（独立于引擎环路）：
+Research 管道（独立于引擎环路；组合打分经 `combo.compute_combo_scores`）：
 
 ```
 ResearchOrchestrator
   1. HypothesisAgent (LLM) → FactorSpec 假设
   2. expand_grid() → 搜索空间
-  3. run_walkforward() → 回测验证
+  3. run_walkforward() → 回测验证（combo 截面打分）
   4. passes_threshold() → 过滤通过策略
   5. write_advice() → Markdown 报告
 ```
@@ -40,7 +40,8 @@ ResearchOrchestrator
 | `engine/` | 执行编排（回测/选股） | `base_engine.py` (BaseEngine, EngineConfig, EngineResult), `backtest_engine.py` (BacktestEngine), `screening_engine.py` (ScreeningEngine), `broker.py` (Broker), `portfolio.py` (Portfolio), `costs.py` (CostsModel) |
 | `strategy/` | 策略框架（扩展点） | `base.py` (BaseStrategy, @register_strategy), `context.py` (StrategyContext), `signal.py` (Signal), `factor_strategy.py` (FactorStrategy), `indicators.py` (MA/EMA/RSI/MACD/ATR/Bollinger) |
 | `factors/` | 因子计算引擎 | `base.py` (Factor), `registry.py` (Registry + @register), `price/`, `technical/`, `volume/`, `cross_sectional/`, `sector/`, `fundamental/` |
-| `research/` | LLM 驱动策略研究管道 | `orchestrator.py` (ResearchOrchestrator), `agent.py` (HypothesisAgent), `spec.py` (FactorSpec/FactorTerm), `llm_client.py` (LLMClient), `walkforward.py`, `fast_eval.py`, `factor_eval.py` (RankIC/分层回测), `search.py`, `report.py`, `ledger.py` |
+| `combo/` | 因子组合运行时（声明式 spec + 截面打分） | `spec.py` (FactorSpec/FactorTerm/FilterTerm), `scores.py` (compute_combo_scores) |
+| `research/` | LLM 驱动策略研究管道；编排/评估；FactorSpec 见 combo（research.spec 为 re-export） | `orchestrator.py` (ResearchOrchestrator), `agent.py` (HypothesisAgent), `llm_client.py` (LLMClient), `walkforward.py`, `fast_eval.py`, `factor_eval.py` (RankIC/分层回测), `search.py`, `report.py`, `ledger.py` |
 | `risk/` | 风控规则链 | `base.py` (RiskRule/Allow/Reject), `pipeline.py` (RiskPipeline), `position_limit.py`, `sector_limit.py`, `drawdown_halt.py`, `liquidity.py`, `price_limit.py`, `sector_neutral.py` |
 | `screening/` | 选股输出报告 | `report.py` (ScreeningReport — rich 表格 + CSV) |
 | `analyzer/` | 回测绩效分析 | `metrics.py` (PerformanceMetrics), `equity_curve.py` (EquityCurve), `trade_log.py` (TradeLogAnalyzer), `report.py` (BacktestReport), `signal_history.py`, `strategy_comparison.py` |
@@ -91,7 +92,8 @@ trendspec (Typer)
 | `BacktestReport` | `analyzer/report.py` | 中文 rich 表格输出 |
 | `ResearchOrchestrator` | `research/orchestrator.py` | 研究循环主控 |
 | `HypothesisAgent` | `research/agent.py` | LLM 策略假设生成 |
-| `FactorSpec` / `FactorTerm` / `FilterTerm` | `research/spec.py` | Pydantic 因子组合规范（含硬过滤层 filters） |
+| `FactorSpec` / `FactorTerm` / `FilterTerm` | `combo/spec.py` | Pydantic 因子组合规范（含硬过滤层 filters） |
+| `compute_combo_scores` | `combo/scores.py` | winsorize + z-score 组合打分唯一实现 |
 | `compute_rank_ic` / `compute_quantile_returns` | `research/factor_eval.py` | RankIC / 分层回测评估 |
 | `Settings` | `config/settings.py` | `get_settings()` 聚合配置 |
 | `Manifest` | `ingest/manifest.py` | 摄入同步状态跟踪 |
@@ -105,3 +107,4 @@ trendspec (Typer)
 5. **风控串行** — RiskPipeline 按序执行，首个 Reject 跳过信号
 6. **双模式引擎** — BacktestEngine + ScreeningEngine 共享策略接口
 7. **CN 列名映射** — `INGEST_SCHEMA_MAP` 处理 CN 子表差异；US 直接使用标准列名
+8. **组合契约中性** — FactorSpec 与 compute_combo_scores 位于 combo/；strategy 与 research 均可依赖 combo，strategy 不得依赖 research
