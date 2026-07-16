@@ -107,7 +107,7 @@ def compute_combo_scores(
       lo/hi = quantile(winsorize_pct)/(1-winsorize_pct) over (date, _group)
       z = sign * (clip(x, lo, hi) - mean_over(date,_group)) / std_over(date,_group)
       combo_score = sum(weight_i * fill_null(z_i, 0))
-      任一因子 z 无定义（原始值缺失 or 单成员分组 std 为 null）的行整条剔除。
+      任一因子 z 无定义（原始值缺失 or 单成员分组 std 为 null）的行整条剔除；或零 std 分组 z 非有限。
 
     group_by: {组名: [行业代码, ...]}；为 None 时全部落一个虚拟组 "_all"
         （等价于原全局排名）。设置时需要 root 以读取 sectors 数据集。
@@ -189,6 +189,13 @@ def compute_combo_scores(
                 sign * (pl.col("_w") - pl.col("_w").mean().over(["date", "_group"]))
                 / pl.col("_w").std().over(["date", "_group"])
             ).alias(zcol)
+        ).with_columns(
+            # 零 std 分组(截面全相等)除出 NaN/inf——polars 中 NaN ≠ null,
+            # 必须显式置 null 才能被下方 missing_any 的 is_null 检查整行剔除
+            pl.when(pl.col(zcol).is_finite())
+            .then(pl.col(zcol))
+            .otherwise(None)
+            .alias(zcol)
         ).select(["instrument_id", "date", zcol, ncol])
 
         score_df = score_df.join(vals, on=["instrument_id", "date"], how="left")

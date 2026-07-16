@@ -231,3 +231,38 @@ def test_compute_quantile_returns_per_date_qcut_regression():
         "ranking changes across dates. If this assertion fails, .over('date') may have "
         "been accidentally removed from the qcut call in compute_quantile_returns."
     )
+
+
+def _panel_all_identical() -> pl.DataFrame:
+    """3支股票 close 序列完全相同 → momentum 截面每天全相等 → 组内 std=0。"""
+    rows = []
+    for iid in ["A", "B", "C"]:
+        for i in range(20):
+            d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+            rows.append({"instrument_id": iid, "date": d, "close": 10.0 + i})
+    return pl.DataFrame(rows)
+
+
+def test_combo_scores_zero_std_cross_section_rows_dropped():
+    """截面全相等 → std=0 → z-score 非有限,整行剔除;不得漏出 NaN/inf combo_score。
+
+    回归:2026-07-16 round,fund_revenue_cagr_3y/ema_alignment 因此出 IC均值=nan。"""
+    df = _panel_all_identical()
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    scores = compute_combo_scores(df, factors, "cn")
+    assert scores.is_empty()
+
+
+def test_combo_scores_partial_ties_all_finite():
+    """部分并列(4 同 + 1 异)截面 std>0,行保留且 combo_score 全部有限。"""
+    rows = []
+    slopes = {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0, "E": 3.0}
+    for iid, slope in slopes.items():
+        for i in range(20):
+            d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+            rows.append({"instrument_id": iid, "date": d, "close": 100.0 + slope * i})
+    df = pl.DataFrame(rows)
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    scores = compute_combo_scores(df, factors, "cn")
+    assert scores.height > 0
+    assert scores["combo_score"].is_finite().all()
