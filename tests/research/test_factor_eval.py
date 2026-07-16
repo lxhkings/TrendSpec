@@ -7,6 +7,7 @@ import trendspec.factors  # noqa: F401 触发因子注册
 from trendspec.combo import compute_combo_scores
 from trendspec.research.factor_eval import (
     _attach_forward_returns,
+    compute_coverage,
     compute_quantile_returns,
     compute_rank_ic,
     compute_top_minus_bottom,
@@ -322,3 +323,23 @@ def test_compute_quantile_returns_handles_tied_scores_without_panic():
     factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
     qr = compute_quantile_returns(df, factors, "cn", horizon=5, n_quantiles=5)
     assert not qr.is_empty()
+
+
+def test_compute_coverage_reports_valid_date_ratio():
+    df = _panel_with_monotonic_relation()  # 既有 helper：5支股票 x 30天
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    cov = compute_coverage(df, factors, "cn", min_stocks=5)
+    assert cov["panel_rows"] == df.height
+    assert 0 < cov["score_coverage"] <= 1
+    assert cov["n_dates"] == 30
+    # 前 5 天 momentum 为 null 没有打分行 → 有效日 < 总日数
+    assert 0 < cov["n_valid_dates"] < cov["n_dates"]
+    assert cov["valid_date_ratio"] == pytest.approx(cov["n_valid_dates"] / cov["n_dates"])
+
+
+def test_compute_coverage_zero_std_dates_not_valid():
+    df = _panel_all_identical()  # Task 1 的 helper：截面全相等
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    cov = compute_coverage(df, factors, "cn", min_stocks=2)
+    assert cov["n_valid_dates"] == 0
+    assert cov["valid_date_ratio"] == 0.0

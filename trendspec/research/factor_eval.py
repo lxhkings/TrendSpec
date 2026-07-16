@@ -140,3 +140,39 @@ def compute_top_minus_bottom(quantile_df: pl.DataFrame, n_quantiles: int) -> pl.
         .select(["date", "top_minus_bottom"])
         .sort("date")
     )
+
+
+def compute_coverage(
+    panel: pl.DataFrame,
+    factors: list[dict[str, Any]],
+    market: str,
+    group_by: dict[str, list[str]] | None = None,
+    winsorize_pct: float = 0.01,
+    root: str | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    min_stocks: int = 30,
+) -> dict[str, float | int]:
+    """因子覆盖率预检：打分行覆盖率 + 有效截面日占比。
+
+    有效截面日 = 当日打分行数 ≥ min_stocks 且 combo_score 截面 std > 0
+    （有区分度）。占比过低说明因子历史覆盖不足，IC/分层结果不可信，
+    应按 data_insufficient 停假设而不是烧一次评估。"""
+    scores = compute_combo_scores(
+        panel, factors, market, group_by, winsorize_pct, root, filters=filters
+    )
+    n_dates = panel.select(pl.col("date").n_unique()).item()
+    per_date = scores.group_by("date").agg(
+        pl.len().alias("n"),
+        pl.col("combo_score").std().alias("std"),
+    )
+    n_valid = per_date.filter(
+        (pl.col("n") >= min_stocks) & (pl.col("std") > 0)
+    ).height
+    return {
+        "panel_rows": panel.height,
+        "scored_rows": scores.height,
+        "score_coverage": scores.height / panel.height if panel.height else 0.0,
+        "n_dates": n_dates,
+        "n_valid_dates": n_valid,
+        "valid_date_ratio": n_valid / n_dates if n_dates else 0.0,
+    }

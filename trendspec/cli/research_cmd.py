@@ -204,3 +204,42 @@ def research_quantile(
         console.print("[yellow]top-bottom 价差: 无法计算（缺最高或最低组数据）[/yellow]")
     else:
         console.print(f"top-bottom 价差均值: {tmb['top_minus_bottom'].mean():.4%}")
+
+
+@app.command("coverage")
+def research_coverage(
+    spec_file: Path = typer.Option(
+        ..., "--spec-file",
+        help="FactorSpec JSON 文件路径（只读 factors/filters/group_by/winsorize_pct 字段）",
+    ),
+    market: str = typer.Option("cn", "--market", "-m", help="市场"),
+    start: str = typer.Option(..., "--start", help="起始 YYYY-MM-DD"),
+    end: str = typer.Option(None, "--end", help="结束 YYYY-MM-DD，默认今日"),
+    min_stocks: int = typer.Option(30, "--min-stocks", help="有效截面日最少标的数"),
+) -> None:
+    """因子覆盖率预检：打分行覆盖率 + 有效截面日占比（≥min_stocks 只且截面有区分度）。
+    跑 IC 前先看数据够不够——占比过低时 IC/分层结果不可信。"""
+    import trendspec.factors  # noqa: F401 — 触发因子注册
+    from trendspec.research.factor_eval import compute_coverage
+    from trendspec.research.market_panel import MarketPanel
+
+    spec = _load_factor_spec_json(spec_file)
+
+    start_date = date.fromisoformat(start)
+    end_date = date.fromisoformat(end) if end else date.today()
+    panel = MarketPanel.load(market, start_date, end_date)
+
+    cov = compute_coverage(
+        panel.data, spec["factors"], market,
+        group_by=spec.get("group_by"), winsorize_pct=spec.get("winsorize_pct", 0.01),
+        filters=spec.get("filters"), min_stocks=min_stocks,
+    )
+    console.print(f"[cyan]覆盖率预检[/cyan] (min_stocks={min_stocks})")
+    console.print(
+        f"panel 行数={cov['panel_rows']:,}  打分行数={cov['scored_rows']:,}  "
+        f"行覆盖率={cov['score_coverage']:.2%}"
+    )
+    console.print(
+        f"总日数={cov['n_dates']}  有效截面日={cov['n_valid_dates']}  "
+        f"有效日占比={cov['valid_date_ratio']:.2%}"
+    )

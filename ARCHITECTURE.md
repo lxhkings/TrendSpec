@@ -63,6 +63,7 @@ trendspec (Typer)
 ├── research
 │   ├── run --theme STR [--fast] [--goal STR] [--initial-cap FLOAT]
 │   ├── serve (启动 dashboard)
+│   ├── coverage --spec-file PATH --market us|cn --start DATE [--end DATE] [--min-stocks N]
 │   ├── ic --spec-file PATH --market us|cn --start DATE [--end DATE] [--horizon N]
 │   └── quantile --spec-file PATH --market us|cn --start DATE [--end DATE] [--horizon N] [--n-quantiles N]
 ├── signal-history
@@ -94,7 +95,7 @@ trendspec (Typer)
 | `HypothesisAgent` | `research/agent.py` | LLM 策略假设生成 |
 | `FactorSpec` / `FactorTerm` / `FilterTerm` | `combo/spec.py` | Pydantic 因子组合规范（含硬过滤层 filters） |
 | `compute_combo_scores` | `combo/scores.py` | winsorize + z-score 组合打分唯一实现 |
-| `compute_rank_ic` / `compute_quantile_returns` | `research/factor_eval.py` | RankIC / 分层回测评估 |
+| `compute_rank_ic` / `compute_quantile_returns` / `compute_coverage` | `research/factor_eval.py` | RankIC / 分层回测 / 覆盖率预检 |
 | `Settings` | `config/settings.py` | `get_settings()` 聚合配置 |
 | `Manifest` | `ingest/manifest.py` | 摄入同步状态跟踪 |
 

@@ -148,3 +148,34 @@ def test_research_quantile_command_prints_groups(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert "top-bottom" in result.output
+
+
+def test_coverage_command_outputs_ratio(tmp_path: Path, monkeypatch):
+    import trendspec.research.market_panel as mp_mod
+
+    rows = []
+    slopes = {"A": 0.5, "B": 1.0, "C": 2.0}
+    for iid, slope in slopes.items():
+        for i in range(30):
+            d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+            rows.append({"instrument_id": iid, "date": d, "close": 100.0 + slope * i})
+    panel = pl.DataFrame(rows)
+
+    class _FakePanel:
+        data = panel
+
+    monkeypatch.setattr(
+        mp_mod.MarketPanel, "load", classmethod(lambda *_args, **_kwargs: _FakePanel())
+    )
+
+    spec = {"factors": [{"name": "momentum", "params": {"period": 5},
+                         "direction": "high", "weight": 1.0}]}
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec))
+
+    result = runner.invoke(app, [
+        "coverage", "--spec-file", str(spec_path), "--market", "cn",
+        "--start", "2020-01-01", "--end", "2020-02-01", "--min-stocks", "3",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "有效日占比" in result.output
