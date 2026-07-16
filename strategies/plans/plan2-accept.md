@@ -49,20 +49,15 @@ grep -rn "requests\|urllib\|random" trendspec/factors/ --include="*.py" | grep -
 
 - [ ] **C2 重跑报告中记录的原命令**(spec json 在 `research_out/specs/`):
 
-```bash
-uv run trendspec research ic --spec-file research_out/specs/<假设名>.json \
-  --market <报告所记市场> --start 2018-01-01 --horizon 20
-uv run trendspec research quantile --spec-file research_out/specs/<假设名>.json \
-  --market <报告所记市场> --start 2018-01-01 --horizon 20 --n-quantiles 5
-```
+从报告第 3 节复制该假设记录的**完整原命令**(含 `--start 2010-01-01 --end <报告所记日期>`)逐字重跑,不得自行改参数。
 
-判定:IC均值/IR/分层价差与报告一致(报告未记 `--end`,重跑时数据可能多几天;允许第 3 位小数内的漂移,数量级或符号不一致 = 复现失败)。
+判定:IC均值/IC标准差/IR/IC胜率/分层各组收益/top-bottom 价差与报告**逐位一致**。`--end` 已锚定区间,不存在数据增量漂移;任何数字不一致 = 复现失败。
 
-- [ ] **C3 复现失败处理**:先确认是否数据增量导致(用报告日期作 `--end` 重跑一次);仍不一致 → 该因子判「不可信」,记入验收结论,建议 revert 对应 commit。
+- [ ] **C3 复现失败处理**:先核对 fundamentals 是否发生 restate(对比该区间 parquet 行数与报告第 1 节 ingest status);无 restate 证据仍不一致 → 该因子判「不可信」,记入验收结论,建议 revert 对应 commit。
 
 ## D. 账实一致
 
-- [ ] **D1 ledger vs 报告**:`research_out/ledger.jsonl` 中每条 `manual_research` 负结论与各轮报告第 3 节一一对应,无报告里有、ledger 里没有(或反之)的假设。
+- [ ] **D1 ledger vs 报告**:`research_out/ledger.jsonl` 中每条 `manual_research`(含负结论、`eval_error`、`data_insufficient`)与各轮报告第 3 节一一对应,无报告里有、ledger 里没有(或反之)的假设;`eval_error`/`data_insufficient` 条目的 metrics 不得被报告当作负结论引用。
 
 - [ ] **D2 commit vs 报告**:每个「入库」结论都有对应 commit(hash 在报告里),且该 commit 只含该因子相关文件。
 

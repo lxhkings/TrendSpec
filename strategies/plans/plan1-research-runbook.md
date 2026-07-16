@@ -9,7 +9,7 @@
 
 **工作目录:** TrendSpec = `/Users/xiaohong/Project/TrendSpec`,StockPull = `/Users/xiaohong/Project/StockPull`。所有 `trendspec` 命令在 TrendSpec 目录下 `uv run` 执行。
 
-**本轮参数(开跑前确认):** 市场 `us` 或 `cn`(用户指定,默认 us);评估区间:初筛 `--start 2010-01-01`,严格验证 `--start 2010-01-01`,`--end` 均不传(默认到今日)。
+**本轮参数(开跑前确认):** 市场 `us` 或 `cn`(用户指定,默认 us);评估区间:初筛与严格验证一律 `--start 2010-01-01`;`--end` 显式传当日日期,并把完整命令(含 --end)原样记入报告——这是验收复现的锚点。
 
 ---
 
@@ -78,7 +78,7 @@ for r in read_ledger('research_out/ledger.jsonl'):
 "
 ```
 
-- [ ] **1.2 已试清单写进报告草稿**。判重规则:因子名相同 + 方向相同 + 参数网格有重叠 = 重复,禁止再提。
+- [ ] **1.2 已试清单写进报告草稿**。判重规则:因子名相同 + 方向相同 + 参数网格有重叠 = 重复,禁止再提。例外:`stage_failed` 为 `eval_error` 或 `data_insufficient` 的条目是「没测成」不是「测过失败」,不参与判重,允许重提。
 
 - [ ] **1.3 可用因子清单**(提组合假设前必看,因子名必须来自这里):
 
@@ -101,6 +101,7 @@ print('\n'.join(sorted(list_factors())))
 ```
 
 讲不出经济学逻辑的假设作废。与已试清单重复的作废。
+家族平衡:每轮至少 1 个价格/量类假设(反转、换手率、波动率等——历史 winners 全部出自该家族);基本面类假设默认建议加 GICS 行业中性化(见 2.2 的 group_by)。
 
 - [ ] **2.2 组合类假设 → 写 spec json**,存 `research_out/specs/<假设名>.json`:
 
@@ -109,11 +110,18 @@ print('\n'.join(sorted(list_factors())))
   "factors": [
     {"name": "price_momentum", "params": {"period": 20}, "direction": "low", "weight": 1.0}
   ],
-  "winsorize_pct": 0.01
+  "winsorize_pct": 0.01,
+  "group_by": {"能源": ["煤炭开采", "石油加工"], "...": ["..."]},
+  "filters": [
+    {"name": "fund_total_mv", "op": ">=", "value": 200000}
+  ]
 }
 ```
 
 `name` 必须在 Phase 1.3 清单里;`direction`:`high`=值大者好,`low`=值小者好。
+可选字段:
+- `group_by`(行业中性化):`{组名: [行业代码,...]}`,组内做 winsorize+z-score。GICS 11 组现成映射直接整段复制 `examples/factor_combo_cn_gics.json` 的 `group_by` 字段,不要手编行业列表。
+- `filters`(打分前硬过滤):`[{"name","op","value"}]`,op ∈ `>`/`>=`/`<`/`<=`,name 为已注册因子(如 `fund_total_mv`/`fund_circ_mv`/`turnover_rate`)。数值单位跟随原始列(tushare 市值列单位为万元,200000 = 20 亿),用前先确认。
 
 - [ ] **2.3 新因子类假设 → 写 Factor 子类**。文件放 `trendspec/factors/<类目>/<因子名>.py`,类目从现有目录选:`price` / `technical` / `volume` / `cross_sectional` / `sector` / `fundamental`。模板(完整可跑,仿 `factors/price/momentum.py`):
 
@@ -187,22 +195,33 @@ print('registered OK')
 
 ## Phase 3:初筛(每个假设依次跑)
 
+- [ ] **3.0 覆盖率预检**
+
+```bash
+uv run trendspec research coverage --spec-file research_out/specs/<假设名>.json \
+  --market <us|cn> --start 2010-01-01 --end <当日YYYY-MM-DD>
+```
+
+**通过标准:有效日占比 ≥50%**(阈值可由用户调整)。低于 → 按 `data_insufficient` 记 ledger(5.2 模板,stage_failed 填 `data_insufficient`,metrics 粘贴覆盖率数字),停该假设,不进入 IC。
+
 - [ ] **3.1 RankIC**
 
 ```bash
 uv run trendspec research ic --spec-file research_out/specs/<假设名>.json \
-  --market us --start 2018-01-01 --horizon 20
+  --market <us|cn> --start 2010-01-01 --end <当日YYYY-MM-DD> --horizon 20
 ```
 
 预期输出形如:`IC均值=0.0xxx  IC标准差=0.0xxx  IR=0.xxxx  IC胜率=xx.xx%`。原样粘贴进报告。
 
 **通过标准:|IC均值| ≥ 0.02 且 |IR| ≥ 0.3,且符号与假设方向一致。**
 
+输出含 nan(如 `IC均值=nan`)→ 不是负结论:按 `eval_error` 记 ledger、停该假设(RESEARCH_RULES 第 4 节),留待框架排查。
+
 - [ ] **3.2 分层回测**
 
 ```bash
 uv run trendspec research quantile --spec-file research_out/specs/<假设名>.json \
-  --market us --start 2018-01-01 --horizon 20 --n-quantiles 5
+  --market <us|cn> --start 2010-01-01 --end <当日YYYY-MM-DD> --horizon 20 --n-quantiles 5
 ```
 
 预期输出:5 组平均前瞻收益 + `top-bottom 价差均值`。原样粘贴进报告。
@@ -211,12 +230,14 @@ uv run trendspec research quantile --spec-file research_out/specs/<假设名>.js
 
 - [ ] **3.3 未过初筛的假设**:新因子代码立即清理(`git checkout -- trendspec/factors/` 或删除新文件+还原 `__init__.py`),spec json 保留,跳 Phase 5 记负结论。输出「没有可用样本」按失败处理并停该假设,禁止缩日期区间重试。
 
+- [ ] **3.4 近失中性化变体(可选,不占假设预算)**:初筛近失(IC/IR 单项达标,或未达标项距门槛差 <20%)时,允许复制该 spec 增加 `group_by`(GICS 11 组,整段抄 examples/factor_combo_cn_gics.json)另存 `research_out/specs/<假设名>_neutral.json`,重跑 3.0-3.2 一次。原始与中性化两组数字都进报告;变体通过则按通过进 Phase 4,变体仍未过则记一条负结论(factors 里注明 group_by)。每个假设最多一次变体,禁止再叠加其他改动。
+
 ## Phase 4:严格验证(仅初筛通过者)
 
 - [ ] **4.1 walk-forward**(借 `--mock-llm` 注入单假设,自动扫参+切窗+过 `passes_threshold`):
 
 ```bash
-uv run trendspec research run --market us --start 2015-01-01 --rounds 1 \
+uv run trendspec research run --market us --start 2010-01-01 --rounds 1 \
   --out ./research_out \
   --mock-llm '{"market":"us","factors":[{"name":"<因子名>","direction":"<high|low>","weight":1.0,"param_grid":{"period":[10,20,60]}}],"top_k_grid":[50,100],"rebalance_grid":[5,10,20],"rationale":"<经济学逻辑>"}'
 ```
@@ -246,13 +267,15 @@ append_ledger('research_out/ledger.jsonl', {
     'type': 'manual_research',
     'date': '<YYYY-MM-DD>',
     'hypothesis': {'market': 'us', 'factors': [{'name': '<因子名>', 'direction': '<high|low>', 'param_grid': {'period': [20]}}], 'rationale': '<经济学逻辑>'},
-    'stage_failed': 'ic|quantile|walkforward',
+    'stage_failed': 'ic|quantile|walkforward|eval_error|data_insufficient',
     'metrics': {'ic_mean': <粘贴>, 'ir': <粘贴>},
     'conclusion': '<一句话负结论>',
 })
 print('ledger appended')
 "
 ```
+
+`eval_error` = 评估命令报错或输出含 nan(框架故障,非负结论);`data_insufficient` = 覆盖率预检未过。两者不参与 Phase 1.2 判重。
 
 - [ ] **5.3 确认工作区干净**:`git status` 只剩已提交内容与 research_out 产物,无残留半成品代码。
 
