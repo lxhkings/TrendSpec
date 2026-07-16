@@ -110,7 +110,10 @@ def compute_quantile_returns(
 
     labels = [str(i) for i in range(n_quantiles)]
     bucketed = joined.with_columns(
-        pl.col("combo_score").qcut(n_quantiles, labels=labels).over("date").alias("quantile")
+        pl.col("combo_score")
+        .qcut(n_quantiles, labels=labels, allow_duplicates=True)
+        .over("date")
+        .alias("quantile")
     )
 
     return (

@@ -307,3 +307,18 @@ def test_compute_rank_ic_excludes_degenerate_dates():
     ic_df = compute_rank_ic(df, factors, "cn", horizon=5)
     assert ic_df.height > 0
     assert ic_df["rank_ic"].is_finite().all()
+
+
+def test_compute_quantile_returns_handles_tied_scores_without_panic():
+    """6支股票 4 支因子值并列:5 分位边界重复,未加 allow_duplicates 时
+    polars qcut 直接 PanicException(回归:20260716 H1 分层)。"""
+    rows = []
+    slopes = {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0, "E": 2.0, "F": 3.0}
+    for iid, slope in slopes.items():
+        for i in range(25):
+            d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+            rows.append({"instrument_id": iid, "date": d, "close": 100.0 + slope * i})
+    df = pl.DataFrame(rows)
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    qr = compute_quantile_returns(df, factors, "cn", horizon=5, n_quantiles=5)
+    assert not qr.is_empty()
