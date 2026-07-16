@@ -343,3 +343,36 @@ def test_compute_coverage_zero_std_dates_not_valid():
     cov = compute_coverage(df, factors, "cn", min_stocks=2)
     assert cov["n_valid_dates"] == 0
     assert cov["valid_date_ratio"] == 0.0
+
+
+def test_compute_combo_scores_group_by_falls_back_to_settings_root_when_root_none(monkeypatch):
+    """root=None 时 group_by 应回退到 settings 的 data_lake root，而非直接报错。
+
+    回归：research ic/quantile/coverage CLI 命令从不传 root，group_by 一旦
+    出现在 spec JSON 中就会在 compute_combo_scores 里 ValueError 崩溃。
+    scan_parquet 本身已支持 root=None 回退，不该在上层重复防御。"""
+    import trendspec.combo.scores as scores_module
+
+    df = _panel_with_monotonic_relation()  # 5支股票（A-E），30天
+    # A/B 分到 secAB（grp1），C/D/E 分到 secCDE（grp2）——每组≥2支股票，
+    # 避免单成员分组 std=null 被整行剔除（见 compute_combo_scores 的说明）。
+    sectors_df = pl.DataFrame({
+        "instrument_id": ["A", "B", "C", "D", "E"],
+        "date": [dt.date(2020, 1, 1)] * 5,
+        "sector": ["secAB", "secAB", "secCDE", "secCDE", "secCDE"],
+    })
+
+    def fake_scan_parquet(_root, _market, dataset):
+        assert dataset == "sectors"
+        return sectors_df.lazy()
+
+    monkeypatch.setattr(scores_module, "scan_parquet", fake_scan_parquet)
+
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    group_by = {"grp1": ["secAB"], "grp2": ["secCDE"]}
+
+    scores = compute_combo_scores(df, factors, "cn", group_by=group_by, root=None)
+
+    assert not scores.is_empty()
+    assert scores["combo_score"].is_finite().all()
+    assert set(scores["_group"].unique().to_list()) <= {"grp1", "grp2"}

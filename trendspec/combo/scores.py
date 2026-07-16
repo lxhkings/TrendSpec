@@ -110,7 +110,7 @@ def compute_combo_scores(
       任一因子 z 无定义（原始值缺失 or 单成员分组 std 为 null）的行整条剔除；或零 std 分组 z 非有限。
 
     group_by: {组名: [行业代码, ...]}；为 None 时全部落一个虚拟组 "_all"
-        （等价于原全局排名）。设置时需要 root 以读取 sectors 数据集。
+        （等价于原全局排名）。root 为 None 时回退到 settings 的 data_lake root。
     filters: [{name, params, op, value}, ...]；AND 语义，在 winsorize/z-score
         之前按原始因子值剔除不合格行，因子值缺失（null 比较）一并剔除。
     """
@@ -118,8 +118,6 @@ def compute_combo_scores(
         filter_cache: dict[tuple, Any] = {}
         df = _apply_filters(df, filters, market, cache=filter_cache)
     if group_by is not None:
-        if root is None:
-            raise ValueError("group_by 需要提供 root 以读取 sectors 数据集")
         market_enum = Market(market.upper())
         sectors_df = scan_parquet(root, market_enum, "sectors").collect().sort(
             ["instrument_id", "date"]
