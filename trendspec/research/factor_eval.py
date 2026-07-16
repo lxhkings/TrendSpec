@@ -1,7 +1,7 @@
 """因子有效性评估：RankIC + 分层回测(quantile)。
 
 两者共用同一份前瞻收益计算；因子截面分复用
-research/factor_cache.py::compute_combo_scores，不重新实现 winsorize/z-score。
+trendspec.combo.scores.compute_combo_scores，不重新实现 winsorize/z-score。
 不跑 BacktestEngine —— 这是纯截面统计，交易成本/滑点等引擎逻辑无关。
 """
 

@@ -405,7 +405,7 @@ uv run trendspec screen run --strategy factor_combo --market cn \
 程序化调用（不经 CLI，比如批量跑多组参数）用 Python 直接构造 `FactorSpec` 对象：
 
 ```python
-from trendspec.research.spec import FactorSpec
+from trendspec.combo import FactorSpec
 from trendspec.data.sectors import CN_GICS_GROUPS
 
 spec = FactorSpec(
