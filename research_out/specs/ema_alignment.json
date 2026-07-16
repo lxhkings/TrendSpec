@@ -1,0 +1,6 @@
+{
+  "factors": [
+    {"name": "ema_alignment", "params": {}, "direction": "high", "weight": 1.0}
+  ],
+  "winsorize_pct": 0.01
+}

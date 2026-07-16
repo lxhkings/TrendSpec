@@ -1,0 +1,6 @@
+{
+  "factors": [
+    {"name": "fund_net_income_qoq", "params": {}, "direction": "high", "weight": 1.0}
+  ],
+  "winsorize_pct": 0.01
+}

@@ -1,0 +1,6 @@
+{
+  "factors": [
+    {"name": "fund_revenue_cagr_3y", "params": {}, "direction": "high", "weight": 1.0}
+  ],
+  "winsorize_pct": 0.01
+}
