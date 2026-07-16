@@ -59,12 +59,18 @@ def compute_rank_ic(
         ranked.group_by("date")
         .agg(pl.corr("_score_rank", "_ret_rank").alias("rank_ic"))
         .drop_nulls("rank_ic")
+        # 退化截面(如当日收益秩零方差)corr 产出 NaN,drop_nulls 拦不住 NaN
+        .filter(pl.col("rank_ic").is_finite())
         .sort("date")
     )
 
 
 def summarize_ic(ic_df: pl.DataFrame) -> dict[str, float | None]:
-    """RankIC 序列汇总：ic_mean/ic_std/ir(=mean/std)/ic_win_rate(同号比例)。"""
+    """RankIC 序列汇总：ic_mean/ic_std/ir(=mean/std)/ic_win_rate(同号比例)。
+
+    非有限 rank_ic 先剔除,不参与汇总。"""
+    if not ic_df.is_empty():
+        ic_df = ic_df.filter(pl.col("rank_ic").is_finite())
     if ic_df.is_empty():
         return {"ic_mean": None, "ic_std": None, "ir": None, "ic_win_rate": None}
 

@@ -266,3 +266,44 @@ def test_combo_scores_partial_ties_all_finite():
     scores = compute_combo_scores(df, factors, "cn")
     assert scores.height > 0
     assert scores["combo_score"].is_finite().all()
+
+
+def test_summarize_ic_ignores_non_finite_rank_ic():
+    """一颗 NaN 不得毒化整个均值(回归:IC均值=nan 但胜率有值)。"""
+    ic_df = pl.DataFrame({
+        "date": [dt.date(2020, 1, 1), dt.date(2020, 1, 2), dt.date(2020, 1, 3)],
+        "rank_ic": [0.5, float("nan"), 0.3],
+    })
+    s = summarize_ic(ic_df)
+    assert s["ic_mean"] == pytest.approx(0.4)
+    assert s["ic_win_rate"] == pytest.approx(1.0)
+
+
+def test_summarize_ic_all_nan_returns_none():
+    ic_df = pl.DataFrame({"date": [dt.date(2020, 1, 1)], "rank_ic": [float("nan")]})
+    assert summarize_ic(ic_df) == {
+        "ic_mean": None, "ic_std": None, "ir": None, "ic_win_rate": None,
+    }
+
+
+def _panel_with_flat_tail() -> pl.DataFrame:
+    """前 10 天 3 支股票斜率不同(momentum 有区分度),之后全部横盘——
+    横盘段前瞻收益全为 0,收益秩零方差,corr 在这些日期产出 NaN。"""
+    rows = []
+    slopes = {"A": 0.5, "B": 1.0, "C": 2.0}
+    for iid, slope in slopes.items():
+        price = 100.0
+        for i in range(25):
+            d = dt.date(2020, 1, 1) + dt.timedelta(days=i)
+            if i < 10:
+                price += slope
+            rows.append({"instrument_id": iid, "date": d, "close": price})
+    return pl.DataFrame(rows)
+
+
+def test_compute_rank_ic_excludes_degenerate_dates():
+    df = _panel_with_flat_tail()
+    factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
+    ic_df = compute_rank_ic(df, factors, "cn", horizon=5)
+    assert ic_df.height > 0
+    assert ic_df["rank_ic"].is_finite().all()
