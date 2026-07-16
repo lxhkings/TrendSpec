@@ -3,8 +3,8 @@ import datetime as dt
 import polars as pl
 
 import trendspec.factors  # noqa: F401 触发注册
-import trendspec.research.factor_cache as factor_cache_module
-from trendspec.research.factor_cache import compute_combo_scores
+import trendspec.combo.scores as scores_module
+from trendspec.combo.scores import compute_combo_scores
 
 
 def _panel():
@@ -106,7 +106,7 @@ def test_apply_filters_same_factor_twice_computes_once(monkeypatch):
     """两个 filter 使用同一 name+params 时，filter 阶段只 compute_full 一次。"""
     df = _panel_with_margin()
     calls: list[tuple] = []
-    real_gfm = factor_cache_module.get_factor_with_market
+    real_gfm = scores_module.get_factor_with_market
 
     def spy(name, params, market):
         factor = real_gfm(name, params, market)
@@ -119,7 +119,7 @@ def test_apply_filters_same_factor_twice_computes_once(monkeypatch):
         factor.compute_full = tracked_full  # type: ignore[method-assign]
         return factor
 
-    monkeypatch.setattr(factor_cache_module, "get_factor_with_market", spy)
+    monkeypatch.setattr(scores_module, "get_factor_with_market", spy)
 
     factors = [{"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 1.0}]
     filters = [
@@ -136,7 +136,7 @@ def test_score_stage_duplicate_factors_compute_once(monkeypatch):
     """factors 列表两个相同 name+params 时，score 阶段只 compute_full 一次。"""
     df = _panel()
     calls: list[str] = []
-    real_gfm = factor_cache_module.get_factor_with_market
+    real_gfm = scores_module.get_factor_with_market
 
     def spy(name, params, market):
         factor = real_gfm(name, params, market)
@@ -149,7 +149,7 @@ def test_score_stage_duplicate_factors_compute_once(monkeypatch):
         factor.compute_full = tracked_full  # type: ignore[method-assign]
         return factor
 
-    monkeypatch.setattr(factor_cache_module, "get_factor_with_market", spy)
+    monkeypatch.setattr(scores_module, "get_factor_with_market", spy)
 
     factors = [
         {"name": "momentum", "params": {"period": 5}, "direction": "high", "weight": 0.5},
@@ -164,7 +164,7 @@ def test_filter_and_score_same_factor_may_compute_twice(monkeypatch):
     """同因子既在 filters 又在 factors：允许每阶段各一次（共 2），禁止跨阶段强制 1 次。"""
     df = _panel_with_margin()
     calls: list[str] = []
-    real_gfm = factor_cache_module.get_factor_with_market
+    real_gfm = scores_module.get_factor_with_market
 
     def spy(name, params, market):
         factor = real_gfm(name, params, market)
@@ -177,7 +177,7 @@ def test_filter_and_score_same_factor_may_compute_twice(monkeypatch):
         factor.compute_full = tracked_full  # type: ignore[method-assign]
         return factor
 
-    monkeypatch.setattr(factor_cache_module, "get_factor_with_market", spy)
+    monkeypatch.setattr(scores_module, "get_factor_with_market", spy)
 
     factors = [
         {"name": "fund_op_margin", "params": {}, "direction": "high", "weight": 1.0},
