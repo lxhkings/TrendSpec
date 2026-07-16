@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from trendspec.factors.registry import list_factors
 
+# 过滤算子名称唯一真相源；执行层 _FILTER_OPS 必须由 FILTER_OP_NAMES 构建。
+FILTER_OP_NAMES: tuple[str, ...] = (">", ">=", "<", "<=")
+
 
 class FactorTerm(BaseModel):
     """单个因子项。"""
@@ -24,7 +27,11 @@ class FactorTerm(BaseModel):
 
 
 class FilterTerm(BaseModel):
-    """硬过滤项：按因子原始值做阈值剔除，排名前生效；因子值缺失视为不合格。"""
+    """硬过滤项：按因子原始值做阈值剔除，排名前生效；因子值缺失视为不合格。
+
+    op 取值须与模块常量 FILTER_OP_NAMES 一致；执行层 _FILTER_OPS 必须由
+    FILTER_OP_NAMES 构建，不得另立算子名单。
+    """
 
     name: str
     params: dict[str, Any] = Field(default_factory=dict)

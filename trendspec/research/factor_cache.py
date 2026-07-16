@@ -19,14 +19,25 @@ from trendspec.data.markets import Market
 from trendspec.data.parquet_loader import scan_parquet
 from trendspec.data.sectors import TICKER_GROUP_OVERRIDES
 from trendspec.factors.registry import get_factor_with_market
+from trendspec.research.spec import FILTER_OP_NAMES
 
 
-_FILTER_OPS = {
-    ">": lambda col, v: col > v,
-    ">=": lambda col, v: col >= v,
-    "<": lambda col, v: col < v,
-    "<=": lambda col, v: col <= v,
-}
+def _build_filter_ops() -> dict[str, Any]:
+    ops: dict[str, Any] = {
+        ">": lambda col, v: col > v,
+        ">=": lambda col, v: col >= v,
+        "<": lambda col, v: col < v,
+        "<=": lambda col, v: col <= v,
+    }
+    # 确保与 spec 常量同步；多/少 key 立即失败
+    if set(ops) != set(FILTER_OP_NAMES):
+        raise RuntimeError(
+            f"_FILTER_OPS keys {set(ops)!r} != FILTER_OP_NAMES {set(FILTER_OP_NAMES)!r}"
+        )
+    return ops
+
+
+_FILTER_OPS = _build_filter_ops()
 
 
 def _key(name: str, params: dict[str, Any]) -> tuple:

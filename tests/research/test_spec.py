@@ -206,3 +206,10 @@ def test_parse_research_eval_spec_preserves_group_by():
     }
     out = parse_research_eval_spec(raw)
     assert out["group_by"] == {"金融": ["银行"]}
+
+
+def test_filter_ops_keys_match_spec_constant():
+    from trendspec.research.spec import FILTER_OP_NAMES
+    from trendspec.research.factor_cache import _FILTER_OPS
+
+    assert set(_FILTER_OPS.keys()) == set(FILTER_OP_NAMES)
