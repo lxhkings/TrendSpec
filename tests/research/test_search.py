@@ -32,6 +32,6 @@ def test_max_candidates_samples_deterministically():
 
 
 def test_each_candidate_is_valid_factorspec():
-    from trendspec.research.spec import FactorSpec
+    from trendspec.combo import FactorSpec
     for c in expand_grid(_hypo(), max_candidates=100, rng_seed=0):
         FactorSpec(**c)  # 不抛异常即合法

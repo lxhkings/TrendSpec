@@ -31,7 +31,7 @@ def _load_factor_spec_json(spec_file: Path) -> dict:
     # 延迟 import：保证调用方已 import trendspec.factors 完成注册
     from pydantic import ValidationError
 
-    from trendspec.research.spec import parse_research_eval_spec
+    from trendspec.combo import parse_research_eval_spec
 
     try:
         return parse_research_eval_spec(raw)

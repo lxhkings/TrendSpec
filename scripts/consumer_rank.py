@@ -23,7 +23,7 @@ from trendspec.data.parquet_loader import bars, scan_parquet
 from trendspec.engine.base_engine import EngineConfig
 from trendspec.engine.screening_engine import ScreeningEngine
 from trendspec.ingest.mariadb_client import create_engine_from_settings
-from trendspec.research.spec import FactorSpec
+from trendspec.combo import FactorSpec
 from trendspec.strategy.base import get_strategy
 import trendspec.strategy.examples  # noqa: F401 — triggers @register_strategy
 import trendspec.strategy.factor_strategy  # noqa: F401 — registers "factor_combo"

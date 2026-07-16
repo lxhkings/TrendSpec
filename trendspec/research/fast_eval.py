@@ -14,7 +14,7 @@ from trendspec.data.calendar import trading_days_between
 from trendspec.data.universe import get_universe
 from trendspec.engine.backtest_engine import BacktestEngine
 from trendspec.engine.base_engine import EngineConfig
-from trendspec.research.factor_cache import compute_combo_scores
+from trendspec.combo import compute_combo_scores
 from trendspec.research.market_panel import MarketPanel
 from trendspec.research.panel_io import read_ipc_mmap, write_ipc
 from trendspec.strategy.factor_strategy import FactorStrategy

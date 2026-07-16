@@ -7,7 +7,7 @@ import polars as pl
 import trendspec.factors  # noqa: F401  (triggers registration)
 from trendspec.data.markets import Market
 from trendspec.factors.registry import get_factor, list_factors
-from trendspec.research.spec import FactorSpec
+from trendspec.combo import FactorSpec
 from trendspec.strategy.context import StrategyContext
 from trendspec.strategy.factor_strategy import FactorStrategy
 

@@ -129,7 +129,7 @@ def screen_run(
             raise typer.Exit(1)
         # --param 覆盖 spec 顶层字段（如 --param top_pct=0.05），只搬运 FactorSpec 已知
         # 字段，其余 --param（非 factor_combo 策略自身参数）留在 strategy_params 里
-        from trendspec.research.spec import FactorSpec
+        from trendspec.combo import FactorSpec
         spec_fields = set(FactorSpec.model_fields)
         for k in list(strategy_params.keys()):
             if k not in spec_fields:

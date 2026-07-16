@@ -74,7 +74,7 @@ def _load_spec_with_overrides(spec_file: Path, overrides: dict) -> dict:
     and `compare`.
     """
     spec_dict = json.loads(spec_file.read_text())
-    from trendspec.research.spec import FactorSpec
+    from trendspec.combo import FactorSpec
     spec_fields = set(FactorSpec.model_fields)
     for k in list(overrides.keys()):
         if k not in spec_fields:

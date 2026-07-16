@@ -4,8 +4,7 @@ from datetime import date as DateType
 
 import polars as pl
 
-from trendspec.research.factor_cache import compute_combo_scores
-from trendspec.research.spec import FactorSpec
+from trendspec.combo import FactorSpec, compute_combo_scores
 from trendspec.strategy.base import BaseStrategy, register_strategy
 from trendspec.strategy.context import StrategyContext
 

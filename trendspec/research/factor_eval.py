@@ -9,7 +9,7 @@ from typing import Any
 
 import polars as pl
 
-from trendspec.research.factor_cache import compute_combo_scores
+from trendspec.combo import compute_combo_scores
 
 
 def _attach_forward_returns(panel: pl.DataFrame, horizon: int) -> pl.DataFrame:

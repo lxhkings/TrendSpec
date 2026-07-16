@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 
 import trendspec.factors  # noqa: F401 触发因子注册
-from trendspec.research.factor_cache import compute_combo_scores
+from trendspec.combo import compute_combo_scores
 from trendspec.research.factor_eval import (
     _attach_forward_returns,
     compute_quantile_returns,
