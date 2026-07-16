@@ -208,6 +208,25 @@ def test_parse_research_eval_spec_preserves_group_by():
     assert out["group_by"] == {"金融": ["银行"]}
 
 
+def test_parse_research_eval_spec_ignores_full_spec_extra_fields():
+    raw = {
+        "market": "cn",
+        "top_k": 10,
+        "rebalance": 5,
+        "rationale": "x",
+        "factors": [
+            {"name": "momentum", "params": {"period": 5}, "direction": "high"}
+        ],
+        "filters": [],
+    }
+    out = parse_research_eval_spec(raw)
+    assert "market" not in out
+    assert "top_k" not in out
+    assert out["filters"] == []
+    assert out["winsorize_pct"] == 0.01
+    assert out["factors"][0]["name"] == "momentum"
+
+
 def test_filter_ops_keys_match_spec_constant():
     from trendspec.research.spec import FILTER_OP_NAMES
     from trendspec.research.factor_cache import _FILTER_OPS

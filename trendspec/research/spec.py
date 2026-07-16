@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from trendspec.factors.registry import list_factors
 
@@ -49,6 +49,8 @@ class FilterTerm(BaseModel):
 class _ResearchEvalSpec(BaseModel):
     """ic/quantile 子集：不要求 market/top_k/rebalance。"""
 
+    model_config = ConfigDict(extra="ignore")
+
     factors: list[FactorTerm] = Field(min_length=1)
     filters: list[FilterTerm] = Field(default_factory=list)
     group_by: dict[str, list[str]] | None = None
@@ -65,15 +67,7 @@ def parse_research_eval_spec(raw: dict[str, Any]) -> dict[str, Any]:
     Returns a plain dict with dumped factors/filters for compute_* callers.
     Raises pydantic.ValidationError on invalid input.
     """
-    # Only pick known keys so extra full-FactorSpec fields do not break parsing
-    payload = {
-        "factors": raw.get("factors"),
-        "filters": raw.get("filters", []),
-        "winsorize_pct": raw.get("winsorize_pct", 0.01),
-    }
-    if "group_by" in raw:
-        payload["group_by"] = raw.get("group_by")
-    parsed = _ResearchEvalSpec.model_validate(payload)
+    parsed = _ResearchEvalSpec.model_validate(raw)
     out: dict[str, Any] = {
         "factors": [t.model_dump() for t in parsed.factors],
         "filters": [t.model_dump() for t in parsed.filters],
