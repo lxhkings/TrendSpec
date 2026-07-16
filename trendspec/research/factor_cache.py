@@ -6,6 +6,9 @@
 没有 winsorize/group_by 的简化重实现，跟 FactorStrategy 内联逻辑对不上，
 导致 precomputed_scores 注入路径和批量评估路径算出的结果跟真实回测不一致
 （2026-07-11 修复，见 test_factor_strategy_inject.py / test_fast_eval.py）。
+
+同阶段 memo：filter 与 score 各自持有私有 cache dict，经 `_compute_full_cached`
+按 (name, params) 去重；不跨阶段共享缓存。
 """
 
 from typing import Any
@@ -15,7 +18,7 @@ import polars as pl
 from trendspec.data.markets import Market
 from trendspec.data.parquet_loader import scan_parquet
 from trendspec.data.sectors import TICKER_GROUP_OVERRIDES
-from trendspec.factors.registry import get_factor, get_factor_with_market
+from trendspec.factors.registry import get_factor_with_market
 
 
 _FILTER_OPS = {
@@ -28,6 +31,24 @@ _FILTER_OPS = {
 
 def _key(name: str, params: dict[str, Any]) -> tuple:
     return (name, tuple(sorted(params.items())))
+
+
+def _compute_full_cached(
+    cache: dict[tuple, Any],
+    name: str,
+    params: dict[str, Any],
+    market: str,
+    df: pl.DataFrame,
+) -> Any:
+    """同阶段 memo：key=(name, sorted params)；miss 时 compute_full 并写入 cache。"""
+    k = _key(name, params or {})
+    hit = cache.get(k)
+    if hit is not None:
+        return hit
+    factor = get_factor_with_market(name, params or {}, market)
+    result = factor.compute_full(df)
+    cache[k] = result
+    return result
 
 
 def _apply_filters(
@@ -47,14 +68,13 @@ def _apply_filters(
     if cache is None:
         cache = {}
     for term in filters:
-        k = _key(term["name"], term.get("params") or {})
-        result = cache.get(k)
-        if result is None:
-            factor = get_factor_with_market(
-                term["name"], term.get("params") or {}, market
-            )
-            result = factor.compute_full(df)
-            cache[k] = result
+        result = _compute_full_cached(
+            cache,
+            term["name"],
+            term.get("params") or {},
+            market,
+            df,
+        )
         cond = _FILTER_OPS[term["op"]](pl.col(result.name), term["value"])
         passed = result.values.filter(cond).select(["instrument_id", "date"])
         df = df.join(passed, on=["instrument_id", "date"], how="semi")
@@ -131,14 +151,13 @@ def compute_combo_scores(
     weight_cols: list[pl.Expr] = []
     missing_any = pl.lit(False)
     for i, term in enumerate(factors):
-        k = _key(term["name"], term.get("params") or {})
-        result = score_cache.get(k)
-        if result is None:
-            factor = get_factor_with_market(
-                term["name"], term.get("params") or {}, market
-            )
-            result = factor.compute_full(df)
-            score_cache[k] = result
+        result = _compute_full_cached(
+            score_cache,
+            term["name"],
+            term.get("params") or {},
+            market,
+            df,
+        )
         col = result.name
         sign = 1.0 if term["direction"] == "high" else -1.0
         zcol = f"_z_{i}"
@@ -172,24 +191,3 @@ def compute_combo_scores(
     return score_df.filter(~missing_any).select(
         ["instrument_id", "date", "_group", "combo_score"]
     )
-
-
-class FactorCache:
-    """按 (name, frozenset(params)) memoize 单因子面板。底层 compute_full 只算一次。"""
-
-    def __init__(self, df: pl.DataFrame) -> None:
-        self._df = df
-        self._cache: dict[tuple, pl.DataFrame] = {}
-        self.compute_count = 0
-
-    def get(self, name: str, params: dict[str, Any]) -> pl.DataFrame:
-        k = _key(name, params or {})
-        hit = self._cache.get(k)
-        if hit is not None:
-            return hit
-        factor = get_factor(name, params or {})
-        result = factor.compute_full(self._df)
-        panel = result.values.rename({result.name: "value"})
-        self._cache[k] = panel
-        self.compute_count += 1
-        return panel

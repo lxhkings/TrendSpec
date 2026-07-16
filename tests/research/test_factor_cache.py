@@ -4,7 +4,7 @@ import polars as pl
 
 import trendspec.factors  # noqa: F401 触发注册
 import trendspec.research.factor_cache as factor_cache_module
-from trendspec.research.factor_cache import FactorCache, compute_combo_scores
+from trendspec.research.factor_cache import compute_combo_scores
 
 
 def _panel():
@@ -30,17 +30,6 @@ def test_compute_combo_scores_returns_finite_scores():
     last = score.filter(pl.col("combo_score").is_not_null())
     assert last.height > 0
     assert last["combo_score"].is_finite().all()
-
-
-def test_factor_cache_memoizes_by_name_params():
-    df = _panel()
-    cache = FactorCache(df)
-    a = cache.get("momentum", {"period": 5})
-    b = cache.get("momentum", {"period": 5})
-    assert a is b  # 命中同一对象
-    c = cache.get("momentum", {"period": 10})
-    assert c is not a  # 不同参数不命中
-    assert cache.compute_count == 2  # 只真正算了两次
 
 
 def test_compute_combo_scores_normalizes_market_for_cross_sectional_factor():
